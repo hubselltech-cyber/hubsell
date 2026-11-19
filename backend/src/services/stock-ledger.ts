@@ -43,6 +43,55 @@ export interface StockWrite {
    * committed của từng vị trí bị trừ) ngay trong cùng câu ghi. Chỉ có nghĩa khi delta < 0.
    */
   reserve?: boolean;
+  /**
+   * LOẠI DÒNG ghi vào InventoryLog.kind (kho chuẩn quốc tế lát 3): RESERVE · RELEASE · RETURN ·
+   * STOCKTAKE · SET · mã lý do nhập / xuất tay (lib/stock-reason.ts). Bỏ trống: bút toán có
+   * `reserve` tự là RESERVE, còn lại để NULL.
+   */
+  kind?: string | null;
+  /**
+   * Phần đổi của ngăn "Đang giữ" CHỈ ĐỂ GHI NHẬT KÝ — nơi gọi đã tự cộng / trừ bộ đếm (ví dụ
+   * đơn hủy trước khi rời kho: releaseCommittedTx trừ bộ đếm, dòng cộng lại sổ ghi heldChange = −n).
+   * Bút toán có `reserve` tự ghi +n, không cần truyền.
+   */
+  logHeldChange?: number;
+}
+
+/** Hai cài đặt kho theo shop của kho chuẩn quốc tế (shop_sync_settings; chưa có dòng = mặc định cũ). */
+export type StockModel = "LEGACY" | "ON_HAND";
+export type RestockOnReturn = "ON_CANCEL" | "ON_RECEIVE";
+export interface StockSettings {
+  stockModel: StockModel;
+  restockOnReturn: RestockOnReturn;
+}
+
+/** Đọc cài đặt kho của một chủ shop. Giá trị lạ trong database → coi như mặc định cũ. */
+export async function getStockSettings(
+  db: Pick<Tx, "shopSyncSetting">,
+  userId: string
+): Promise<StockSettings> {
+  const row = await db.shopSyncSetting.findUnique({
+    where: { userId },
+    select: { stockModel: true, restockOnReturn: true },
+  });
+  return {
+    stockModel: row?.stockModel === "ON_HAND" ? "ON_HAND" : "LEGACY",
+    restockOnReturn: row?.restockOnReturn === "ON_RECEIVE" ? "ON_RECEIVE" : "ON_CANCEL",
+  };
+}
+
+/**
+ * Tổng hàng đang nằm ở các ô "KHÔNG BÁN" của một SKU (ngăn Unavailable). Shop không có ô không
+ * bán → 0, không tốn câu đọc nào (nơi gọi truyền danh sách vị trí đã đọc).
+ */
+export async function unsellableQuantityTx(tx: Tx, productId: string, locs: LocationRow[]): Promise<number> {
+  const ids = locs.filter((l) => l.sellable === false).map((l) => l.id);
+  if (ids.length === 0) return 0;
+  const agg = await tx.productStockLevel.aggregate({
+    where: { productId, locationId: { in: ids } },
+    _sum: { quantity: true },
+  });
+  return agg._sum.quantity ?? 0;
 }
 
 /**
@@ -61,7 +110,7 @@ export interface StockWriteResult {
   logs: { id: string; locationId: string | null; changeQuantity: number }[];
 }
 
-interface LocationRow {
+export interface LocationRow {
   id: string;
   sortOrder: number;
   isDefault: boolean;
@@ -118,13 +167,16 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
 
   const product = await tx.product.findUniqueOrThrow({
     where: { id: w.productId },
-    select: { id: true, userId: true, quantityInStock: true },
+    select: { id: true, userId: true, quantityInStock: true, committedQuantity: true, holdQuantity: true },
   });
 
   const locs = await listLocations(tx, product.userId);
   const logs: StockWriteResult["logs"] = [];
   // Số cộng vào bộ đếm "đang giữ": đúng bằng số vừa trừ cho đơn (mọi dòng nhật ký trừ của đơn).
   const reserved = w.reserve && w.delta < 0 && stockCommittedOn() ? -w.delta : 0;
+  // Ba ngăn số của Nhật ký kho (lát 3): loại dòng + phần đổi của "Đang giữ".
+  const kind = w.kind ?? (reserved ? "RESERVE" : null);
+  const heldChangeTotal = reserved || (w.logHeldChange ?? 0);
 
   if (locs.length === 0) {
     const updated = await tx.product.update({
@@ -133,7 +185,7 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         quantityInStock: { increment: w.delta },
         ...(reserved ? { committedQuantity: { increment: reserved } } : {}),
       },
-      select: { quantityInStock: true },
+      select: { quantityInStock: true, committedQuantity: true, holdQuantity: true },
     });
     const balanceAfter = updated.quantityInStock;
     const log = await tx.inventoryLog.create({
@@ -146,6 +198,10 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         actorId: w.actorId ?? null,
         voucherId: w.voucherId ?? null,
         balanceAfter,
+        kind,
+        heldChange: heldChangeTotal,
+        heldAfter: updated.committedQuantity + updated.holdQuantity,
+        onHandAfter: updated.quantityInStock + updated.committedQuantity,
       },
       select: { id: true },
     });
@@ -187,6 +243,8 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
     return sum + (sellable ? (w.delta > 0 ? a.quantity : -a.quantity) : 0);
   }, 0);
   let balanceAfter = product.quantityInStock;
+  let committedAfter = product.committedQuantity;
+  let holdAfter = product.holdQuantity;
   if (sellableDelta !== 0 || reserved) {
     const updated = await tx.product.update({
       where: { id: w.productId },
@@ -194,14 +252,27 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         quantityInStock: { increment: sellableDelta },
         ...(reserved ? { committedQuantity: { increment: reserved } } : {}),
       },
-      select: { quantityInStock: true },
+      select: { quantityInStock: true, committedQuantity: true, holdQuantity: true },
     });
     balanceAfter = updated.quantityInStock;
+    committedAfter = updated.committedQuantity;
+    holdAfter = updated.holdQuantity;
   }
 
   for (const a of allocations) {
     const signed = w.delta > 0 ? a.quantity : -a.quantity;
     await bumpLevel(tx, w.productId, a.locationId, signed, reserved ? a.quantity : 0);
+  }
+  // "Tồn kho" (hàng trong kho) sau bút toán = sổ + đang giữ cho đơn + ô không bán (đọc SAU khi đã
+  // cộng trừ các vị trí; shop không có ô không bán thì không tốn câu đọc).
+  const onHandAfter = balanceAfter + committedAfter + (await unsellableQuantityTx(tx, w.productId, locs));
+  // Phần đổi của "Đang giữ" chia cho từng dòng vị trí theo đúng tỉ lệ số lượng của dòng đó.
+  const totalQty = allocations.reduce((s, a) => s + a.quantity, 0);
+
+  for (const a of allocations) {
+    const signed = w.delta > 0 ? a.quantity : -a.quantity;
+    const heldChange =
+      reserved ? a.quantity : totalQty > 0 ? Math.round((heldChangeTotal * a.quantity) / totalQty) : 0;
     const log = await tx.inventoryLog.create({
       data: {
         productId: w.productId,
@@ -213,6 +284,10 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         locationId: a.locationId,
         voucherId: w.voucherId ?? null,
         balanceAfter,
+        kind,
+        heldChange,
+        heldAfter: committedAfter + holdAfter,
+        onHandAfter,
       },
       select: { id: true },
     });
@@ -240,17 +315,82 @@ export async function setStockAbsolute(
 }
 
 /**
+ * Ba ngăn số của MỘT SKU đọc dưới khóa dòng Product (kho chuẩn quốc tế lát 3):
+ *   sellable   = sổ quantityInStock (tồn bán)
+ *   committed  = đang giữ cho đơn đã chốt, hàng còn trong kho
+ *   unsellable = hàng ở các ô không bán
+ *   onHand     = hàng TRONG KHO = sellable + committed + unsellable
+ * Khóa FOR UPDATE để hai lượt sửa số cùng lúc không tính chênh trên cùng một số cũ.
+ */
+export async function lockStockCompartments(
+  tx: Tx,
+  productId: string
+): Promise<{ userId: string; sellable: number; committed: number; hold: number; unsellable: number; onHand: number }> {
+  const rows = await tx.$queryRaw<
+    { userId: string; quantityInStock: number; committedQuantity: number; holdQuantity: number }[]
+  >`
+    SELECT "userId", "quantityInStock", "committedQuantity", "holdQuantity"
+    FROM "Product" WHERE "id" = ${productId} FOR UPDATE`;
+  const p = rows[0];
+  if (!p) throw Object.assign(new Error("Không tìm thấy sản phẩm"), { statusCode: 404 });
+  const unsellable = await unsellableQuantityTx(tx, productId, await listLocations(tx, p.userId));
+  return {
+    userId: p.userId,
+    sellable: p.quantityInStock,
+    committed: p.committedQuantity,
+    hold: p.holdQuantity,
+    unsellable,
+    onHand: p.quantityInStock + p.committedQuantity + unsellable,
+  };
+}
+
+/**
+ * ĐẶT SỐ TRONG KHO của một SKU (shop chạy chế độ ON_HAND: sửa ô Tồn kho, Excel). Số gõ là hàng
+ * thực có trong kho, GỒM cả hàng đang giữ cho đơn và hàng ở ô không bán → tồn bán mới = số gõ −
+ * đang giữ − không bán. Phần chênh đi qua applyStockDelta như mọi bút toán khác.
+ * `belowHeld` = số gõ thấp hơn phần đang giữ cho đơn (kho thiếu hàng cho đơn đã chốt): nơi gọi
+ * quyết định cảnh báo hay cho qua — hàm này vẫn ghi (tồn bán được phép âm để lộ bán vượt).
+ */
+export async function setOnHandAbsolute(
+  tx: Tx,
+  w: Omit<StockWrite, "delta"> & { onHand: number }
+): Promise<StockWriteResult & { delta: number; previous: number; committed: number; unsellable: number; belowHeld: boolean }> {
+  const c = await lockStockCompartments(tx, w.productId);
+  const { onHand, ...rest } = w;
+  const delta = onHand - c.onHand;
+  const res = await applyStockDelta(tx, { ...rest, delta, kind: rest.kind ?? "SET" });
+  return {
+    ...res,
+    delta,
+    previous: c.onHand,
+    committed: c.committed,
+    unsellable: c.unsellable,
+    belowHeld: onHand < c.committed + c.unsellable,
+  };
+}
+
+/**
  * SỬA SỐ TẠI MỘT VỊ TRÍ (chi tiết "Đang ở"): chênh lệch tính trên level của
  * vị trí đó, tổng đổi theo. Ghi ADJUST kèm vị trí.
+ * `onHand: true` (shop ON_HAND): số gõ là hàng TRONG KHO tại vị trí = phần bán được + phần đang giữ
+ * cho đơn tại đó → `previous` cũng tính cả phần đang giữ.
  */
 export async function setLevelAbsolute(
   tx: Tx,
-  w: { productId: string; locationId: string; quantity: number; reason: string; actorId?: string | null }
+  w: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+    reason: string;
+    actorId?: string | null;
+    onHand?: boolean;
+    kind?: string | null;
+  }
 ): Promise<StockWriteResult & { delta: number; previous: number }> {
-  const rows = await tx.$queryRaw<{ quantity: number }[]>`
-    SELECT "quantity" FROM "product_stock_levels"
+  const rows = await tx.$queryRaw<{ quantity: number; committed: number }[]>`
+    SELECT "quantity", "committed" FROM "product_stock_levels"
     WHERE "productId" = ${w.productId} AND "locationId" = ${w.locationId} FOR UPDATE`;
-  const previous = rows[0]?.quantity ?? 0;
+  const previous = (rows[0]?.quantity ?? 0) + (w.onHand ? (rows[0]?.committed ?? 0) : 0);
   const delta = w.quantity - previous;
   const res = await applyStockDelta(tx, {
     productId: w.productId,
@@ -259,6 +399,7 @@ export async function setLevelAbsolute(
     reason: w.reason,
     actorId: w.actorId,
     locationId: w.locationId,
+    kind: w.kind ?? "SET",
   });
   return { ...res, delta, previous };
 }
@@ -296,7 +437,7 @@ export async function transferStockTx(
   }
   let product = await tx.product.findUniqueOrThrow({
     where: { id: w.productId },
-    select: { userId: true, quantityInStock: true },
+    select: { userId: true, quantityInStock: true, committedQuantity: true, holdQuantity: true },
   });
   const locs = await listLocations(tx, product.userId);
   const fromSellable = locs.find((l) => l.id === w.fromLocationId)?.sellable !== false;
@@ -308,7 +449,7 @@ export async function transferStockTx(
     product = await tx.product.update({
       where: { id: w.productId },
       data: { quantityInStock: { increment: totalDelta } },
-      select: { userId: true, quantityInStock: true },
+      select: { userId: true, quantityInStock: true, committedQuantity: true, holdQuantity: true },
     });
   }
   const base = {
@@ -317,6 +458,12 @@ export async function transferStockTx(
     reason: w.reason,
     actorId: w.actorId ?? null,
     balanceAfter: product.quantityInStock,
+    // Chuyển vị trí không đổi hàng trong kho; qua ô không bán thì chỉ tồn bán đổi.
+    kind: "TRANSFER",
+    heldChange: 0,
+    heldAfter: product.committedQuantity + product.holdQuantity,
+    onHandAfter:
+      product.quantityInStock + product.committedQuantity + (await unsellableQuantityTx(tx, w.productId, locs)),
   };
   await tx.inventoryLog.createMany({
     data: [

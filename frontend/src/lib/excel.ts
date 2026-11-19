@@ -26,6 +26,7 @@ import {
   type SkuProduct,
 } from "@/lib/api";
 import { TIKTOK_COLUMNS, toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
+import { heldShown, isOnHand, stockShown } from "@/lib/stock-model";
 import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import {
   SHIP_DIFF_PART_COLUMNS,
@@ -150,10 +151,21 @@ export function exportProductsToExcel(
     "Phân loại": p.variantName ?? "",
     ...(includeCost ? { "Giá vốn": Number(p.costPrice ?? 0) } : {}),
     "Giá bán": Number(p.sellingPrice),
-    "Tồn kho": p.quantityInStock,
-    // Chờ giao (11/11/2026): đã trừ khỏi Tồn kho cho đơn đã chốt, chưa giao ship. Chỉ để đối chiếu —
-    // nhập lại file thì cột này bị bỏ qua.
-    "Chờ giao": p.awaitingShip ?? 0,
+    ...(isOnHand(p)
+      ? {
+          // Shop cách ON_HAND (kho chuẩn quốc tế, 20/11/2026): Tồn kho là hàng TRONG KHO. Hai cột sau chỉ
+          // để đối chiếu — nhập lại file thì bị bỏ qua. KHÔNG có cột "Chờ giao": cột đó là dấu nhận biết
+          // tệp xuất từ bản cũ (máy chủ đọc cột Tồn kho của tệp cũ theo nghĩa cũ).
+          "Tồn kho": stockShown(p),
+          "Đang giữ": heldShown(p),
+          "Có thể bán": p.availableToSell ?? 0,
+        }
+      : {
+          "Tồn kho": p.quantityInStock,
+          // Chờ giao (11/11/2026): đã trừ khỏi Tồn kho cho đơn đã chốt, chưa giao ship. Chỉ để đối chiếu —
+          // nhập lại file thì cột này bị bỏ qua.
+          "Chờ giao": p.awaitingShip ?? 0,
+        }),
     "Trạng thái": p.isActive === false ? "Ngừng kinh doanh" : "Đang bán",
     "Ngày tạo": toDateTimeText(p.createdAt),
   }));

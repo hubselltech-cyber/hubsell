@@ -26,6 +26,7 @@ import warehouseRouter from "./routes/warehouse";
 import channelsRouter from "./routes/channels";
 import inventoryRouter from "./routes/inventory";
 import stockLocationsRouter from "./routes/stock-locations";
+import stocktakesRouter from "./routes/stocktakes";
 import mappingsRouter from "./routes/mappings";
 import webhooksRouter from "./routes/webhooks";
 import publicRouter from "./routes/public";
@@ -243,6 +244,8 @@ export function createApp() {
   app.use("/api/inventory", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, inventoryRouter);
   // Vị trí chứa hàng (đợt B 24/09) — cùng quyền với Hàng hóa.
   app.use("/api/stock-locations", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, stockLocationsRouter);
+  // Kiem ke theo phien (kho chuan quoc te lat 5, 20/11/2026) - cung quyen voi cac route kho.
+  app.use("/api/stocktakes", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, stocktakesRouter);
   app.use("/api/warehouse", requireAuth, requirePermission("warehouse.returns"), requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
 

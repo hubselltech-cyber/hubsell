@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, ScanBarcode } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, ScanBarcode, Users } from "lucide-react";
 
 import { LocationSelect } from "@/components/products/location-select";
+import { heldShown, isOnHand, stockShown } from "@/lib/stock-model";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,12 +43,15 @@ import {
   STOCKTAKE_SUBMIT_CHUNK,
   clearStocktakeDraft,
   isCounted,
+  readStocktakeBookAt,
   readStocktakeDraft,
   readStocktakePageSize,
   stocktakeDraftId,
   validCount,
+  writeStocktakeBookAt,
   writeStocktakeDraft,
   writeStocktakePageSize,
+  type StocktakeBookAt,
   type StocktakeCounts,
 } from "@/lib/stocktake";
 import { TEXT_SUB } from "@/lib/typography";
@@ -89,6 +93,10 @@ export default function StocktakePage() {
   const [loading, setLoading] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const [counts, setCounts] = useState<StocktakeCounts>({});
+  // KHO CHUẨN QUỐC TẾ (20/11/2026): shop cách ON_HAND đếm HÀNG TRONG KHO (kiện đã gói chưa giao cũng
+  // đếm) và chốt là ghi PHẦN CHÊNH = số đếm − số sổ LÚC ĐẾM. `bookAt` nhớ số sổ lúc gõ số đếm từng mã.
+  const [onHandModel, setOnHandModel] = useState(false);
+  const [bookAt, setBookAt] = useState<StocktakeBookAt>({});
   const [onlyDiff, setOnlyDiff] = useState(false);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -149,10 +157,19 @@ export default function StocktakePage() {
           if (cancelled) return;
         }
         setTruncated(r.truncated);
+        setOnHandModel(r.stockModel === "ON_HAND");
         sheetIds.current = new Set(ids);
         for (const x of extra) ids.add(x.productId);
         setRows([...r.rows, ...extra]);
         setCounts(Object.fromEntries(Object.entries(draft.counts).filter(([id]) => ids.has(id))));
+        // Số sổ lúc đếm: chỉ giữ cho mã còn trong phiếu VÀ còn số đếm.
+        setBookAt(
+          Object.fromEntries(
+            Object.entries(readStocktakeBookAt(effectiveLocationId)).filter(
+              ([id]) => ids.has(id) && isCounted(draft.counts, id)
+            )
+          )
+        );
         setLastScan(null);
         hydratedKey.current = stocktakeDraftId(effectiveLocationId);
       })
@@ -171,7 +188,8 @@ export default function StocktakePage() {
     // Dòng thêm bằng quét: chỉ nhớ dòng còn số đếm (xóa trắng ô đếm = bỏ dòng ở lần tải sau).
     const extra = rows.filter((r) => !sheetIds.current.has(r.productId) && isCounted(counts, r.productId));
     writeStocktakeDraft(effectiveLocationId, counts, extra);
-  }, [counts, rows, effectiveLocationId]);
+    writeStocktakeBookAt(effectiveLocationId, bookAt);
+  }, [counts, rows, effectiveLocationId, bookAt]);
 
   // Phiếu tải xong → con trỏ vào sẵn ô quét (máy có chuột; điện thoại thì không bật bàn phím).
   useEffect(() => {
@@ -203,12 +221,17 @@ export default function StocktakePage() {
     () => rows.filter((r) => isCounted(counts, r.productId)),
     [rows, counts]
   );
+  /** Số sổ dùng để tính lệch của một dòng: ON_HAND = số sổ LÚC ĐẾM; LEGACY = số sổ đang hiện. */
+  const refBook = useCallback(
+    (r: StocktakeRow) => (onHandModel ? (bookAt[r.productId] ?? r.book) : r.book),
+    [onHandModel, bookAt]
+  );
   const diffs = useMemo(
     () =>
       counted
         .map((r) => ({ row: r, n: validCount(counts[r.productId]) }))
-        .filter((x): x is { row: StocktakeRow; n: number } => x.n !== null && x.n !== x.row.book),
-    [counted, counts]
+        .filter((x): x is { row: StocktakeRow; n: number } => x.n !== null && x.n !== refBook(x.row)),
+    [counted, counts, refBook]
   );
   const invalid = counted.filter((r) => validCount(counts[r.productId]) === null);
   const visible = onlyDiff ? diffs.map((d) => d.row) : rows;
@@ -262,14 +285,42 @@ export default function StocktakePage() {
     setPage(Math.floor(idx / pageSize) + 1);
   }
 
+  /**
+   * Nhớ số sổ LÚC ĐẾM của một mã: ghi ở lần đầu mã có số đếm, giữ nguyên các lần sửa số sau (vẫn là
+   * một lượt đếm); xóa trắng ô đếm thì bỏ — đếm lại sẽ lấy số sổ mới. `book` truyền vào khi dòng vừa
+   * được thêm bằng quét (chưa kịp nằm trong `rows`).
+   */
+  function stampBook(id: string, cleared: boolean, book?: number) {
+    setBookAt((b) => {
+      if (cleared) {
+        if (!(id in b)) return b;
+        const rest = { ...b };
+        delete rest[id];
+        return rest;
+      }
+      if (id in b) return b;
+      const known = book ?? rows.find((r) => r.productId === id)?.book;
+      return known === undefined ? b : { ...b, [id]: known };
+    });
+  }
+
   function setCount(id: string, v: string) {
     setCounts((c) => ({ ...c, [id]: v }));
+    stampBook(id, v === "");
   }
 
   /** Cộng 1 cho một mã. Ô đang chứa số sai (rác do quét nhầm, số âm…) thì đếm lại từ 0. */
-  function bump(id: string) {
+  function bump(id: string, book?: number) {
     setCounts((c) => ({ ...c, [id]: String((validCount(c[id]) ?? 0) + 1) }));
+    stampBook(id, false, book);
     setLastScan((s) => ({ id, tick: (s?.tick ?? 0) + 1 }));
+  }
+
+  /** "Đếm lại" một mã có biến động: xóa số đếm → lần đếm sau so với số sổ hiện tại. */
+  function recount(id: string) {
+    setCount(id, "");
+    pendingFocus.current = id;
+    inputRefs.current.get(id)?.focus();
   }
 
   /** Enter ở ô đếm: nhảy sang ô kế tiếp trong danh sách đang hiện. */
@@ -322,18 +373,27 @@ export default function StocktakePage() {
       // đó (thường 0), không dùng vị trí thì là tồn của mã (mã ngừng bán / mã ngoài 2.000 dòng
       // đầu vẫn có tồn — trước 09/11 ghi cứng 0 nên cột Sổ, Lệch sai và đếm đúng bằng 0 bị bỏ sót).
       // Quét dồn dập cùng một mã mới có thể về hai lượt tra — chỉ thêm MỘT dòng, mỗi lượt vẫn cộng 1.
-      const book = effectiveLocationId
-        ? (p.stockLevels?.find((l) => l.locationId === effectiveLocationId)?.quantity ?? 0)
-        : p.quantityInStock;
+      // Shop cách ON_HAND: số sổ là hàng TRONG KHO (phần bán được + phần đang giữ cho đơn).
+      const lv = effectiveLocationId ? p.stockLevels?.find((l) => l.locationId === effectiveLocationId) : undefined;
+      const held = isOnHand(p) ? (effectiveLocationId ? (lv?.committed ?? 0) : heldShown(p) - (p.holdQuantity ?? 0)) : 0;
+      const book = effectiveLocationId ? (lv?.quantity ?? 0) + held : stockShown(p);
       setRows((cur) =>
         cur.some((r) => r.productId === p.id)
           ? cur
           : [
               ...cur,
-              { productId: p.id, skuCode: p.skuCode, barcode: p.barcode, productName: p.productName, isActive: p.isActive !== false, book },
+              {
+                productId: p.id,
+                skuCode: p.skuCode,
+                barcode: p.barcode,
+                productName: p.productName,
+                isActive: p.isActive !== false,
+                book,
+                ...(isOnHand(p) ? { held } : {}),
+              },
             ]
       );
-      bump(p.id);
+      bump(p.id, book);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
     } finally {
@@ -344,9 +404,16 @@ export default function StocktakePage() {
   async function handleSubmit() {
     if (invalid.length || diffs.length === 0) return;
     setSubmitting(true);
-    const items = diffs.map((d) => ({ productId: d.row.productId, counted: d.n }));
+    // Shop cách ON_HAND gửi kèm số sổ LÚC ĐẾM: máy chủ ghi phần chênh so với số đó, nên hàng rời kho /
+    // nhập thêm sau lúc đếm không bị cộng ngược lại.
+    const items = diffs.map((d) => ({
+      productId: d.row.productId,
+      counted: d.n,
+      ...(onHandModel ? { book: refBook(d.row) } : {}),
+    }));
     let adjusted = 0;
     let sent = 0;
+    let drifted = 0;
     try {
       // Máy chủ nhận tối đa 500 mã mỗi lần chốt (mỗi lần một giao dịch). Phiếu lệch nhiều hơn
       // — lần kiểm kê đầu của shop vài nghìn mã — thì gửi nối tiếp từng lượt 500.
@@ -359,12 +426,18 @@ export default function StocktakePage() {
         });
         adjusted += res.adjusted;
         sent += part.length;
+        drifted += res.lines.filter((l) => (l.drift ?? 0) !== 0).length;
       }
       toast.success(
-        `Đã chốt kiểm kê: điều chỉnh ${formatNumber(adjusted)} mã — mỗi mã một dòng trong Nhật ký kho, sàn nhận số mới`
+        `Đã chốt kiểm kê: điều chỉnh ${formatNumber(adjusted)} mã — mỗi mã một dòng trong Nhật ký kho, sàn nhận số mới` +
+          (drifted > 0
+            ? `. ${formatNumber(drifted)} mã có hàng ra / vào trong lúc đếm: chỉ ghi phần chênh so với sổ lúc đếm.`
+            : ""),
+        drifted > 0 ? { duration: 12000 } : undefined
       );
       clearStocktakeDraft(effectiveLocationId);
       setCounts({});
+      setBookAt({});
       setNote("");
       setOnlyDiff(false);
       setPage(1);
@@ -406,11 +479,24 @@ export default function StocktakePage() {
                 Tổng kho
               </Link>
               <p className="text-sm text-muted-foreground">
-                {locationsEnabled
-                  ? "Chọn vị trí, đếm từng mã đang có hàng ở đó, rồi chốt. Chỉ mã lệch mới ghi vào nhật ký."
-                  : "Đếm từng mã rồi chốt. Chỉ mã lệch mới ghi vào nhật ký, sàn nhận số mới."}
+                {onHandModel
+                  ? locationsEnabled
+                    ? "Chọn vị trí, đếm mọi hàng đang có ở đó — kể cả kiện đã gói cho đơn chưa giao — rồi chốt. Chỉ ghi phần chênh so với sổ lúc đếm."
+                    : "Đếm mọi hàng đang có trong kho — kể cả kiện đã gói cho đơn chưa giao — rồi chốt. Chỉ ghi phần chênh so với sổ lúc đếm, sàn nhận số mới."
+                  : locationsEnabled
+                    ? "Chọn vị trí, đếm từng mã đang có hàng ở đó, rồi chốt. Chỉ mã lệch mới ghi vào nhật ký."
+                    : "Đếm từng mã rồi chốt. Chỉ mã lệch mới ghi vào nhật ký, sàn nhận số mới."}
               </p>
             </div>
+            {/* Kiểm kê theo phiên (lát 5, 20/11/2026): nhiều người đếm, có duyệt, in biên bản — trang riêng. */}
+            <Link
+              href="/products/stocktake/sessions"
+              className="inline-flex h-8 items-center gap-1.5 self-end rounded-lg border bg-background px-2.5 text-sm font-medium hover:bg-muted"
+              title="Nhiều người cùng đếm vào một phiên, đếm xong gửi duyệt, chủ shop duyệt mới ghi vào kho; có đếm mù và biên bản in"
+            >
+              <Users className="size-4" />
+              Kiểm kê theo phiên
+            </Link>
             {locationsEnabled && (
               <div className="grid w-64 gap-1.5">
                 <Label htmlFor="st-location">Vị trí kiểm</Label>
@@ -506,7 +592,16 @@ export default function StocktakePage() {
                   <TableRow>
                     <TableHead className="w-40">Mã SKU</TableHead>
                     <TableHead>Tên sản phẩm</TableHead>
-                    <TableHead className="w-24 text-right">Sổ</TableHead>
+                    <TableHead
+                      className="w-24 text-right"
+                      title={
+                        onHandModel
+                          ? "Hàng trong kho theo sổ, gồm cả hàng đang giữ cho đơn chưa giao"
+                          : undefined
+                      }
+                    >
+                      Sổ
+                    </TableHead>
                     <TableHead className="w-32 text-right">Thực đếm</TableHead>
                     <TableHead className="w-24 text-right">Lệch</TableHead>
                   </TableRow>
@@ -516,7 +611,10 @@ export default function StocktakePage() {
                     const raw = counts[r.productId];
                     const n = validCount(raw);
                     const bad = raw !== undefined && raw !== "" && n === null;
-                    const diff = n === null ? null : n - r.book;
+                    const diff = n === null ? null : n - refBook(r);
+                    // Biến động: số sổ đã đổi bao nhiêu từ lúc đếm mã này (hàng rời kho, nhập thêm…).
+                    const drift =
+                      onHandModel && n !== null && bookAt[r.productId] !== undefined ? r.book - bookAt[r.productId] : 0;
                     const justScanned = lastScan?.id === r.productId;
                     return (
                       <TableRow
@@ -524,16 +622,27 @@ export default function StocktakePage() {
                         className={cn(justScanned ? "bg-sky-100" : diff ? "bg-amber-50/60" : undefined)}
                       >
                         <TableCell className="font-mono text-sm">
-                          {r.skuCode}
+                          {/* Mã dài cắt ở 16rem + tooltip: mã 60 ký tự từng đẩy bảng cuộn ngang ở màn 1440. */}
+                          <span className="inline-block max-w-[16rem] truncate align-bottom" title={r.skuCode}>
+                            {r.skuCode}
+                          </span>
                           {!r.isActive && <span className={cn(TEXT_SUB, "ml-1")}>(ngừng bán)</span>}
                         </TableCell>
                         <TableCell>
-                          <span className="block max-w-[28rem] truncate" title={r.productName}>
+                          <span className="block max-w-xs truncate 2xl:max-w-md" title={r.productName}>
                             {r.productName}
                           </span>
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums text-slate-700">
                           {formatNumber(r.book)}
+                          {onHandModel && (r.held ?? 0) > 0 && (
+                            <span
+                              className={cn(TEXT_SUB, "block")}
+                              title="Trong số sổ này có phần đang giữ cho đơn đã chốt chưa giao — kiện đã gói vẫn đếm"
+                            >
+                              giữ {formatNumber(r.held ?? 0)}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <Input
@@ -594,6 +703,18 @@ export default function StocktakePage() {
                           )}
                         >
                           {diff === null ? "—" : diff === 0 ? "khớp" : `${diff > 0 ? "+" : "−"}${formatNumber(Math.abs(diff))}`}
+                          {drift !== 0 && (
+                            <span
+                              className="mt-0.5 block text-xs font-normal text-sky-700"
+                              title={`Lúc đếm sổ là ${formatNumber(bookAt[r.productId])}, nay là ${formatNumber(r.book)} (có hàng ra / vào sau khi đếm). Chốt sẽ chỉ ghi phần chênh so với sổ lúc đếm.`}
+                            >
+                              sổ đổi {drift > 0 ? "+" : "−"}
+                              {formatNumber(Math.abs(drift))} ·{" "}
+                              <button type="button" className="underline underline-offset-2" onClick={() => recount(r.productId)}>
+                                đếm lại
+                              </button>
+                            </span>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

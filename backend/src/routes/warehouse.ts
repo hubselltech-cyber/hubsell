@@ -3,6 +3,7 @@ import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/clien
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { channelScope } from "../lib/channel-filter";
+import { shipStockTx } from "../integrations/order-stock";
 import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
@@ -570,18 +571,25 @@ router.post("/returns/:id/receive", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const updated = await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        returnStatus: ReturnStatus.RECEIVED,
-        // Mốc "đã cầm hàng trên tay" — dừng đồng hồ đếm ngày chờ về
-        returnedAt: new Date(),
-        // Hàng đã quay về thì vòng đời giao hàng của đơn kết thúc
-        shippingStatus: ShippingStatus.CANCELLED,
-        // Đơn sàn chưa kịp báo hoàn: lấy luôn lúc quét làm mốc báo hoàn
-        returnRequestedAt: order.returnRequestedAt ?? new Date(),
-      },
-      include: { channel: { select: { channelName: true, shopName: true } } },
+    const updated = await prisma.$transaction(async (tx) => {
+      // Kiện đã quay về tay kho mà đơn còn nằm trong bộ đếm "đang giữ" (Hubsell chưa từng thấy đơn
+      // rời kho) → thực tế hàng đã rời kho rồi mới quay về: đưa đơn ra khỏi bộ đếm giữ ngay tại đây
+      // (kho chuẩn quốc tế lát 2). Kiện "đã nhận · chờ nhập kho" chưa tính là hàng trong kho cho
+      // tới khi bấm Nhập kho. Hàm tự chống lặp; đơn không còn dấu giữ thì không làm gì.
+      await shipStockTx(tx, order.id, "MANUAL");
+      return tx.order.update({
+        where: { id: order.id },
+        data: {
+          returnStatus: ReturnStatus.RECEIVED,
+          // Mốc "đã cầm hàng trên tay" — dừng đồng hồ đếm ngày chờ về
+          returnedAt: new Date(),
+          // Hàng đã quay về thì vòng đời giao hàng của đơn kết thúc
+          shippingStatus: ShippingStatus.CANCELLED,
+          // Đơn sàn chưa kịp báo hoàn: lấy luôn lúc quét làm mốc báo hoàn
+          returnRequestedAt: order.returnRequestedAt ?? new Date(),
+        },
+        include: { channel: { select: { channelName: true, shopName: true } } },
+      });
     });
 
     res.json({

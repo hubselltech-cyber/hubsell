@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ApiError, setStockLevel, type Product, type StockLocation } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { locationLabel, locationTree } from "@/lib/stock-locations";
+import { heldShown, isOnHand, stockShown } from "@/lib/stock-model";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +38,13 @@ export function StockLevelsCell({
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const qtyById = new Map((product.stockLevels ?? []).map((l) => [l.locationId, l.quantity]));
+  // Shop cách ON_HAND (kho chuẩn quốc tế, 20/11/2026): số tại vị trí là hàng TRONG KHO ở đó = phần bán
+  // được + phần đang giữ cho đơn đã chốt; số gõ khi sửa cũng là số trong kho tại vị trí.
+  const onHandModel = isOnHand(product);
+  const qtyById = new Map(
+    (product.stockLevels ?? []).map((l) => [l.locationId, l.quantity + (onHandModel ? (l.committed ?? 0) : 0)])
+  );
+  const heldById = new Map((product.stockLevels ?? []).map((l) => [l.locationId, l.committed ?? 0]));
   // Tóm tắt: các vị trí có hàng theo thứ tự ưu tiên, MỖI VỊ TRÍ MỘT DÒNG (anh
   // Trung 24/09 xem prod: "mỗi kho 1 dòng vì sau này còn có vị trí kệ, tầng
   // bên cạnh nữa"), tối đa 3 dòng + "+n khác".
@@ -56,7 +63,10 @@ export function StockLevelsCell({
       const r = await setStockLevel({ productId: product.id, locationId, quantity: n });
       const name = locations.find((l) => l.id === locationId)?.name ?? "vị trí";
       if (r.delta === 0) toast.info("Số không đổi");
-      else toast.success(`${name}: ${formatNumber(r.previous)} → ${formatNumber(n)} · tổng ${formatNumber(r.quantityInStock)}`);
+      else
+        toast.success(
+          `${name}: ${formatNumber(r.previous)} → ${formatNumber(n)} · ${onHandModel ? "tồn bán" : "tổng"} ${formatNumber(r.quantityInStock)}`
+        );
       setEditingId(null);
       onSaved();
     } catch (err) {
@@ -103,7 +113,21 @@ export function StockLevelsCell({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">
         <p className={cn(TEXT_SUB, "px-1 pb-1")}>
-          Vị trí · tồn bán <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
+          {onHandModel ? (
+            <>
+              Vị trí · trong kho <b className="text-foreground">{formatNumber(stockShown(product))}</b>
+              {heldShown(product) > 0 && (
+                <>
+                  {" "}
+                  · đang giữ <b className="text-foreground">{formatNumber(heldShown(product))}</b>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              Vị trí · tồn bán <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
+            </>
+          )}
           {locations.some((l) => !l.sellable && (qtyById.get(l.id) ?? 0) !== 0) && (
             <>
               {" "}
@@ -135,6 +159,11 @@ export function StockLevelsCell({
                   {!l.sellable && (
                     <span className={cn(TEXT_SUB, "ml-1")} title="Không tính vào tồn bán">
                       (không bán)
+                    </span>
+                  )}
+                  {onHandModel && (heldById.get(l.id) ?? 0) > 0 && (
+                    <span className={cn(TEXT_SUB, "ml-1")} title="Trong số hàng ở vị trí này, phần đang giữ cho đơn đã chốt chưa giao">
+                      (giữ {formatNumber(heldById.get(l.id) ?? 0)})
                     </span>
                   )}
                 </span>

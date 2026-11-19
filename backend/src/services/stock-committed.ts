@@ -99,11 +99,56 @@ export async function adjustCommittedForOrdersTx(tx: Tx, orderIds: string[], sig
 }
 
 /**
- * Đánh dấu CẢ LÔ đã rời kho: ghi mốc + nguồn và XÓA dấu giữ trong cùng một câu (mục 14.1 dòng 1).
- * Nơi gọi đã khóa các dòng đơn và đã trừ bộ đếm.
+ * NHẬT KÝ KHO cho hàng vừa ra khỏi bộ đếm giữ (kho chuẩn quốc tế lát 3): mỗi (đơn, mã, vị trí)
+ * một dòng — sổ (Có thể bán) KHÔNG đổi nên changeQuantity = 0, "Đang giữ" −n, "Tồn kho" −n.
+ * Nguồn CHANNEL_INACTIVE (gian chết) ghi loại RELEASE_INACTIVE: thôi giữ chứ hàng chưa đi đâu.
+ * Gọi SAU khi đã trừ bộ đếm (số "sau bút toán" đọc từ Product lúc này), trong cùng giao dịch.
+ * Một câu INSERT … SELECT cho cả lô, không lặp từng đơn. Dòng có changeQuantity = 0 nên không
+ * lọt vào bất kỳ phép cộng "nhật ký trừ của đơn" nào (đều lọc changeQuantity < 0).
+ */
+export async function logShippedOrdersTx(tx: Tx, orderIds: string[], source: ShipSource): Promise<void> {
+  if (orderIds.length === 0) return;
+  const kind = source === "CHANNEL_INACTIVE" ? "RELEASE_INACTIVE" : "SHIP";
+  const how =
+    source === "HANDOVER"
+      ? "Xuất kho — đã bàn giao cho vận chuyển (Biên bản bàn giao), đơn "
+      : source === "MANUAL"
+        ? "Xuất kho — đổi trạng thái tay, đơn "
+        : source === "CHANNEL_INACTIVE"
+          ? "Thôi giữ — gian không còn hoạt động, đơn "
+          : "Xuất kho — sàn báo đã giao cho vận chuyển, đơn ";
+  await tx.$executeRaw`
+    INSERT INTO "InventoryLog"
+      ("id", "productId", "changeQuantity", "type", "reason", "orderId", "locationId",
+       "balanceAfter", "kind", "heldChange", "heldAfter", "onHandAfter", "createdAt")
+    SELECT gen_random_uuid()::text, q."productId", 0, 'SYNC'::"InventoryLogType",
+           ${how} || o."orderCode", q."orderId", q."locationId",
+           p."quantityInStock", ${kind}, -q.qty,
+           p."committedQuantity" + p."holdQuantity",
+           p."quantityInStock" + p."committedQuantity" + COALESCE(u.qty, 0),
+           ${NOW_UTC}
+    FROM (
+      SELECT il."orderId", il."productId", il."locationId", SUM(-il."changeQuantity")::int AS qty
+      FROM "InventoryLog" il
+      WHERE il."orderId" = ANY(${orderIds}::text[]) AND il."changeQuantity" < 0
+      GROUP BY 1, 2, 3
+    ) q
+    JOIN "Order" o ON o."id" = q."orderId"
+    JOIN "Product" p ON p."id" = q."productId"
+    LEFT JOIN LATERAL (
+      SELECT SUM(lv."quantity")::int AS qty
+      FROM "product_stock_levels" lv JOIN "stock_locations" sl ON sl."id" = lv."locationId"
+      WHERE lv."productId" = p."id" AND sl."sellable" = false
+    ) u ON true`;
+}
+
+/**
+ * Đánh dấu CẢ LÔ đã rời kho: ghi mốc + nguồn và XÓA dấu giữ trong cùng một câu (mục 14.1 dòng 1),
+ * kèm dòng Nhật ký kho. Nơi gọi đã khóa các dòng đơn và đã trừ bộ đếm.
  */
 async function markShippedTx(tx: Tx, orderIds: string[], source: ShipSource): Promise<void> {
   if (orderIds.length === 0) return;
+  await logShippedOrdersTx(tx, orderIds, source);
   await tx.$executeRaw`
     UPDATE "Order" SET "stockShippedAt" = ${NOW_UTC}, "stockShipSource" = ${source}, "stockCommittedAt" = NULL
     WHERE "id" = ANY(${orderIds}::text[])`;

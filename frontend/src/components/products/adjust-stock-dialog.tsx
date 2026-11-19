@@ -15,8 +15,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LocationSelect } from "@/components/products/location-select";
+import { StockReasonChips } from "@/components/products/stock-reason-chips";
+import { defaultStockReason, type StockReasonCode } from "@/lib/stock-reason";
 import { adjustInventory, ApiError, type Product, type StockLocation } from "@/lib/api";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
+import { heldShown, isOnHand, stockShown } from "@/lib/stock-model";
+import { formatNumber } from "@/lib/format";
 
 interface AdjustStockDialogProps {
   product: Product;
@@ -39,6 +43,8 @@ export function AdjustStockDialog({
 }: AdjustStockDialogProps) {
   const [quantity, setQuantity] = useState("1");
   const [reason, setReason] = useState("");
+  // Lý do theo danh sách (kho chuẩn quốc tế lát 4): nhập chọn sẵn "Nhập hàng", xuất để người làm chọn.
+  const [reasonCode, setReasonCode] = useState<StockReasonCode | "">(() => defaultStockReason(type));
   const [submitting, setSubmitting] = useState(false);
   // Vị trí: nhớ lần chọn cuối (anh Trung 15/09: "nhớ lần chọn cuối"); xuất để
   // trống = trừ theo thứ tự ưu tiên.
@@ -57,8 +63,11 @@ export function AdjustStockDialog({
       return;
     }
     if (!isImport && qty > product.quantityInStock) {
+      // Xuất tay chỉ lấy được phần CHƯA có đơn giữ (sổ tồn bán) — ở cả hai cách hiển thị.
       toast.error(
-        `Không đủ hàng để xuất: tồn kho hiện tại ${product.quantityInStock}`
+        isOnHand(product)
+          ? `Không đủ hàng để xuất: trong kho ${formatNumber(stockShown(product))}, đang giữ ${formatNumber(heldShown(product))} cho đơn → xuất được tối đa ${formatNumber(Math.max(0, product.quantityInStock))}`
+          : `Không đủ hàng để xuất: tồn kho hiện tại ${product.quantityInStock}`
       );
       return;
     }
@@ -70,6 +79,7 @@ export function AdjustStockDialog({
         type,
         quantity: qty,
         reason: reason.trim() || undefined,
+        reasonCode: reasonCode || undefined,
         locationId: locationId || undefined,
       });
       if (locationId) rememberLocation(locationId);
@@ -78,6 +88,7 @@ export function AdjustStockDialog({
       );
       setQuantity("1");
       setReason("");
+      setReasonCode(defaultStockReason(type));
       onOpenChange(false);
       onDone();
     } catch (err) {
@@ -100,8 +111,14 @@ export function AdjustStockDialog({
             {isImport ? "Nhập kho" : "Xuất kho"}: {product.productName}
           </DialogTitle>
           <DialogDescription>
-            Mã SKU: {product.skuCode} · Tồn kho hiện tại:{" "}
-            <span className="font-semibold">{product.quantityInStock}</span>
+            Mã SKU: {product.skuCode} · {isOnHand(product) ? "Trong kho" : "Tồn kho hiện tại"}:{" "}
+            <span className="font-semibold">{formatNumber(stockShown(product))}</span>
+            {isOnHand(product) && heldShown(product) > 0 && (
+              <>
+                {" "}
+                · đang giữ cho đơn <span className="font-semibold">{formatNumber(heldShown(product))}</span>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -134,7 +151,11 @@ export function AdjustStockDialog({
             </div>
           )}
           <div className="grid gap-2">
-            <Label htmlFor="adjust-reason">Lý do (không bắt buộc)</Label>
+            <Label>Lý do</Label>
+            <StockReasonChips type={type} value={reasonCode} onChange={setReasonCode} disabled={submitting} />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="adjust-reason">Ghi chú (không bắt buộc)</Label>
             <Input
               id="adjust-reason"
               placeholder={isImport ? "VD: Nhập thêm từ xưởng" : "VD: Xuất bán tại quầy"}

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Product } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { isOnHand, stockShown } from "@/lib/stock-model";
 
 import { InventoryLogTable } from "./inventory-log-table";
 
@@ -39,9 +40,10 @@ export function ProductHistoryDialog({
             Lịch sử kho: {product.productName}
           </DialogTitle>
           <DialogDescription>
-            Mã SKU: <span className="font-mono">{product.skuCode}</span> · Tồn hiện tại:{" "}
+            Mã SKU: <span className="font-mono">{product.skuCode}</span> ·{" "}
+            {isOnHand(product) ? "Trong kho hiện tại" : "Tồn hiện tại"}:{" "}
             <span className="font-semibold text-foreground">
-              {formatNumber(product.quantityInStock)}
+              {formatNumber(stockShown(product))}
             </span>
           </DialogDescription>
         </DialogHeader>

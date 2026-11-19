@@ -69,10 +69,14 @@ function Tile({ label, sub, children }: { label: string; sub?: string; children:
 
 function StatsBody({ stats }: { stats: InventoryStats }) {
   const seesCost = !stats.costPriceHidden;
+  // Shop cách ON_HAND (kho chuẩn quốc tế, 20/11/2026): số lượng và giá trị tính trên HÀNG TRONG KHO
+  // (gồm hàng đang giữ cho đơn); "hết hàng" = không còn hàng để bán — mã đó vẫn có thể còn hàng trong
+  // kho vì đang giữ cho đơn, nên dòng "hết hàng" có số lượng và giá trị riêng.
+  const onHand = stats.stockModel === "ON_HAND";
   const activeSkus = stats.inStock.skus + stats.outOfStock.skus;
   const rows: { label: string; bucket: InventoryStatsBucket; total?: boolean }[] = [
-    { label: "Đang bán, còn hàng", bucket: stats.inStock },
-    { label: "Đang bán, hết hàng", bucket: stats.outOfStock },
+    { label: onHand ? "Đang bán, còn hàng để bán" : "Đang bán, còn hàng", bucket: stats.inStock },
+    { label: onHand ? "Đang bán, hết hàng để bán" : "Đang bán, hết hàng", bucket: stats.outOfStock },
     // Ngừng bán chỉ thành một dòng khi có — kho không ngừng mã nào thì bảng gọn hai dòng.
     ...(stats.inactive.skus > 0 ? [{ label: "Ngừng bán", bucket: stats.inactive }] : []),
     { label: "Tổng cộng", bucket: stats.total, total: true },
@@ -91,12 +95,26 @@ function StatsBody({ stats }: { stats: InventoryStats }) {
         >
           {formatNumber(activeSkus)}
         </Tile>
-        <Tile label="Tổng tồn kho" sub={`${formatNumber(stats.outOfStock.skus)} SKU đang hết hàng`}>
+        <Tile
+          label="Tổng tồn kho"
+          sub={
+            onHand
+              ? `${formatNumber(stats.outOfStock.skus)} SKU hết hàng để bán`
+              : `${formatNumber(stats.outOfStock.skus)} SKU đang hết hàng`
+          }
+        >
           {formatNumber(stats.total.quantity)}
         </Tile>
         {seesCost && (
           <div className="sm:col-span-3">
-            <Tile label="Tổng giá trị tồn" sub="Tồn kho × giá vốn của từng SKU">
+            <Tile
+              label="Tổng giá trị tồn"
+              sub={
+                onHand
+                  ? "Hàng trong kho × giá vốn của từng SKU, gồm cả hàng đã có đơn chưa giao"
+                  : "Tồn kho × giá vốn của từng SKU"
+              }
+            >
               <Money value={stats.total.value ?? 0} />
             </Tile>
           </div>

@@ -8,9 +8,10 @@
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
-import { InventoryLogType, ShippingStatus } from "@prisma/client";
-import { applyStockDelta, stockCommittedOn } from "../services/stock-ledger";
-import { adjustCommittedForOrdersTx } from "../services/stock-committed";
+import { InventoryLogType, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { applyStockDelta, getStockSettings, stockCommittedOn } from "../services/stock-ledger";
+import { adjustCommittedForOrdersTx, logShippedOrdersTx } from "../services/stock-committed";
+import { CANCELLED_AFTER_SHIP } from "./cancelled-after-ship";
 
 export type StockOutcome =
   | "none"
@@ -18,6 +19,8 @@ export type StockOutcome =
   | "already-deducted"
   | "restored"
   | "already-restored"
+  // Hủy sau khi hàng rời kho, shop ở chế độ "cộng khi kho nhận kiện": chưa cộng, đơn chờ hàng về.
+  | "awaiting-return"
   | "held"
   | "already-held";
 
@@ -208,58 +211,220 @@ export async function deductStockTx(
   return { deducted, outcome: deducted > 0 ? "deducted" : "none", productIds };
 }
 
+// ============================================================
+// HỦY ĐƠN + NHẬN HÀNG HOÀN — kho chuẩn quốc tế LÁT 2 (20/11/2026, docs mục 5.2 + 15)
+//
+// Một bộ hàm có khóa dòng đơn cho MỌI đường: webhook sàn báo hủy, hủy tay, nhận hàng hoàn lẻ,
+// nhập kho hàng hoàn theo lô. Luật:
+//   • Hủy khi hàng CHƯA rời kho  → nhả giữ + cộng lại sổ ngay (như cũ).
+//   • Hủy khi hàng ĐÃ rời kho    → theo cài đặt của shop (shop_sync_settings.restockOnReturn):
+//       ON_CANCEL  (mặc định, cách cũ): cộng lại sổ ngay lúc sàn báo hủy;
+//       ON_RECEIVE (chuẩn): KHÔNG cộng; đơn vào "Chờ hàng về", kho nhận kiện nguyên vẹn mới cộng.
+//   • Mốc stockRestoredAt đọc DƯỚI khóa dòng đơn → hủy tay × webhook hủy × nhận hoàn chạy đua
+//     nhau cũng chỉ cộng đúng một lần.
+// ============================================================
+
+/** Một dòng đã cộng lại sổ (cho câu trả lời của route và để đẩy tồn). */
+export interface RestoredLine {
+  productId: string;
+  productName: string;
+  restoredQuantity: number;
+  newQuantity: number;
+}
+
 /**
- * Hoàn kho khi đơn bị hủy — mirror luồng hủy đơn thủ công ở routes/orders.ts:
- * tìm các bút toán TRỪ kho gắn với đơn, cộng trả lại, ghi mốc `stockRestoredAt`
- * để không hoàn lần hai. Chỉ hoàn khi trước đó thực sự đã trừ.
+ * Hàng của đơn đã thật sự RỜI KHO chưa. Ba dấu, có một là đủ:
+ *   • sàn hủy đơn đang giao / đã giao (cờ CANCELLED_AFTER_SHIP do hàm ghi đơn cắm);
+ *   • có mốc rời kho của lát 1 (Biên bản bàn giao / sàn báo / đổi tay) — trừ nguồn
+ *     CHANNEL_INACTIVE: đó là gian chết nên thôi giữ, hàng chưa hề đi đâu;
+ *   • trạng thái đang lưu là Đang giao / Đã giao (đường hủy tay: trạng thái chưa bị ghi đè).
+ */
+export function orderLeftWarehouse(o: {
+  stockShippedAt: Date | null;
+  stockShipSource: string | null;
+  platformReturnStatus: string | null;
+  shippingStatus: ShippingStatus;
+}): boolean {
+  if (o.platformReturnStatus === CANCELLED_AFTER_SHIP) return true;
+  if (o.stockShippedAt && o.stockShipSource !== "CHANNEL_INACTIVE") return true;
+  return hasLeftWarehouse(o.shippingStatus);
+}
+
+/**
+ * Cộng lại sổ theo các dòng nhật ký TRỪ của đơn. Nơi gọi đã khóa dòng đơn và đã kiểm mốc.
+ * `capByReturned`: chỉ cộng tối đa số lượng khách THỰC TRẢ của từng mã (OrderItem.returnedQuantity)
+ * khi đơn có ghi số đó; đơn không dòng nào có số thực trả (kiện quay đầu nguyên đơn) thì cộng đủ.
+ */
+async function restoreDeductionsTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  opts: {
+    reason: string;
+    actorId?: string | null;
+    kind: "RELEASE" | "RETURN";
+    /** Đơn vừa được nhả khỏi bộ đếm giữ ở giao dịch này → dòng nhật ký ghi Đang giữ −n. */
+    heldReleased: boolean;
+    useReturnDefault?: boolean;
+    capByReturned?: boolean;
+  }
+): Promise<RestoredLine[]> {
+  const deductions = await tx.inventoryLog.findMany({
+    where: { orderId, changeQuantity: { lt: 0 } },
+    orderBy: [{ productId: "asc" }, { createdAt: "asc" }],
+    include: { product: { select: { productName: true } } },
+  });
+  let cap: Map<string, number> | null = null;
+  if (opts.capByReturned) {
+    const items = await tx.orderItem.findMany({
+      where: { orderId, productId: { not: null } },
+      select: { productId: true, returnedQuantity: true },
+    });
+    if (items.some((i) => i.returnedQuantity > 0)) {
+      cap = new Map();
+      for (const i of items) cap.set(i.productId!, (cap.get(i.productId!) ?? 0) + i.returnedQuantity);
+    }
+  }
+  const lines: RestoredLine[] = [];
+  for (const log of deductions) {
+    let qty = Math.abs(log.changeQuantity);
+    if (cap) {
+      const left = cap.get(log.productId) ?? 0;
+      qty = Math.min(qty, left);
+      cap.set(log.productId, left - qty);
+    }
+    if (qty <= 0) continue;
+    const written = await applyStockDelta(tx, {
+      productId: log.productId,
+      delta: qty,
+      type: InventoryLogType.SYNC,
+      reason: opts.reason,
+      orderId,
+      actorId: opts.actorId ?? null,
+      // Trả về ĐÚNG vị trí đã trừ (log.locationId); hàng hoàn thì về "nơi nhận hoàn" nếu shop đặt.
+      locationId: log.locationId,
+      useReturnDefault: opts.useReturnDefault,
+      kind: opts.kind,
+      logHeldChange: opts.heldReleased ? -qty : 0,
+    });
+    lines.push({
+      productId: log.productId,
+      productName: log.product.productName,
+      restoredQuantity: qty,
+      newQuantity: written.quantityInStock,
+    });
+  }
+  return lines;
+}
+
+/**
+ * ĐƠN BỊ HỦY (webhook sàn, hủy tay). Khóa dòng đơn, nhả giữ, rồi:
+ *   - đã cộng lại sổ từ trước → `already-restored`, không làm gì;
+ *   - hàng đã rời kho + shop ở chế độ ON_RECEIVE → KHÔNG cộng, bảo đảm đơn nằm ở "Chờ hàng về",
+ *     trả `awaiting-return`;
+ *   - còn lại → cộng lại sổ đúng vị trí đã trừ, ghi mốc `stockRestoredAt`.
+ * `lines` = từng dòng đã cộng (rỗng khi không cộng gì).
  */
 export async function restoreStockTx(
   tx: Prisma.TransactionClient,
   orderId: string,
-  sourceLabel: string
-): Promise<{ restored: number; outcome: StockOutcome; productIds: string[] }> {
+  sourceLabel: string,
+  opts: { actorId?: string | null; reason?: string } = {}
+): Promise<{ restored: number; outcome: StockOutcome; productIds: string[]; lines: RestoredLine[] }> {
   await lockOrderRow(tx, orderId);
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { stockRestoredAt: true, orderCode: true },
+    select: {
+      stockRestoredAt: true,
+      orderCode: true,
+      shippingStatus: true,
+      returnStatus: true,
+      platformReturnStatus: true,
+      stockShippedAt: true,
+      stockShipSource: true,
+      channel: { select: { userId: true } },
+    },
   });
-  if (!order) return { restored: 0, outcome: "none", productIds: [] };
+  if (!order) return { restored: 0, outcome: "none", productIds: [], lines: [] };
   // Đơn hủy khi hàng CHƯA rời kho → ra khỏi bộ đếm "đang giữ" (đã rời kho rồi thì không còn gì
-  // để nhả). Gọi trước chốt chặn stockRestoredAt: hàm tự chống lặp bằng mốc của nó.
-  await releaseCommittedTx(tx, orderId);
+  // để nhả). Gọi trước chốt chặn stockRestoredAt: hàm tự chống lặp bằng dấu của nó.
+  const rel = await releaseCommittedTx(tx, orderId);
   if (order.stockRestoredAt) {
-    return { restored: 0, outcome: "already-restored", productIds: [] };
+    return { restored: 0, outcome: "already-restored", productIds: [], lines: [] };
   }
 
-  const deductions = await tx.inventoryLog.findMany({
-    where: { orderId, changeQuantity: { lt: 0 } },
+  const left = orderLeftWarehouse(order);
+  if (left) {
+    const settings = await getStockSettings(tx, order.channel.userId);
+    if (settings.restockOnReturn === "ON_RECEIVE") {
+      // Chuẩn: kiện còn trên đường về thì chưa phải hàng trong kho. Đơn phải nằm ở "Chờ hàng về"
+      // để kho quét nhận (hàm ghi đơn của sàn thường đã cắm cờ; ở đây lo các đường còn lại).
+      if (order.returnStatus === ReturnStatus.NONE) {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            returnStatus: ReturnStatus.AWAITING,
+            returnRequestedAt: new Date(),
+            platformReturnStatus: order.platformReturnStatus ?? CANCELLED_AFTER_SHIP,
+          },
+        });
+      }
+      return { restored: 0, outcome: "awaiting-return", productIds: [], lines: [] };
+    }
+  }
+
+  const lines = await restoreDeductionsTx(tx, orderId, {
+    reason: opts.reason ?? `Hoàn kho tự động — ${sourceLabel} hủy đơn ${order.orderCode}`,
+    actorId: opts.actorId,
+    kind: left ? "RETURN" : "RELEASE",
+    heldReleased: rel.released > 0,
   });
-
-  let restored = 0;
-  const productIds: string[] = [];
-  for (const log of deductions) {
-    const qty = Math.abs(log.changeQuantity);
-    // Trả về ĐÚNG vị trí đã trừ (log.locationId); dòng cũ chưa có vị trí → gốc.
-    await applyStockDelta(tx, {
-      productId: log.productId,
-      delta: qty,
-      type: InventoryLogType.SYNC,
-      reason: `Hoàn kho tự động — ${sourceLabel} hủy đơn ${order.orderCode}`,
-      orderId,
-      locationId: log.locationId,
-    });
-    restored += qty;
-    if (!productIds.includes(log.productId)) productIds.push(log.productId);
-  }
-
+  const restored = lines.reduce((s, l) => s + l.restoredQuantity, 0);
+  const productIds = [...new Set(lines.map((l) => l.productId))];
   if (restored > 0) {
     await tx.order.update({
       where: { id: orderId },
       data: { stockRestoredAt: new Date() },
     });
-    return { restored, outcome: "restored", productIds };
+    return { restored, outcome: "restored", productIds, lines };
   }
-  return { restored: 0, outcome: "none", productIds: [] };
+  return { restored: 0, outcome: "none", productIds: [], lines: [] };
+}
+
+/**
+ * KHO NHẬN KIỆN HOÀN NGUYÊN VẸN → cộng lại sổ (nhận lẻ, nhập kho theo lô). Khóa dòng đơn và đọc
+ * mốc `stockRestoredAt` DƯỚI khóa: đơn đã cộng từ lúc hủy (chế độ ON_CANCEL) thì không cộng nữa.
+ * Hàng về "nơi nhận hoàn" nếu shop đặt, không thì về đúng vị trí đã trừ. Shop ở chế độ chuẩn
+ * (ON_RECEIVE) cộng theo số lượng khách thực trả từng mã khi sàn có báo số đó.
+ * Tự ghi `stockRestoredAt` khi có cộng.
+ */
+export async function restoreReturnedStockTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  reason: string,
+  actorId: string | null = null
+): Promise<{ lines: RestoredLine[]; alreadyRestored: boolean }> {
+  await lockOrderRow(tx, orderId);
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { stockRestoredAt: true, channel: { select: { userId: true } } },
+  });
+  if (!order) return { lines: [], alreadyRestored: false };
+  // Đơn chưa từng được ghi "rời kho" mà kho đã nhận lại hàng → ra khỏi bộ đếm "đang giữ".
+  const rel = await releaseCommittedTx(tx, orderId);
+  if (order.stockRestoredAt) return { lines: [], alreadyRestored: true };
+  const settings = await getStockSettings(tx, order.channel.userId);
+  const lines = await restoreDeductionsTx(tx, orderId, {
+    reason,
+    actorId,
+    kind: "RETURN",
+    heldReleased: rel.released > 0,
+    useReturnDefault: true,
+    capByReturned: settings.restockOnReturn === "ON_RECEIVE",
+  });
+  if (lines.length > 0) {
+    await tx.order.update({ where: { id: orderId }, data: { stockRestoredAt: new Date() } });
+  }
+  return { lines, alreadyRestored: false };
 }
 
 // ============================================================
@@ -309,6 +474,8 @@ export async function shipStockTx(
     return { shipped: 0 };
   }
   const shipped = await adjustCommittedForOrdersTx(tx, [orderId], -1);
+  // Nhật ký kho: dòng "Xuất cho đơn" (Đang giữ −n, Tồn kho −n, Có thể bán không đổi).
+  await logShippedOrdersTx(tx, [orderId], source);
   // Một dấu duy nhất cho "đang giữ" (mục 14.1): ghi mốc rời kho và XÓA dấu giữ trong cùng một câu.
   // Không mất thông tin — stockCommittedAt luôn bằng stockDeductedAt.
   await tx.order.update({

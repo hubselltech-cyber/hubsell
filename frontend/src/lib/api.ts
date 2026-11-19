@@ -309,8 +309,23 @@ export interface Product {
   barcode?: string | null;
   /** false = NGỪNG KINH DOANH (24/09): ẩn khỏi bảng mặc định, không cảnh báo hết hàng. */
   isActive?: boolean;
-  /** Tồn theo vị trí (đợt B) — chỉ các vị trí có số ≠ 0; rỗng khi shop chưa dùng vị trí. */
-  stockLevels?: { locationId: string; quantity: number }[];
+  /**
+   * Tồn theo vị trí (đợt B) — chỉ các vị trí có số ≠ 0; rỗng khi shop chưa dùng vị trí. `quantity` =
+   * phần BÁN ĐƯỢC tại vị trí, `committed` = phần đang giữ cho đơn đã chốt tại đó (hàng trong kho tại
+   * vị trí = quantity + committed).
+   */
+  stockLevels?: { locationId: string; quantity: number; committed?: number }[];
+  /**
+   * KHO CHUẨN QUỐC TẾ (20/11/2026) — cách hiển thị tồn của shop chứa sản phẩm này (máy chủ gắn vào
+   * từng dòng). Đọc số tồn qua lib/stock-model.ts, không lấy thẳng quantityInStock làm "tồn kho".
+   */
+  stockModel?: StockModel;
+  /** Hàng TRONG KHO = sổ + đang giữ cho đơn đã chốt + ô không bán (số của cột Tồn kho ở cách ON_HAND). */
+  onHand?: number;
+  /** Đang giữ = đơn đã chốt chưa giao + đơn chưa thanh toán (cột Đang giữ ở cách ON_HAND). */
+  heldQuantity?: number;
+  /** Hàng ở các ô "không bán" (hàng lỗi / chờ kiểm). */
+  unsellableQuantity?: number;
   createdAt: string;
   /**
    * "CÓ THỂ BÁN" = tồn − đang giữ − tồn an toàn: số Hubsell đẩy lên MỌI gian
@@ -396,6 +411,24 @@ export interface ProductListResponse {
   outOfStockCount?: number;
   /** view=grouped khi đang lọc: TỔNG phân loại của từng mẫu (groupKey → số) để dòng cha ghi "1/6 phân loại". */
   groupTotals?: Record<string, number>;
+  /** Cách hiển thị tồn + cách cộng tồn hàng hoàn của shop (kho chuẩn quốc tế, 20/11/2026). */
+  stockModel?: StockModel;
+  restockOnReturn?: RestockOnReturn;
+  /**
+   * Shop ON_HAND còn "cộng khi sàn báo hủy": hàng của các đơn hủy sau giao đã cộng vào Tồn kho mà kho
+   * CHƯA nhận kiện. Chỉ có khi gọi với `awaiting: true`.
+   */
+  notBackYet?: { units: number; orders: number };
+}
+
+/** LEGACY = Tồn kho là sổ tồn bán (cách cũ); ON_HAND = Tồn kho là hàng trong kho (chuẩn quốc tế). */
+export type StockModel = "LEGACY" | "ON_HAND";
+/** Đơn hủy sau khi hàng rời kho: cộng lại tồn khi sàn báo hủy (cũ) hay khi kho nhận kiện (chuẩn). */
+export type RestockOnReturn = "ON_CANCEL" | "ON_RECEIVE";
+
+/** Hai cài đặt kho của shop — nhân viên cũng đọc được. */
+export function fetchStockModel() {
+  return apiFetch<{ stockModel: StockModel; restockOnReturn: RestockOnReturn }>("/api/inventory/stock-model");
 }
 
 export type ProductStatusFilter = "active" | "inactive" | "all";
@@ -421,6 +454,18 @@ export interface InventoryLogEntry extends InventoryLog {
   balanceAfter?: number | null;
   /** Vị trí bị tác động (đợt B); null khi shop chưa dùng vị trí. */
   location?: { id: string; name: string } | null;
+  /**
+   * BA NGĂN SỐ (kho chuẩn quốc tế, 20/11/2026) — null ở dòng ghi trước ngày này.
+   * kind: RESERVE giữ cho đơn · SHIP xuất cho đơn · RELEASE nhả giữ · RELEASE_INACTIVE thôi giữ (gian
+   * không còn hoạt động) · RETURN nhận hàng hoàn · STOCKTAKE kiểm kê · SET sửa số · TRANSFER chuyển vị trí.
+   */
+  kind?: string | null;
+  /** Phần đổi của "Đang giữ" ở bút toán này. */
+  heldChange?: number | null;
+  /** "Đang giữ" của SKU ngay sau bút toán. */
+  heldAfter?: number | null;
+  /** "Tồn kho" (hàng trong kho) của SKU ngay sau bút toán. */
+  onHandAfter?: number | null;
   order: {
     id: string;
     orderCode: string;
@@ -435,6 +480,8 @@ export interface InventoryLogListResponse {
   page: number;
   pageSize: number;
   pageCount: number;
+  /** Cách hiển thị tồn của shop — ON_HAND thì bảng vẽ ba ngăn số. */
+  stockModel?: StockModel;
 }
 
 /** Cảnh báo lệch tồn: đẩy tồn lên sàn thất bại sau đủ số lần retry. */
@@ -1603,6 +1650,8 @@ export interface SyncSettings {
   initialStockMode: InitialStockMode;
   /** Ngưỡng cảnh báo sắp hết hàng mặc định toàn shop — 0 = tắt. */
   lowStockDefault: number;
+  stockModel?: StockModel;
+  restockOnReturn?: RestockOnReturn;
   updatedAt: string | null;
   /** Số job đang chờ trong hàng đợi đẩy tồn — vẽ tiến độ sau khi sync tay. */
   pendingJobs: number;
@@ -1618,11 +1667,15 @@ export function updateSyncSettings(data: {
   safetyStockDefault?: number;
   initialStockMode?: InitialStockMode;
   lowStockDefault?: number;
+  /** Đơn hủy sau khi hàng rời kho: cộng lại tồn khi sàn báo hủy hay khi kho nhận kiện (chỉ chủ shop). */
+  restockOnReturn?: RestockOnReturn;
 }) {
   return apiFetch<{
     safetyStockDefault: number;
     initialStockMode: InitialStockMode;
     lowStockDefault: number;
+    stockModel?: StockModel;
+    restockOnReturn?: RestockOnReturn;
     queued: number;
   }>("/api/inventory/sync-settings", {
     method: "PUT",
@@ -1889,6 +1942,8 @@ export interface InventoryStats {
   noCostSkus?: number;
   noCostQuantity?: number;
   costPriceHidden: boolean;
+  /** ON_HAND: số lượng và giá trị tính trên hàng trong kho (gồm hàng đang giữ cho đơn). */
+  stockModel?: StockModel;
 }
 
 export function fetchInventoryStats() {
@@ -1917,6 +1972,10 @@ export interface ImportResult {
   totalImported: number;
   skipped: number;
   errors: { row: number; message: string }[];
+  /** Cột "Tồn kho" của tệp đã được hiểu là hàng trong kho (ON_HAND) hay sổ tồn bán (SELLABLE). */
+  stockColumn?: "ON_HAND" | "SELLABLE";
+  /** Shop cách ON_HAND nhập một tệp xuất từ bản cũ (có cột Chờ giao) → đọc theo nghĩa cũ. */
+  legacyFile?: boolean;
 }
 
 // Nhập sản phẩm từ file Excel (multipart/form-data — không dùng apiFetch vì
@@ -2581,6 +2640,8 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
   return apiFetch<{
     order: Order;
     restored: { productName: string; restoredQuantity: number; newQuantity: number }[];
+    /** Hủy đơn đã giao cho vận chuyển ở shop "cộng tồn khi kho nhận kiện": chưa cộng, đơn chờ hàng về. */
+    awaitingReturn?: boolean;
   }>(`/api/orders/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ shippingStatus }),
@@ -4832,7 +4893,10 @@ export function adjustInventory(data: {
   productId: string;
   type: "IMPORT" | "EXPORT";
   quantity: number;
+  /** Ghi chú tự do. */
   reason?: string;
+  /** Lý do theo danh sách (lib/stock-reason.ts) — không bắt buộc. */
+  reasonCode?: string;
   /** Vị trí chứa hàng (đợt B) — bỏ trống = gốc (nhập) / theo ưu tiên (xuất). */
   locationId?: string;
 }) {
@@ -4846,10 +4910,12 @@ export function adjustInventory(data: {
  * SỬA TỒN TRỰC TIẾP trên bảng: gửi số MỚI, server tự tính chênh lệch với tồn
  * hiện tại (khoá dòng), ghi log nhập/xuất rồi đẩy Có thể bán lên các gian đã nối.
  */
-export function setInventoryQuantity(productId: string, quantity: number) {
-  return apiFetch<{ product: Product; log: InventoryLog | null; delta: number }>(
+export function setInventoryQuantity(productId: string, quantity: number, opts: { force?: boolean } = {}) {
+  // Shop ON_HAND: `quantity` là số hàng TRONG KHO. Gõ thấp hơn phần đang giữ cho đơn → máy chủ trả 409
+  // mã BELOW_HELD (cảnh báo, không khóa cứng); gửi lại kèm `force` thì lưu.
+  return apiFetch<{ product: Product; log: InventoryLog | null; delta: number; stockModel?: StockModel }>(
     "/api/inventory/set",
-    { method: "POST", body: JSON.stringify({ productId, quantity }) }
+    { method: "POST", body: JSON.stringify({ productId, quantity, ...(opts.force ? { force: true } : {}) }) }
   );
 }
 
@@ -4859,6 +4925,8 @@ export function adjustInventoryBulk(data: {
   /** purchasePrice (đ) chỉ có nghĩa với phiếu NHẬP và người thấy tài chính (05/11/2026). */
   items: { productId: string; quantity: number; purchasePrice?: number }[];
   reason?: string;
+  /** Lý do theo danh sách (lib/stock-reason.ts), một lý do cho cả phiếu — không bắt buộc. */
+  reasonCode?: string;
   locationId?: string;
   /** Nhà cung cấp của phiếu NHẬP: chọn nhà đã có (id) hoặc gõ tên mới (tạo tại chỗ). */
   supplierId?: string;
@@ -5130,6 +5198,43 @@ export function stockVoucherPrintUrl(id: string): string {
   return `/print/stock-voucher/${encodeURIComponent(id)}`;
 }
 
+/** Một nhóm lý do của báo cáo "Hàng hỏng, mất & chênh kiểm kê" (kho chuẩn quốc tế lát 4, 20/11/2026). */
+export interface LossReportGroup {
+  key: string;
+  label: string;
+  /** Tổng số lượng GIẢM (số dương) và TĂNG của nhóm trong kỳ — không bù trừ nhau. */
+  down: number;
+  up: number;
+  skus: number;
+  lines: number;
+  /** Theo giá vốn hiện tại — chỉ có khi người xem thấy tài chính. */
+  downValue?: number;
+  upValue?: number;
+}
+
+export interface LossReport {
+  from: string;
+  to: string;
+  groups: LossReportGroup[];
+  total: { down: number; up: number; downValue?: number; upValue?: number };
+  /** 20 mã giảm ròng nhiều nhất trong kỳ. */
+  top: {
+    productId: string;
+    skuCode: string;
+    productName: string;
+    variantName: string | null;
+    down: number;
+    up: number;
+    netValue?: number;
+  }[];
+  costPriceHidden: boolean;
+}
+
+export function fetchLossReport(params: { from: string; to: string }) {
+  const qs = new URLSearchParams({ from: params.from, to: params.to });
+  return apiFetch<LossReport>(`/api/inventory/loss-report?${qs.toString()}`);
+}
+
 /** NHẬT KÝ KHO — sổ toàn shop hoặc theo một SKU, có lọc + phân trang (24/09). */
 export function fetchInventoryLogs(params: {
   productId?: string;
@@ -5297,8 +5402,115 @@ export interface StocktakeRow {
   barcode?: string | null;
   productName: string;
   isActive: boolean;
-  /** Số sổ (tại vị trí, hoặc tồn bán toàn kho khi chưa dùng vị trí). */
+  /**
+   * Số sổ. Shop LEGACY: tồn bán (tại vị trí, hoặc toàn kho). Shop ON_HAND: hàng TRONG KHO — gồm cả
+   * kiện đã gói cho đơn chưa giao.
+   */
   book: number;
+  /** ON_HAND: trong số sổ có bao nhiêu đang giữ cho đơn đã chốt (kiện đã gói chưa giao). */
+  held?: number;
+}
+
+// ----- KIỂM KÊ THEO PHIÊN (kho chuẩn quốc tế lát 5, 20/11/2026 — backend routes/stocktakes.ts) -----
+
+export type StocktakeSessionStatus = "COUNTING" | "PENDING" | "APPROVED" | "CANCELLED";
+
+export interface StocktakeSessionSummary {
+  id: string;
+  code: string;
+  status: StocktakeSessionStatus;
+  locationName: string | null;
+  blind: boolean;
+  note: string | null;
+  createdAt: string;
+  createdByName: string | null;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  lineCount: number;
+  adjustedCount: number;
+  totalDown: number;
+  totalUp: number;
+}
+
+export interface StocktakeSessionLine {
+  productId: string;
+  skuCode: string;
+  productName: string;
+  counted: number;
+  countedAt: string;
+  countedByName: string | null;
+  /** Các trường dưới KHÔNG có khi phiên đếm mù và người xem không phải chủ shop (đang đếm). */
+  bookAtCount?: number;
+  /** Phiên còn mở: số sổ đã đổi bao nhiêu từ lúc đếm; null = mã đã bị xóa khỏi kho. */
+  drift?: number | null;
+  bookAtApply?: number | null;
+  /** Phần chênh đã ghi vào kho lúc duyệt; null sau khi duyệt = mã đã xóa, không áp. */
+  delta?: number | null;
+  applied?: boolean;
+}
+
+export interface StocktakeSessionDetail {
+  session: {
+    id: string;
+    code: string;
+    status: StocktakeSessionStatus;
+    stockModel: StockModel;
+    locationId: string | null;
+    locationName: string | null;
+    blind: boolean;
+    note: string | null;
+    createdAt: string;
+    createdByName: string | null;
+    submittedAt: string | null;
+    submittedByName: string | null;
+    approvedAt: string | null;
+    approvedByName: string | null;
+    cancelledAt: string | null;
+    adjustedCount: number;
+    totalDown: number;
+    totalUp: number;
+  };
+  lines: StocktakeSessionLine[];
+  /** Đếm mù đang che số sổ với người xem này. */
+  hideBook: boolean;
+  /** Người xem là chủ shop → được duyệt. */
+  canApprove: boolean;
+  shop: { name: string; phone: string | null; email: string | null };
+}
+
+export function fetchStocktakeSessions() {
+  return apiFetch<{ items: StocktakeSessionSummary[]; canApprove: boolean }>("/api/stocktakes");
+}
+
+export function createStocktakeSession(data: { locationId?: string; blind?: boolean; note?: string }) {
+  return apiFetch<{ id: string; code: string }>("/api/stocktakes", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function fetchStocktakeSession(id: string) {
+  return apiFetch<StocktakeSessionDetail>(`/api/stocktakes/${encodeURIComponent(id)}`);
+}
+
+/** Ghi số đếm: `counted` đặt số, `add` cộng dồn (máy quét), `counted: null` bỏ dòng. */
+export function countStocktakeSession(
+  id: string,
+  items: ({ productId: string; counted: number | null } | { productId: string; add: number })[]
+) {
+  return apiFetch<{ lines: { productId: string; counted: number; bookAtCount?: number }[]; cleared: string[] }>(
+    `/api/stocktakes/${encodeURIComponent(id)}/count`,
+    { method: "POST", body: JSON.stringify({ items }) }
+  );
+}
+
+export function moveStocktakeSession(id: string, action: "submit" | "reopen" | "cancel") {
+  return apiFetch<{ status: StocktakeSessionStatus }>(`/api/stocktakes/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+}
+
+export function approveStocktakeSession(id: string) {
+  return apiFetch<{ status: "APPROVED"; lineCount: number; adjustedCount: number; totalDown: number; totalUp: number }>(
+    `/api/stocktakes/${encodeURIComponent(id)}/approve`,
+    { method: "POST" }
+  );
 }
 
 /** Danh sách mã cần đếm: theo vị trí = chỉ ô có hàng; toàn kho = mọi SKU đang bán. */
@@ -5308,12 +5520,13 @@ export function fetchStocktakeSheet(locationId?: string) {
     location: { id: string; name: string } | null;
     rows: StocktakeRow[];
     truncated: boolean;
+    stockModel?: StockModel;
   }>(`/api/inventory/stocktake/sheet${qs}`);
 }
 
 /** Số sổ hiện tại của một nhóm mã (dòng thêm bằng quét, khi tải lại trang kiểm kê). Mã đã xóa không trả về. */
 export function fetchStocktakeRows(locationId: string | undefined, productIds: string[]) {
-  return apiFetch<{ rows: StocktakeRow[] }>("/api/inventory/stocktake/rows", {
+  return apiFetch<{ rows: StocktakeRow[]; stockModel?: StockModel }>("/api/inventory/stocktake/rows", {
     method: "POST",
     body: JSON.stringify({ locationId, productIds }),
   });
@@ -5322,14 +5535,17 @@ export function fetchStocktakeRows(locationId: string | undefined, productIds: s
 /** Chốt kiểm kê: mỗi mã lệch một dòng ADJUST "Kiểm kê …: sổ a → đếm b". */
 export function submitStocktake(data: {
   locationId?: string;
-  items: { productId: string; counted: number }[];
+  /** `book` = số sổ LÚC ĐẾM. Shop ON_HAND ghi phần chênh so với số này; shop LEGACY bỏ qua. */
+  items: { productId: string; counted: number; book?: number }[];
   note?: string;
 }) {
   return apiFetch<{
     counted: number;
     adjusted: number;
     unchanged: number;
-    lines: { productId: string; skuCode: string; before: number; after: number; delta: number }[];
+    /** `drift` (ON_HAND): số sổ đã đổi bao nhiêu từ lúc đếm tới lúc chốt. */
+    lines: { productId: string; skuCode: string; before: number; after: number; delta: number; drift?: number }[];
+    stockModel?: StockModel;
   }>("/api/inventory/stocktake", { method: "POST", body: JSON.stringify(data) });
 }
 

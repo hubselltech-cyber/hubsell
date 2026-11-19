@@ -1,6 +1,7 @@
 import { Money } from "@/components/ui/money";
 import type { Product } from "@/lib/api";
 import { formatCompactVND, formatNumber } from "@/lib/format";
+import { stockShown } from "@/lib/stock-model";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -9,18 +10,22 @@ import { cn } from "@/lib/utils";
  * Thiết kế + bảng đo từng bề rộng màn: docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 10.2.
  */
 
+type ValueFields = Pick<Product, "costPrice" | "quantityInStock" | "onHand" | "stockModel">;
+
 /**
  * Giá trị tồn của một SKU = tồn kho × giá vốn. Tồn âm (bán vượt) tính 0 — không có hàng thì không
  * có giá trị, và không để một mã âm kéo tụt tổng của cả mẫu. null = chưa nhập giá vốn.
+ * "Tồn kho" theo cách của shop (lib/stock-model.ts): shop ON_HAND tính cả hàng đang giữ cho đơn và
+ * hàng ở ô không bán — hàng chưa giao vẫn là tiền nằm trong kho (chuẩn quốc tế, 20/11/2026).
  */
-export function stockValueOf(p: Pick<Product, "costPrice" | "quantityInStock">): number | null {
+export function stockValueOf(p: ValueFields): number | null {
   const cost = Number(p.costPrice ?? 0);
   if (!(cost > 0)) return null;
-  return Math.max(0, p.quantityInStock) * cost;
+  return Math.max(0, stockShown(p)) * cost;
 }
 
 /** Giá trị tồn của cả mẫu = tổng các phân loại ĐÃ có giá vốn; chưa phân loại nào có giá → null. */
-export function groupStockValue(rows: Pick<Product, "costPrice" | "quantityInStock">[]): {
+export function groupStockValue(rows: ValueFields[]): {
   value: number | null;
   /** Số phân loại chưa nhập giá vốn nên chưa được cộng. */
   noCostCount: number;

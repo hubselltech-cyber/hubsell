@@ -76,6 +76,13 @@ export function ImportExcelDialog({
           (res.skipped > 0 ? ` (${res.skipped} dòng bị bỏ qua)` : ""),
         { duration: 6000 }
       );
+      // Kho chuẩn quốc tế: nói rõ cột Tồn kho của tệp đã được hiểu theo nghĩa nào.
+      if (res.legacyFile) {
+        toast.info(
+          "Tệp này xuất từ bản cũ (có cột Chờ giao): cột Tồn kho được đọc theo cách cũ, là số chưa gồm hàng đang giữ cho đơn.",
+          { duration: 12000 }
+        );
+      }
       onImported();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
@@ -102,8 +109,8 @@ export function ImportExcelDialog({
         <DialogHeader>
           <DialogTitle>Nhập sản phẩm từ Excel</DialogTitle>
           <DialogDescription>
-            Tải lên file .xlsx theo mẫu. SKU đã có sẽ được cập nhật giá & tồn kho;
-            SKU mới sẽ được tạo mới.
+            Tải lên file .xlsx theo mẫu. SKU đã có sẽ được cập nhật giá, và tồn kho nếu ô Tồn kho có số
+            (ô trống thì giữ nguyên tồn); SKU mới sẽ được tạo mới.
           </DialogDescription>
         </DialogHeader>
 

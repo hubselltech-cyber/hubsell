@@ -16,6 +16,7 @@ import type { AuthRequest } from "../middleware/auth";
 import { finishStockPush, stageStockPush, type StockPushTicket } from "../integrations/inventory-push";
 import {
   createRootLocationTx,
+  getStockSettings,
   setLevelAbsolute,
   transferStockTx,
 } from "../services/stock-ledger";
@@ -132,13 +133,18 @@ router.get("/levels", async (req: AuthRequest, res, next) => {
       }),
       prisma.productStockLevel.findMany({
         where: { productId },
-        select: { locationId: true, quantity: true },
+        select: { locationId: true, quantity: true, committed: true },
       }),
     ]);
-    const qty = new Map(levels.map((l) => [l.locationId, l.quantity]));
+    const qty = new Map(levels.map((l) => [l.locationId, l]));
     res.json({
       product,
-      levels: locations.map((l) => ({ ...l, quantity: qty.get(l.id) ?? 0 })),
+      // `committed` = phần đang giữ cho đơn đã chốt tại vị trí (hàng trong kho tại đó = quantity + committed).
+      levels: locations.map((l) => ({
+        ...l,
+        quantity: qty.get(l.id)?.quantity ?? 0,
+        committed: qty.get(l.id)?.committed ?? 0,
+      })),
     });
   } catch (err) {
     next(err);
@@ -708,6 +714,9 @@ router.post("/set-level", async (req: AuthRequest, res, next) => {
       res.status(404).json({ error: "Không tìm thấy sản phẩm hoặc vị trí" });
       return;
     }
+    // Kho chuẩn quốc tế (lát 3): shop ON_HAND gõ số hàng TRONG KHO tại vị trí (gồm phần đang giữ
+    // cho đơn ở đó); shop LEGACY gõ phần bán được như trước.
+    const { stockModel } = await getStockSettings(prisma, ownerId);
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
     const written = await prisma.$transaction(async (tx) => {
@@ -720,6 +729,7 @@ router.post("/set-level", async (req: AuthRequest, res, next) => {
             ? reason.trim()
             : `Sửa số tại ${loc.name}`,
         actorId: req.userId ?? null,
+        onHand: stockModel === "ON_HAND",
       });
       if (w.delta !== 0) {
         stockTicket = await stageStockPush(tx, [productId], { source: `sửa số tại vị trí ${loc.name}` });

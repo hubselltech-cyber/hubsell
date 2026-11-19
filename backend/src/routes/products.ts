@@ -17,7 +17,7 @@ import {
   stockSyncOn,
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
-import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+import { applyStockDelta, getStockSettings, setOnHandAbsolute, setStockAbsolute } from "../services/stock-ledger";
 import {
   GROUP_ADD_MAX,
   loadProductGroup,
@@ -26,7 +26,7 @@ import {
   saveProductGroup,
 } from "../services/product-group-edit";
 import { loadInventoryStats } from "../services/inventory-stats";
-import { awaitingShipByProduct } from "../services/stock-awaiting-ship";
+import { awaitingShipByProduct, restockedNotBackYet } from "../services/stock-awaiting-ship";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
 import { parseBarcodeInput } from "../lib/product-barcode";
@@ -142,13 +142,19 @@ async function pageOfProductGroups(
     stock: "out" | "all";
     search: string;
     locationIds: string[] | null;
+    /** Shop ON_HAND: "hết hàng" tính theo khả dụng (sổ − giữ tạm ≤ 0), không theo sổ ≤ 0. */
+    outByAvailable: boolean;
   },
   page: number,
   pageSize: number
 ): Promise<{ keys: string[]; total: number }> {
   const conds: Prisma.Sql[] = [Prisma.sql`p."userId" = ${ownerId}`];
   if (f.status !== "all") conds.push(Prisma.sql`p."isActive" = ${f.status === "active"}`);
-  if (f.stock === "out") conds.push(Prisma.sql`p."quantityInStock" <= 0`);
+  if (f.stock === "out") {
+    conds.push(
+      f.outByAvailable ? Prisma.sql`p."quantityInStock" <= p."holdQuantity"` : Prisma.sql`p."quantityInStock" <= 0`
+    );
+  }
   if (f.search) {
     const like = `%${f.search}%`;
     conds.push(
@@ -223,10 +229,18 @@ router.get("/", async (req: AuthRequest, res, next) => {
       locationIds = subtreeIds(locs, locationId);
     }
 
+    // KHO CHUẨN QUỐC TẾ (lát 3): cách hiển thị của shop. ON_HAND → "hết hàng" thống nhất một luật
+    // theo khả dụng (sổ − giữ tạm ≤ 0) như chuông sắp hết và app mobile; LEGACY giữ luật sổ ≤ 0.
+    const stockSettings = await getStockSettings(prisma, req.ownerId!);
+    const onHandModel = stockSettings.stockModel === "ON_HAND";
+    const outOfStockWhere: Prisma.ProductWhereInput = onHandModel
+      ? { quantityInStock: { lte: prisma.product.fields.holdQuantity } }
+      : { quantityInStock: { lte: 0 } };
+
     const where: Prisma.ProductWhereInput = {
       userId: req.ownerId!,
       ...(status === "all" ? {} : { isActive: status === "active" }),
-      ...(stock === "out" ? { quantityInStock: { lte: 0 } } : {}),
+      ...(stock === "out" ? outOfStockWhere : {}),
       ...(locationIds
         ? { stockLevels: { some: { locationId: { in: locationIds }, quantity: { not: 0 } } } }
         : {}),
@@ -260,8 +274,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           },
         },
       },
-      // Tồn theo vị trí (đợt B) — rỗng khi shop chưa dùng vị trí.
-      stockLevels: { select: { locationId: true, quantity: true } },
+      // Tồn theo vị trí (đợt B) — rỗng khi shop chưa dùng vị trí. `committed` = phần đang giữ cho
+      // đơn tại vị trí đó (kho chuẩn quốc tế).
+      stockLevels: { select: { locationId: true, quantity: true, committed: true } },
     } satisfies Prisma.ProductInclude;
 
     // ?view=grouped (bảng Hàng hóa, 22/10/2026): PHÂN TRANG THEO NHÓM cha–con —
@@ -269,7 +284,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // cắt sang trang sau. Mặc định (Excel, chọn SKU…) vẫn phân trang phẳng theo SKU.
     const grouped =
       req.query.view === "grouped"
-        ? await pageOfProductGroups(req.ownerId!, { status, stock, search, locationIds }, page, pageSize)
+        ? await pageOfProductGroups(
+            req.ownerId!,
+            { status, stock, search, locationIds, outByAvailable: onHandModel },
+            page,
+            pageSize
+          )
         : null;
 
     const [total, items, inactiveCount, activeCount, skuTotal] = await Promise.all([
@@ -300,7 +320,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     ]);
     // Số SKU đang bán mà HẾT HÀNG (tồn ≤ 0) — chip "Hết hàng N" (ẩn khi 0).
     const outOfStockCount = await prisma.product.count({
-      where: { userId: req.ownerId!, isActive: true, quantityInStock: { lte: 0 } },
+      where: { userId: req.ownerId!, isActive: true, ...outOfStockWhere },
     });
 
     // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
@@ -356,6 +376,25 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? await awaitingShipByProduct(prisma, req.ownerId!, items.map((p) => p.id))
       : null;
 
+    // Ô "không bán" của shop (ngăn Unavailable) — để tính hàng TRONG KHO của từng mã. Chỉ đọc khi
+    // trang có mã nằm ở vị trí nào đó.
+    const unsellableLocs = items.some((p) => p.stockLevels.length > 0)
+      ? new Set(
+          (
+            await prisma.stockLocation.findMany({
+              where: { userId: req.ownerId!, sellable: false },
+              select: { id: true },
+            })
+          ).map((l) => l.id)
+        )
+      : new Set<string>();
+    // Shop ON_HAND còn ở chế độ "cộng khi sàn báo hủy": Tồn kho đang tính cả hàng của các đơn hủy
+    // sau giao mà kho CHƯA nhận kiện → trả con số để màn Tổng kho nói rõ (mục 5.2.1).
+    const notBackYet =
+      withAwaiting && onHandModel && stockSettings.restockOnReturn === "ON_CANCEL"
+        ? await restockedNotBackYet(prisma, req.ownerId!)
+        : null;
+
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
@@ -373,9 +412,21 @@ router.get("/", async (req: AuthRequest, res, next) => {
             c.channelStock !== availableToSell &&
             !pendingKeys.has(`${c.channelId}:${c.channelSku}`)
         );
+        // BA NGĂN (kho chuẩn quốc tế): hàng TRONG KHO = sổ (tồn bán) + đang giữ cho đơn đã chốt + ô
+        // không bán. "Đang giữ" hiện cho khách gồm cả phần giữ tạm của đơn chưa thanh toán.
+        const unsellableQuantity = stockLevels.reduce(
+          (s, l) => s + (unsellableLocs.has(l.locationId) ? l.quantity : 0),
+          0
+        );
         return {
           ...hideCost(core, seesFinancials),
-          stockLevels: stockLevels.filter((l) => l.quantity !== 0),
+          stockLevels: stockLevels.filter((l) => l.quantity !== 0 || l.committed !== 0),
+          // Cách hiển thị của shop gắn vào TỪNG dòng: mọi màn nhận một sản phẩm (ô sửa tồn, hộp nhập /
+          // xuất, in tem, app mobile…) đều biết "Tồn kho" là số nào mà không phải hỏi thêm.
+          stockModel: stockSettings.stockModel,
+          onHand: p.quantityInStock + p.committedQuantity + unsellableQuantity,
+          heldQuantity: p.committedQuantity + p.holdQuantity,
+          unsellableQuantity,
           availableToSell,
           // Chờ giao: đã trừ sổ cho đơn đã chốt, chưa giao ship (chỉ có khi ?awaiting=1).
           ...(awaiting
@@ -440,6 +491,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       costPriceHidden: !seesFinancials,
       safetyStockDefault: safetyDefault,
       lowStockDefault,
+      stockModel: stockSettings.stockModel,
+      restockOnReturn: stockSettings.restockOnReturn,
+      ...(notBackYet ? { notBackYet } : {}),
     });
   } catch (err) {
     next(err);
@@ -450,7 +504,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
 // Chỉ gọi khi khách mở hộp "Thống kê"; tiền cắt khỏi dữ liệu với người không thấy tài chính.
 router.get("/stats", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await loadInventoryStats(req.ownerId!, { seesCost: canSeeFinancials(req) }));
+    const { stockModel } = await getStockSettings(prisma, req.ownerId!);
+    res.json(
+      await loadInventoryStats(req.ownerId!, { seesCost: canSeeFinancials(req), onHand: stockModel === "ON_HAND" })
+    );
   } catch (err) {
     next(err);
   }
@@ -766,6 +823,7 @@ const DELETE_GUARD_SELECT = {
   id: true,
   skuCode: true,
   quantityInStock: true,
+  committedQuantity: true,
   _count: { select: { orderItems: true, channelProducts: true, kocSamples: true } },
 } as const;
 
@@ -773,6 +831,7 @@ type DeleteGuardRow = {
   id: string;
   skuCode: string;
   quantityInStock: number;
+  committedQuantity: number;
   _count: { orderItems: number; channelProducts: number; kocSamples: number };
 };
 
@@ -788,8 +847,14 @@ function deleteBlockReason(p: DeleteGuardRow): { code: string; reason: string } 
   }
   if (p._count.kocSamples > 0) blockers.push(`đã xuất ${p._count.kocSamples} phiếu hàng mẫu KOC`);
   if (blockers.length) return { code: "PRODUCT_IN_USE", reason: blockers.join(", ") };
-  if (p.quantityInStock !== 0) {
-    return { code: "PRODUCT_HAS_STOCK", reason: `còn tồn ${p.quantityInStock}` };
+  if (p.quantityInStock !== 0 || p.committedQuantity !== 0) {
+    return {
+      code: "PRODUCT_HAS_STOCK",
+      reason:
+        p.committedQuantity !== 0
+          ? `còn tồn ${p.quantityInStock} và đang giữ ${p.committedQuantity} cho đơn chưa giao`
+          : `còn tồn ${p.quantityInStock}`,
+    };
   }
   return null;
 }
@@ -973,7 +1038,8 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       variantName: string | null | undefined;
       costPrice: number;
       sellingPrice: number;
-      quantityInStock: number;
+      /** null = dòng không có cột Tồn kho / ô để trống → KHÔNG đụng tồn của mã đã có. */
+      quantityInStock: number | null;
     };
     const valid: ValidRow[] = [];
     const errors: { row: number; message: string }[] = [];
@@ -1019,9 +1085,11 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
         return;
       }
 
-      const qtyRaw = pickColumn(row, COLS.quantity) ?? 0;
-      const qty = Number(qtyRaw);
-      if (!Number.isInteger(qty) || qty < 0) {
+      // Ô Tồn kho trống (hoặc tệp không có cột này) = không đổi tồn. Trước 20/11/2026 ô trống bị
+      // đọc thành 0 → tệp chỉ để sửa giá mà thiếu cột Tồn kho là ĐÈ tồn mọi mã về 0.
+      const qtyRaw = pickColumn(row, COLS.quantity);
+      const qty = qtyRaw === undefined ? null : Number(qtyRaw);
+      if (qty !== null && (!Number.isInteger(qty) || qty < 0)) {
         errors.push({
           row: excelRow,
           message: `SKU "${skuCode}": Tồn kho phải là số nguyên ≥ 0 — đã bỏ qua`,
@@ -1053,6 +1121,12 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
     // Bước 2: upsert hàng loạt trong MỘT transaction
     const ownerId = req.ownerId!;
+    // KHO CHUẨN QUỐC TẾ (lát 3): shop ON_HAND thì cột "Tồn kho" là hàng TRONG KHO (gồm cả hàng đang
+    // giữ cho đơn). Tệp xuất từ bản cũ có cột "Chờ giao" → cột Tồn kho của tệp đó là sổ tồn bán
+    // kiểu cũ: đọc theo nghĩa cũ để nhập lại tệp cũ không làm hụt tồn đúng bằng phần đang giữ.
+    const importSettings = await getStockSettings(prisma, ownerId);
+    const legacyFile = Object.keys(rows[0] ?? {}).some((k) => k.trim() === "Chờ giao");
+    const onHandImport = importSettings.stockModel === "ON_HAND" && !legacyFile;
     // Các sản phẩm CÓ đổi số tồn trong lần import — đẩy tồn mới lên sàn.
     const stockChangedIds: string[] = [];
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
@@ -1083,14 +1157,25 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               sellingPrice: v.sellingPrice,
             },
           });
-          const written = await setStockAbsolute(tx, {
-            productId: found.id,
-            quantity: v.quantityInStock,
-            type: InventoryLogType.ADJUST,
-            reason: `Nhập Excel đè tồn: ${found.quantityInStock} → ${v.quantityInStock}`,
-            actorId: req.userId ?? null,
-          });
-          if (written.delta !== 0) stockChangedIds.push(found.id);
+          if (v.quantityInStock !== null) {
+            const written = onHandImport
+              ? await setOnHandAbsolute(tx, {
+                  productId: found.id,
+                  onHand: v.quantityInStock,
+                  type: InventoryLogType.ADJUST,
+                  reason: `Nhập Excel đặt tồn kho (hàng trong kho) = ${v.quantityInStock}`,
+                  actorId: req.userId ?? null,
+                })
+              : await setStockAbsolute(tx, {
+                  productId: found.id,
+                  quantity: v.quantityInStock,
+                  type: InventoryLogType.ADJUST,
+                  reason: `Nhập Excel đè tồn: ${found.quantityInStock} → ${v.quantityInStock}`,
+                  actorId: req.userId ?? null,
+                  kind: "SET",
+                });
+            if (written.delta !== 0) stockChangedIds.push(found.id);
+          }
           updated++;
         } else {
           const createdProduct = await tx.product.create({
@@ -1105,7 +1190,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               quantityInStock: 0,
             },
           });
-          if (v.quantityInStock > 0) {
+          if (v.quantityInStock !== null && v.quantityInStock > 0) {
             await applyStockDelta(tx, {
               productId: createdProduct.id,
               delta: v.quantityInStock,
@@ -1131,6 +1216,9 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       totalImported: result.created + result.updated,
       skipped: errors.length,
       errors,
+      // Cột "Tồn kho" của tệp này đã được hiểu theo nghĩa nào (để hộp nhập nói rõ với khách).
+      stockColumn: onHandImport ? "ON_HAND" : "SELLABLE",
+      legacyFile: importSettings.stockModel === "ON_HAND" && legacyFile,
     });
   } catch (err) {
     // Lỗi từ multer (sai định dạng, quá dung lượng)

@@ -39,6 +39,8 @@ export interface InventoryStats {
   noCostSkus?: number;
   noCostQuantity?: number;
   costPriceHidden: boolean;
+  /** Cách tính của shop: LEGACY = theo sổ tồn bán; ON_HAND = theo hàng trong kho (kho chuẩn quốc tế). */
+  stockModel: "LEGACY" | "ON_HAND";
 }
 
 interface StatsRow {
@@ -55,21 +57,39 @@ interface StatsRow {
   noCostQuantity: number;
 }
 
-export async function loadInventoryStats(ownerId: string, opts: { seesCost: boolean }): Promise<InventoryStats> {
-  const qty = Prisma.sql`GREATEST(p."quantityInStock", 0)`;
-  const [r] = await prisma.$queryRaw<StatsRow[]>`
+/**
+ * `onHand` (shop ON_HAND, kho chuẩn quốc tế lát 3): số lượng và giá trị tính trên HÀNG TRONG KHO =
+ * sổ + đang giữ cho đơn đã chốt (hàng đã có đơn chưa giao vẫn là tiền nằm trong kho); "hết hàng"
+ * theo khả dụng (sổ − giữ tạm ≤ 0) như chip trên bảng — mã hết hàng vẫn có thể còn hàng trong kho
+ * vì đang giữ cho đơn, nên nhóm "hết hàng" có số lượng và giá trị riêng. Hàng ở ô không bán CHƯA
+ * cộng vào thống kê (chưa shop nào dùng ô không bán — số đo 12/11/2026).
+ */
+export async function loadInventoryStats(
+  ownerId: string,
+  opts: { seesCost: boolean; onHand?: boolean }
+): Promise<InventoryStats> {
+  const raw = opts.onHand
+    ? Prisma.sql`(p."quantityInStock" + p."committedQuantity")`
+    : Prisma.sql`p."quantityInStock"`;
+  const qty = Prisma.sql`GREATEST(${raw}, 0)`;
+  const out = opts.onHand
+    ? Prisma.sql`p."quantityInStock" <= p."holdQuantity"`
+    : Prisma.sql`p."quantityInStock" <= 0`;
+  const [r] = await prisma.$queryRaw<(StatsRow & { qtyActiveOut: number; valueActiveOut: number })[]>`
     SELECT
       (COUNT(DISTINCT COALESCE(p."groupKey", p."id")) FILTER (WHERE p."isActive"))::int AS "products",
-      (COUNT(*) FILTER (WHERE p."isActive" AND p."quantityInStock" > 0))::int AS "activeIn",
-      (COUNT(*) FILTER (WHERE p."isActive" AND p."quantityInStock" <= 0))::int AS "activeOut",
+      (COUNT(*) FILTER (WHERE p."isActive" AND NOT (${out})))::int AS "activeIn",
+      (COUNT(*) FILTER (WHERE p."isActive" AND ${out}))::int AS "activeOut",
       (COUNT(*) FILTER (WHERE NOT p."isActive"))::int AS "inactive",
-      COALESCE(SUM(${qty}) FILTER (WHERE p."isActive"), 0)::float8 AS "qtyActive",
+      COALESCE(SUM(${qty}) FILTER (WHERE p."isActive" AND NOT (${out})), 0)::float8 AS "qtyActive",
+      COALESCE(SUM(${qty}) FILTER (WHERE p."isActive" AND ${out}), 0)::float8 AS "qtyActiveOut",
       COALESCE(SUM(${qty}) FILTER (WHERE NOT p."isActive"), 0)::float8 AS "qtyInactive",
-      COALESCE(SUM(${qty} * p."costPrice") FILTER (WHERE p."isActive"), 0)::float8 AS "valueActive",
+      COALESCE(SUM(${qty} * p."costPrice") FILTER (WHERE p."isActive" AND NOT (${out})), 0)::float8 AS "valueActive",
+      COALESCE(SUM(${qty} * p."costPrice") FILTER (WHERE p."isActive" AND ${out}), 0)::float8 AS "valueActiveOut",
       COALESCE(SUM(${qty} * p."costPrice") FILTER (WHERE NOT p."isActive"), 0)::float8 AS "valueInactive",
-      (COUNT(*) FILTER (WHERE p."quantityInStock" < 0))::int AS "negativeSkus",
-      (COUNT(*) FILTER (WHERE p."quantityInStock" > 0 AND p."costPrice" <= 0))::int AS "noCostSkus",
-      COALESCE(SUM(p."quantityInStock") FILTER (WHERE p."quantityInStock" > 0 AND p."costPrice" <= 0), 0)::float8 AS "noCostQuantity"
+      (COUNT(*) FILTER (WHERE ${raw} < 0))::int AS "negativeSkus",
+      (COUNT(*) FILTER (WHERE ${raw} > 0 AND p."costPrice" <= 0))::int AS "noCostSkus",
+      COALESCE(SUM(${raw}) FILTER (WHERE ${raw} > 0 AND p."costPrice" <= 0), 0)::float8 AS "noCostQuantity"
     FROM "Product" p
     WHERE p."userId" = ${ownerId}`;
 
@@ -78,11 +98,16 @@ export async function loadInventoryStats(ownerId: string, opts: { seesCost: bool
   return {
     products: r.products,
     inStock: bucket(r.activeIn, r.qtyActive, r.valueActive),
-    outOfStock: bucket(r.activeOut, 0, 0),
+    outOfStock: bucket(r.activeOut, r.qtyActiveOut, r.valueActiveOut),
     inactive: bucket(r.inactive, r.qtyInactive, r.valueInactive),
-    total: bucket(r.activeIn + r.activeOut + r.inactive, r.qtyActive + r.qtyInactive, r.valueActive + r.valueInactive),
+    total: bucket(
+      r.activeIn + r.activeOut + r.inactive,
+      r.qtyActive + r.qtyActiveOut + r.qtyInactive,
+      r.valueActive + r.valueActiveOut + r.valueInactive
+    ),
     negativeSkus: r.negativeSkus,
     ...(opts.seesCost ? { noCostSkus: r.noCostSkus, noCostQuantity: r.noCostQuantity } : {}),
     costPriceHidden: !opts.seesCost,
+    stockModel: opts.onHand ? "ON_HAND" : "LEGACY",
   };
 }

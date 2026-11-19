@@ -47,6 +47,38 @@ function extraKey(locationId: string) {
   return `hubsell_stocktake_extra_${locationId || "all"}`;
 }
 
+/**
+ * SỐ SỔ LÚC ĐẾM của từng mã (kho chuẩn quốc tế lát 3, 20/11/2026) — shop cách ON_HAND ghi PHẦN CHÊNH
+ * = số đếm − số sổ lúc đếm, nên phải nhớ số sổ tại thời điểm gõ số đếm. Tải lại trang thì phiếu có
+ * số sổ MỚI, còn số này giữ nguyên → biết sổ đã đổi bao nhiêu từ lúc đếm (huy hiệu biến động).
+ */
+export type StocktakeBookAt = Record<string, number>;
+
+function bookAtKey(locationId: string) {
+  return `hubsell_stocktake_bookat_${locationId || "all"}`;
+}
+
+export function readStocktakeBookAt(locationId: string): StocktakeBookAt {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(bookAtKey(locationId)) ?? "{}");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).filter((e): e is [string, number] => Number.isInteger(e[1]))
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function writeStocktakeBookAt(locationId: string, bookAt: StocktakeBookAt): void {
+  try {
+    if (Object.keys(bookAt).length) localStorage.setItem(bookAtKey(locationId), JSON.stringify(bookAt));
+    else localStorage.removeItem(bookAtKey(locationId));
+  } catch {
+    // bị chặn — bỏ qua
+  }
+}
+
 /** Khóa định danh bản nháp của một vị trí — trang dùng để biết nháp nào đã nạp xong. */
 export function stocktakeDraftId(locationId: string): string {
   return draftKey(locationId);
@@ -72,6 +104,7 @@ export function readStocktakeDraft(locationId: string): { counts: StocktakeCount
           productName: x.productName,
           isActive: x.isActive !== false,
           book: Number.isInteger(x.book) ? x.book : 0,
+          ...(Number.isInteger(x.held) ? { held: x.held } : {}),
         }));
     }
   } catch {
@@ -95,6 +128,7 @@ export function clearStocktakeDraft(locationId: string): void {
   try {
     localStorage.removeItem(draftKey(locationId));
     localStorage.removeItem(extraKey(locationId));
+    localStorage.removeItem(bookAtKey(locationId));
   } catch {
     // bị chặn — bỏ qua
   }

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { RestockModeControl } from "@/components/warehouse/restock-mode-control";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
@@ -431,6 +432,8 @@ export default function WarehouseReturnsPage() {
           <div className="flex items-center gap-2 sm:ml-auto">
             {/* Lối vào màn quay ở chế độ KHUI hàng hoàn — chỉ hiện với tài khoản đã mở Video đóng hàng. */}
             <UnboxRecordLink />
+            {/* Cách cộng tồn cho đơn hủy sau khi giao (kho chuẩn quốc tế lát 2) — chỉ chủ shop thấy. */}
+            <RestockModeControl />
             {/* Lọc theo NGÀY SÀN BÁO HOÀN — bộ chọn kỳ chuẩn của app */}
             <DateRangePicker
               allowAll

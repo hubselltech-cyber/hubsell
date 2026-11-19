@@ -89,6 +89,11 @@ export const qk = {
   products: (params: Record<string, unknown>) => ["products", params] as const,
   /** Dưới tiền tố "products" để mọi thao tác ghi ở Tổng kho làm tươi luôn hộp Thống kê. */
   inventoryStats: () => ["products", "stats"] as const,
+  // Kiểm kê theo phiên (kho chuẩn quốc tế lát 5).
+  stocktakeSessions: () => ["stocktake-sessions"] as const,
+  stocktakeSession: (id: string) => ["stocktake-sessions", id] as const,
+  // Báo cáo hàng hỏng / mất / chênh kiểm kê — nằm dưới "inventory-logs" để mọi thao tác ghi kho làm tươi.
+  lossReport: (days: number, to: string) => ["inventory-logs", "loss-report", days, to] as const,
   inventoryLogs: (params: Record<string, unknown>) => ["inventory-logs", params] as const,
   stockVouchers: (params: Record<string, unknown>) => ["stock-vouchers", params] as const,
   channelProducts: (params: Record<string, unknown>) => ["channel-products", params] as const,

@@ -665,6 +665,17 @@ export interface ProductDto {
   /** Số Hubsell đẩy lên mọi gian = max(0, tồn − giữ − tồn an toàn). */
   availableToSell: number;
   isLowStock: boolean;
+  /**
+   * Cách hiển thị tồn của shop (kho chuẩn quốc tế, 20/11/2026 — backend routes/products.ts):
+   *   LEGACY  — "Tồn kho" = quantityInStock (đã trừ hàng của đơn đã chốt);
+   *   ON_HAND — "Tồn kho" = onHand = hàng THỰC CÓ trong kho, gồm cả hàng đang giữ cho đơn chưa giao.
+   * Máy chủ cũ không trả ba trường này → app đọc như LEGACY.
+   */
+  stockModel?: "LEGACY" | "ON_HAND";
+  /** Hàng thực có trong kho = quantityInStock + giữ cho đơn đã chốt + hàng ở vị trí không bán. */
+  onHand?: number;
+  /** Đang giữ cho đơn (đã chốt chưa giao + chưa thanh toán). */
+  heldQuantity?: number;
   /** Phân loại (màu / size) — null = sản phẩm đơn. */
   variantName?: string | null;
   /** Khóa gom cha–con: các phân loại cùng mẫu chung một khóa; null = đứng một mình. */

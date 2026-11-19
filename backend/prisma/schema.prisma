@@ -1893,6 +1893,9 @@ model Order {
   //   Order_stock_held_idx (channelId, id) WHERE stockCommittedAt IS NOT NULL
   // (Chỉ mục cũ của bản hai cột, Order_stock_committed_idx, đã bỏ: prod bỏ tay 19/11/2026,
   // database dev qua migration 20261120093000_drop_order_stock_committed_idx.)
+  // Chỉ mục MỘT PHẦN "đơn đang Chờ hàng về" (kho chuẩn quốc tế lát 2, 20/11/2026) chỉ có trong SQL
+  // migration 20261120100000_stock_on_hand_model:
+  //   Order_return_awaiting_idx (channelId) WHERE returnStatus = 'AWAITING'
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -2103,6 +2106,18 @@ model InventoryLog {
   /// NULL = bút toán lẻ (đơn sàn, sửa tồn, nhập/xuất nhanh một SKU, kiểm kê). Không
   /// khóa ngoại, không chỉ mục — tra phiếu → dòng đi qua ảnh chụp JSON của phiếu.
   voucherId      String?
+  /// ---- BA NGĂN SỐ (kho chuẩn quốc tế lát 3, 20/11/2026). NULL ở dòng ghi trước ngày này. ----
+  /// LOẠI DÒNG chi tiết hơn `type` (để Nhật ký kho gọi đúng tên và để thống kê theo lý do):
+  ///   RESERVE giữ cho đơn · SHIP xuất cho đơn (hàng rời kho) · RELEASE nhả giữ (hủy trước khi rời
+  ///   kho) · RETURN nhận hàng hoàn / cộng lại do hủy sau khi rời kho · STOCKTAKE kiểm kê ·
+  ///   SET sửa số · và các mã lý do nhập / xuất tay (lib/stock-reason.ts).
+  kind           String?
+  /// Phần đổi của ngăn "Đang giữ" (đơn đã chốt, hàng còn trong kho) ở bút toán này.
+  heldChange     Int?
+  /// "Đang giữ" của SKU ngay sau bút toán = committedQuantity + holdQuantity.
+  heldAfter      Int?
+  /// "Tồn kho" (hàng trong kho) của SKU ngay sau bút toán = sổ + đang giữ cho đơn đã chốt + ô không bán.
+  onHandAfter    Int?
   createdAt      DateTime         @default(now())
 
   product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -2113,6 +2128,9 @@ model InventoryLog {
   @@index([productId])
   @@index([orderId])
   @@index([createdAt])
+  // Chi muc BAN PHAN "InventoryLog_manual_idx" (productId, createdAt) WHERE orderId IS NULL: dong
+  // nhat ky TAY cho bao cao "Hang hong, mat & chenh kiem ke" (lat 4, 20/11/2026). Prisma khong khai
+  // duoc chi muc ban phan nen nam trong migration 20261120100000_stock_on_hand_model.
 }
 
 /// VỊ TRÍ CHỨA HÀNG (đợt B 24/09/2026, khung anh Trung chốt 15/09): kho nhỏ, kệ,
@@ -2429,6 +2447,21 @@ model ShopSyncSetting {
   /// NGƯỠNG CẢNH BÁO SẮP HẾT HÀNG mặc định toàn shop — SKU không đặt riêng
   /// (Product.lowStockThreshold = null) dùng số này. 0 = tắt cảnh báo.
   lowStockDefault Int @default(0)
+
+  /// ---- KHO CHUẨN QUỐC TẾ, LÁT 2 + 3 (20/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 15) ----
+  /// CÁCH HIỂN THỊ + CỬA GHI TỒN của shop:
+  ///   LEGACY  = như trước: cột "Tồn kho" là sổ quantityInStock (đã trừ đơn đã chốt); sửa ô,
+  ///             Excel, Kiểm kê ghi đè sổ.
+  ///   ON_HAND = chuẩn quốc tế: "Tồn kho" là hàng TRONG KHO = sổ + đang giữ cho đơn + ô không bán;
+  ///             sửa ô / Excel đặt số trong kho; Kiểm kê so với số trong kho và ghi PHẦN CHÊNH.
+  /// Sổ quantityInStock và số đẩy sàn KHÔNG đổi nghĩa ở cả hai chế độ. Chưa cho khách tự bật.
+  stockModel String @default("LEGACY")
+
+  /// ĐƠN HỦY / GIAO THẤT BẠI SAU KHI HÀNG ĐÃ RỜI KHO thì cộng lại tồn lúc nào (anh Trung chốt
+  /// 12/11/2026 "chia theo shop"):
+  ///   ON_CANCEL  = cộng ngay khi sàn báo hủy (cách cũ; kiện còn trên đường về vẫn nằm trên sổ)
+  ///   ON_RECEIVE = chỉ cộng khi kho nhận kiện nguyên vẹn (chuẩn); hỏng / mất thì không cộng
+  restockOnReturn String @default("ON_CANCEL")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4520,6 +4553,67 @@ model MappingLog {
 /// PHIẾU NHẬP / XUẤT KHO (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4): chứng từ
 /// của một lần ghi "Phiếu nhiều mã" — có số phiếu, in được lúc lập và in lại sau.
 /// Cùng khuôn HandoverSheet: ảnh chụp JSON các dòng, không khóa ngoại tới Product.
+/// KIEM KE THEO PHIEN (kho chuan quoc te lat 5, 20/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md muc 17).
+/// Mot phien dem: nhieu nguoi cung dem vao mot phien, gui duyet, chu shop duyet thi moi ghi vao kho.
+///   COUNTING dang dem -> PENDING cho duyet -> APPROVED da ghi vao kho | CANCELLED bo
+/// `stockModel` chup cach hien thi ton cua shop LUC TAO PHIEN: so so cua moi dong tinh theo cach do
+/// suot phien (shop doi cach giua chung thi phan chenh khong lech).
+model StocktakeSession {
+  id            String    @id
+  ownerId       String
+  /// KK-yyMMdd-XXXX, 4 ky tu cuoi id.
+  code          String
+  status        String    @default("COUNTING")
+  stockModel    String    @default("LEGACY")
+  locationId    String?
+  locationName  String?
+  /// DEM MU: nguoi dem (khong phai chu shop) khong thay so so va phan lech khi dang dem.
+  blind         Boolean   @default(false)
+  note          String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  submittedById String?
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  cancelledAt   DateTime?
+  /// Bon so tong ghi luc duyet (de danh sach phien khong phai cong lai tung dong).
+  lineCount     Int       @default(0)
+  adjustedCount Int       @default(0)
+  totalDown     Int       @default(0)
+  totalUp       Int       @default(0)
+
+  lines StocktakeLine[]
+
+  @@unique([ownerId, code])
+  @@index([ownerId, createdAt])
+  @@map("stocktake_sessions")
+}
+
+/// Mot ma trong phien kiem ke. Khong khoa ngoai toi Product: giu anh chup ma + ten de bien ban in lai
+/// y nguyen. `bookAtCount` = so so luc dem lan cuoi; luc duyet ghi phan chenh = counted - bookAtCount
+/// (hang roi kho / nhap them SAU luc dem khong bi cong nguoc lai).
+model StocktakeLine {
+  id          String    @id @default(cuid())
+  sessionId   String
+  productId   String
+  skuCode     String
+  productName String
+  counted     Int
+  bookAtCount Int
+  countedAt   DateTime  @default(now())
+  countedById String?
+  /// Ghi luc duyet: so so ngay truoc khi ap, phan chenh da ap (NULL = ma da bi xoa, bo qua).
+  bookAtApply Int?
+  delta       Int?
+  appliedAt   DateTime?
+
+  session StocktakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, productId])
+  @@map("stocktake_lines")
+}
+
 model StockVoucher {
   id            String           @id
   ownerId       String

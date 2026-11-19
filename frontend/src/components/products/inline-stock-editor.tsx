@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ApiError, setInventoryQuantity, type Product } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { isOnHand, stockShown } from "@/lib/stock-model";
 import { cn } from "@/lib/utils";
 
 interface InlineStockEditorProps {
@@ -29,6 +30,11 @@ interface InlineStockEditorProps {
  * 19/11/2026 (anh Trung: "nhập tồn rồi Enter thì bị load lại cả trang"): bảng nay làm tươi NGẦM, không
  * gỡ ra tải lại — nên ô này tự chờ số mới về rồi mới đóng, và phải được vẽ bằng một component có danh
  * tính cố định (StockCell ở trang Tổng kho) để ô đang gõ dở ở dòng khác không bị dựng lại giữa chừng.
+ *
+ * 20/11/2026 (kho chuẩn quốc tế): shop chạy cách ON_HAND thì số trong viên là hàng TRONG KHO (gồm cả
+ * hàng đang giữ cho đơn) và số gõ cũng là số trong kho. Gõ thấp hơn phần đang giữ → máy chủ cảnh báo
+ * (409 BELOW_HELD), ô hiện thông báo có nút "Vẫn lưu" — cảnh báo, không khóa cứng. Màu viên vẫn theo
+ * hàng CÒN BÁN ĐƯỢC (sổ − giữ tạm) như trước.
  */
 export function InlineStockEditor({
   product,
@@ -37,8 +43,12 @@ export function InlineStockEditor({
   editable,
   onSaved,
 }: InlineStockEditorProps) {
-  const qty = product.quantityInStock;
+  const onHandModel = isOnHand(product);
+  // Số hiện trong viên và số so khi lưu: hàng trong kho (ON_HAND) hoặc sổ tồn bán (LEGACY).
+  const qty = stockShown(product);
   const held = product.holdQuantity ?? 0;
+  // Còn bán được ngay = sổ − giữ tạm: quyết định màu viên ở cả hai cách.
+  const sellableLeft = product.quantityInStock - held;
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(String(qty));
   const [saving, setSaving] = useState(false);
@@ -55,8 +65,8 @@ export function InlineStockEditor({
     }
   }, [editing, qty]);
 
-  async function save() {
-    const n = Number(value.trim());
+  async function save(force = false, forced?: number) {
+    const n = forced ?? Number(value.trim());
     if (!Number.isInteger(n) || n < 0) {
       toast.error("Tồn kho phải là số nguyên không âm");
       inputRef.current?.focus();
@@ -68,13 +78,23 @@ export function InlineStockEditor({
     }
     setSaving(true);
     try {
-      const r = await setInventoryQuantity(product.id, n);
+      const r = await setInventoryQuantity(product.id, n, { force });
       toast.success(
-        `${product.skuCode}: ${formatNumber(qty)} → ${formatNumber(n)} (${r.delta > 0 ? "nhập" : "xuất"} ${formatNumber(Math.abs(r.delta))}) — đang đẩy lên các gian đã nối.`
+        `${product.skuCode}: ${onHandModel ? "trong kho " : ""}${formatNumber(qty)} → ${formatNumber(n)} (${r.delta > 0 ? "nhập" : "xuất"} ${formatNumber(Math.abs(r.delta))}) — đang đẩy lên các gian đã nối.`
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không lưu được tồn kho");
       setSaving(false);
+      if (err instanceof ApiError && err.status === 409 && err.code === "BELOW_HELD") {
+        // Cảnh báo, không khóa cứng: nói rõ thiếu bao nhiêu, cho lưu tiếp bằng một nút.
+        setEditing(false);
+        toast.warning(`${product.skuCode}: ${err.message}.`, {
+          description: "Lưu số này thì kho thiếu hàng cho đơn đã chốt.",
+          duration: 15_000,
+          action: { label: "Vẫn lưu", onClick: () => void save(true, n) },
+        });
+        return;
+      }
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được tồn kho");
       return;
     }
     // Đã lưu. Giữ ô ở trạng thái đang lưu tới khi bảng nhận số mới: đóng ngay thì viên số hiện lại số CŨ
@@ -126,7 +146,7 @@ export function InlineStockEditor({
   }
 
   const tone =
-    qty - held <= 0
+    sellableLeft <= 0
       ? "border-rose-200 bg-rose-50 text-rose-700"
       : low
         ? "border-amber-200 bg-amber-50 text-amber-700"
@@ -139,11 +159,18 @@ export function InlineStockEditor({
         disabled={!editable}
         onClick={() => editable && setEditing(true)}
         title={
-          (editable ? "Bấm để sửa tồn trực tiếp" : "Tồn kho") +
-          (threshold > 0 ? ` · ngưỡng cảnh báo ${formatNumber(threshold)}` : "")
+          (onHandModel
+            ? editable
+              ? "Hàng trong kho, gồm cả hàng đang giữ cho đơn — bấm để sửa (gõ số hàng thực có trong kho)"
+              : "Hàng trong kho, gồm cả hàng đang giữ cho đơn"
+            : editable
+              ? "Bấm để sửa tồn trực tiếp"
+              : "Tồn kho") + (threshold > 0 ? ` · ngưỡng cảnh báo ${formatNumber(threshold)}` : "")
         }
         className={cn(
-          "group inline-flex min-w-12 items-center justify-center gap-1 rounded-full border px-2.5 py-0.5 text-sm font-semibold tabular-nums transition-colors",
+          "group inline-flex min-w-12 items-center justify-center gap-1 rounded-full border py-0.5 text-sm font-semibold tabular-nums transition-colors",
+          // Số từ 5 chữ số ("11.020") thu đệm ngang để viên không tràn sang cột bên ở màn 1280.
+          formatNumber(qty).length >= 6 ? "px-1.5" : "px-2.5",
           tone,
           editable && "cursor-text hover:ring-2 hover:ring-primary/30"
         )}
@@ -153,10 +180,11 @@ export function InlineStockEditor({
             "9.998" thành 78px tràn sang cột Có thể bán ở 1280–1440 (đo 22/10 tối). */}
         {editable && <Pencil className="hidden size-3 opacity-70 group-hover:inline" />}
       </button>
-      {held > 0 && (
+      {/* Cách ON_HAND đã có cột "Đang giữ" riêng → không lặp dòng "Giữ N" ở đây. */}
+      {!onHandModel && held > 0 && (
         <p className="mt-1 text-xs text-amber-600">Giữ {formatNumber(held)}</p>
       )}
-      {low && qty - held > 0 && (
+      {low && sellableLeft > 0 && (
         <p className="mt-0.5 text-xs font-medium text-amber-700">
           ≤ ngưỡng {formatNumber(threshold)}
         </p>

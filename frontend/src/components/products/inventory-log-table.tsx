@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, Search } from "lucide-react";
 
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
+import { LossReportDialog } from "@/components/products/loss-report-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -48,6 +49,45 @@ const TYPE_CHIPS: { key: TypeFilter; label: string }[] = [
   { key: "TRANSFER", label: "Chuyển vị trí" },
 ];
 
+/**
+ * LOẠI DÒNG chi tiết của shop cách ON_HAND (kho chuẩn quốc tế, 20/11/2026) — theo `kind` máy chủ ghi.
+ * Dòng không có `kind` (ghi trước 20/11, hoặc nhập / xuất tay) dùng nhãn theo `type` như cũ.
+ */
+const LOG_KIND_META: Record<string, { label: string; className: string }> = {
+  RESERVE: { label: "Giữ cho đơn", className: "border-amber-200 bg-amber-50 text-amber-800" },
+  SHIP: { label: "Xuất cho đơn", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  RELEASE: { label: "Nhả giữ (hủy)", className: "border-slate-200 bg-slate-50 text-slate-700" },
+  RELEASE_INACTIVE: { label: "Thôi giữ", className: "border-slate-200 bg-slate-50 text-slate-700" },
+  RETURN: { label: "Nhận hàng hoàn", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  STOCKTAKE: { label: "Kiểm kê", className: "border-amber-200 bg-amber-50 text-amber-800" },
+  SET: { label: "Sửa số", className: "border-amber-200 bg-amber-50 text-amber-800" },
+  // Lý do nhập / xuất tay theo danh sách (lát 4, lib/stock-reason.ts).
+  RECEIVED: { label: "Nhập hàng", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  RETURN_RESTOCK: { label: "Hàng hoàn nhập lại", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  OFFLINE_SALE: { label: "Bán ngoài sàn", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  DAMAGED: { label: "Hỏng", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  LOST: { label: "Mất / thất lạc", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  GIFT: { label: "Tặng / nội bộ", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  CORRECTION: { label: "Sửa sai số", className: "border-amber-200 bg-amber-50 text-amber-800" },
+};
+
+/** Một ô "ngăn số": phần đổi (có dấu, tô màu) ở trên, số sau bút toán ở dưới. */
+function Compartment({ change, after }: { change: number | null; after: number | null | undefined }) {
+  return (
+    <div className="text-right tabular-nums">
+      {change !== null && change !== 0 ? (
+        <p className={cn("text-sm font-semibold", change > 0 ? "text-emerald-700" : "text-rose-700")}>
+          {change > 0 ? "+" : "−"}
+          {formatNumber(Math.abs(change))}
+        </p>
+      ) : (
+        <p className="text-sm text-slate-400">·</p>
+      )}
+      <p className={TEXT_SUB}>{after === null || after === undefined ? "—" : formatNumber(after)}</p>
+    </div>
+  );
+}
+
 export const LOG_TYPE_META: Record<InventoryLogType, { label: string; className: string }> = {
   IMPORT: { label: "Nhập kho", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   EXPORT: { label: "Xuất kho", className: "border-rose-200 bg-rose-50 text-rose-700" },
@@ -84,6 +124,8 @@ export function InventoryLogTable({
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  // Hộp báo cáo "Hàng hỏng, mất & chênh kiểm kê" (lát 4) — chỉ ở tab toàn shop.
+  const [lossOpen, setLossOpen] = useState(false);
 
   const params = {
     productId,
@@ -100,6 +142,8 @@ export function InventoryLogTable({
   });
   const data = logsQ.data;
   const rows = data?.items ?? [];
+  // Shop cách ON_HAND (kho chuẩn quốc tế): mỗi dòng ba ngăn Đang giữ · Có thể bán · Tồn kho.
+  const threeCells = logsQ.data?.stockModel === "ON_HAND";
   const pageCount = data?.pageCount ?? 0;
   const loading = logsQ.refreshing;
 
@@ -157,8 +201,20 @@ export function InventoryLogTable({
             }}
             disabled={loading}
           />
+          {!compact && !productId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLossOpen(true)}
+              title="Cộng hàng hỏng, mất, chênh kiểm kê và sửa số theo lý do trong một kỳ"
+            >
+              <ClipboardList className="size-4" />
+              <span className="hidden min-[1400px]:inline">Hỏng, mất &amp; kiểm kê</span>
+            </Button>
+          )}
         </div>
       </div>
+      {!compact && !productId && <LossReportDialog open={lossOpen} onOpenChange={setLossOpen} />}
 
       {/* ===== BẢNG ===== */}
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -182,10 +238,35 @@ export function InventoryLogTable({
                   <TableRow>
                     <TableHead className="w-36">Thời gian</TableHead>
                     {!productId && <TableHead>Sản phẩm</TableHead>}
-                    <TableHead className="w-24 text-right">Thay đổi</TableHead>
-                    <TableHead className="w-20 text-right" title="Tồn tổng của SKU ngay sau bút toán">
-                      Tồn sau
-                    </TableHead>
+                    {threeCells ? (
+                      <>
+                        <TableHead
+                          className="w-20 text-right"
+                          title="Hàng đã có đơn, còn trong kho. Trên: phần đổi ở bút toán này; dưới: số sau bút toán."
+                        >
+                          Đang giữ
+                        </TableHead>
+                        <TableHead
+                          className="w-24 text-right"
+                          title="Hàng chưa có đơn đã chốt giữ (chưa trừ tồn an toàn và đơn chưa thanh toán). Trên: phần đổi; dưới: số sau bút toán."
+                        >
+                          Có thể bán
+                        </TableHead>
+                        <TableHead
+                          className="w-20 text-right"
+                          title="Hàng thực có trong kho. Trên: phần đổi ở bút toán này; dưới: số sau bút toán."
+                        >
+                          Tồn kho
+                        </TableHead>
+                      </>
+                    ) : (
+                      <>
+                        <TableHead className="w-24 text-right">Thay đổi</TableHead>
+                        <TableHead className="w-20 text-right" title="Tồn tổng của SKU ngay sau bút toán">
+                          Tồn sau
+                        </TableHead>
+                      </>
+                    )}
                     {showLocation && <TableHead className="w-32">Vị trí</TableHead>}
                     <TableHead className="w-32">Loại</TableHead>
                     <TableHead>Lý do</TableHead>
@@ -195,8 +276,15 @@ export function InventoryLogTable({
                 </TableHeader>
                 <TableBody>
                   {rows.map((r) => {
-                    const meta = LOG_TYPE_META[r.type] ?? LOG_TYPE_META.SYNC;
+                    const meta =
+                      (threeCells && r.kind ? LOG_KIND_META[r.kind] : undefined) ??
+                      LOG_TYPE_META[r.type] ??
+                      LOG_TYPE_META.SYNC;
                     const positive = r.changeQuantity > 0;
+                    // Dòng có đủ ba ngăn (ghi từ 20/11/2026). Chuyển vị trí không đổi hàng trong kho.
+                    const hasCells = r.onHandAfter !== null && r.onHandAfter !== undefined;
+                    const onHandChange =
+                      r.type === "TRANSFER" ? null : r.changeQuantity + (r.heldChange ?? 0);
                     const chMeta = r.order ? CHANNEL_META[r.order.channelName] : null;
                     return (
                       <TableRow key={r.id}>
@@ -205,26 +293,52 @@ export function InventoryLogTable({
                         </TableCell>
                         {!productId && (
                           <TableCell>
-                            <p className="font-mono text-sm">{r.skuCode}</p>
+                            <p className="max-w-[16rem] truncate font-mono text-sm" title={r.skuCode}>
+                              {r.skuCode}
+                            </p>
                             <p className={cn(TEXT_SUB, "max-w-[16rem] truncate")} title={r.productName}>
                               {r.productName}
                             </p>
                           </TableCell>
                         )}
-                        <TableCell
-                          className={cn(
-                            "text-right text-sm font-semibold tabular-nums",
-                            positive ? "text-emerald-700" : "text-rose-700"
-                          )}
-                        >
-                          {positive ? "+" : "−"}
-                          {formatNumber(Math.abs(r.changeQuantity))}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums text-slate-700">
-                          {r.balanceAfter === null || r.balanceAfter === undefined
-                            ? "—"
-                            : formatNumber(r.balanceAfter)}
-                        </TableCell>
+                        {threeCells ? (
+                          <>
+                            <TableCell>
+                              {hasCells ? (
+                                <Compartment change={r.heldChange ?? 0} after={r.heldAfter} />
+                              ) : (
+                                <p className={cn(TEXT_SUB, "text-right")}>—</p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Compartment change={r.changeQuantity} after={r.balanceAfter} />
+                            </TableCell>
+                            <TableCell>
+                              {hasCells ? (
+                                <Compartment change={onHandChange} after={r.onHandAfter} />
+                              ) : (
+                                <p className={cn(TEXT_SUB, "text-right")}>—</p>
+                              )}
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell
+                              className={cn(
+                                "text-right text-sm font-semibold tabular-nums",
+                                positive ? "text-emerald-700" : "text-rose-700"
+                              )}
+                            >
+                              {positive ? "+" : "−"}
+                              {formatNumber(Math.abs(r.changeQuantity))}
+                            </TableCell>
+                            <TableCell className="text-right text-sm tabular-nums text-slate-700">
+                              {r.balanceAfter === null || r.balanceAfter === undefined
+                                ? "—"
+                                : formatNumber(r.balanceAfter)}
+                            </TableCell>
+                          </>
+                        )}
                         {showLocation && (
                           <TableCell className="text-sm">
                             {r.location ? (
@@ -246,8 +360,13 @@ export function InventoryLogTable({
                             {meta.label}
                           </span>
                         </TableCell>
-                        <TableCell className="max-w-[24rem] text-sm text-slate-700">
-                          <span className="line-clamp-2" title={r.reason ?? ""}>
+                        {/* Lý do xuống tối đa 2 dòng trong ô 15rem (20/11/2026): ô cũ rộng tới 24rem một dòng làm
+                            bảng cuộn ngang; thu lại để ba cột số của cách "hàng trong kho" không làm bảng rộng thêm. */}
+                        <TableCell className="text-sm text-slate-700">
+                          <span
+                            className="line-clamp-2 min-w-[10rem] max-w-[15rem] whitespace-normal"
+                            title={r.reason ?? ""}
+                          >
                             {r.reason ?? "—"}
                           </span>
                         </TableCell>

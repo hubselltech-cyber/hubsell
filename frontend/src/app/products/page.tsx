@@ -64,6 +64,8 @@ import {
   awaitingShipTitle,
   groupAwaitingShip,
 } from "@/components/products/awaiting-ship";
+import { HELD_GROUP_TITLE, groupHeld, heldShown, heldTitle, stockShown } from "@/lib/stock-model";
+import { OnHandNotice } from "@/components/products/on-hand-notice";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { StockVoucherTable } from "@/components/products/stock-voucher-table";
@@ -149,7 +151,9 @@ const COL_HEAD_CLASS: Record<string, string> = {
   sellingPrice: "w-[10%]",
   // Tồn kho: viên "9.998" ≈ 62px (bút chì chỉ hiện khi rê) → 8,5%; ở 7% viên (có bút chì) tràn
   // 28px sang Có thể bán tại 1280. TỔNG % giữ 88 — tăng tổng là hai cột tiền bị ép và tràn.
-  quantityInStock: "w-[8.5%]",
+  // Đệm px-2 (20/11/2026): shop cách ON_HAND hiện hàng TRONG KHO nên số lớn hơn sổ tồn bán — viên
+  // "11.020" rộng 71px tràn 7px sang cột bên ở 1280 khi đệm còn 16px (đo với mã thử 11.020 chiếc).
+  quantityInStock: "w-[8.5%] px-2",
   // Đệm px-2 (11/11/2026): dòng nhỏ "xe tải + số chờ giao" dưới số Có thể bán cần 54px chữ, đệm mặc
   // định 16px chỉ còn 43px ở bảng 1.000px. Nội dung ô căn giữa nên số chính không xê dịch.
   availableToSell: "w-[7.5%] px-2",
@@ -177,6 +181,7 @@ const TABLE_MIN_W = { plain: "min-w-[1000px]", withLocations: "min-w-[1040px]" }
 /** Đệm ngang riêng của Ô theo cột — phải khớp với tiêu đề cột ở COL_HEAD_CLASS. */
 const CELL_PAD: Record<string, string> = {
   skuCode: "px-2",
+  quantityInStock: "px-2",
   channels: "px-2",
   stockValue: "px-2",
   availableToSell: "px-2",
@@ -427,6 +432,11 @@ export default function ProductsHubPage() {
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const outOfStockCount = productsQ.data?.outOfStockCount ?? 0;
+  // KHO CHUẨN QUỐC TẾ (20/11/2026): shop chạy cách ON_HAND → cột Tồn kho là hàng TRONG KHO, có cột
+  // "Đang giữ" đứng TRƯỚC Có thể bán (Tồn kho − Đang giữ − an toàn = Có thể bán, đọc từ trái sang là
+  // một phép trừ). Shop LEGACY giữ nguyên bảng cũ (Tồn kho · Có thể bán · Chờ giao).
+  const onHandModel = productsQ.data?.stockModel === "ON_HAND";
+  const notBackYet = productsQ.data?.notBackYet;
   const invalidate = useInvalidate();
   const items = useMemo(() => productsQ.data?.items ?? [], [productsQ.data]);
   // Gom dòng theo khóa cha–con backend đã xếp liền nhau: mẫu có ≥ 2 phân loại
@@ -626,7 +636,38 @@ export default function ProductsHubPage() {
   const colShow: Record<string, string> = { stockValue: valueColShow, awaitingShip: awaitColShow };
 
   const columns = useMemo(
-    () => [
+    () => {
+      // ===== ĐANG GIỮ / CHỜ GIAO — cùng một ô (cùng id nên dùng chung bề rộng và luật ẩn / hiện), khác
+      // nghĩa và khác CHỖ ĐỨNG theo cách của shop:
+      //   · ON_HAND (kho chuẩn quốc tế, 20/11/2026): "Đang giữ" — hàng đã có đơn, nằm TRONG Tồn kho,
+      //     đứng TRƯỚC Có thể bán để đọc từ trái sang là một phép trừ;
+      //   · LEGACY (11/11/2026): "Chờ giao" — đã trừ khỏi Tồn kho, đứng SAU Có thể bán vì không nằm
+      //     trong phép "Tồn − giữ − an toàn". Chỉ là con số + chú thích; đơn xem ở trang Đơn hàng. =====
+      const heldOrAwaitingColumn = columnHelper.display({
+        id: "awaitingShip",
+        header: () => (
+          <div
+            className="text-center"
+            title={
+              onHandModel
+                ? "Hàng đã có đơn, còn trong kho: đơn đã chốt chưa giao cho vận chuyển và đơn chưa thanh toán. Nằm TRONG Tồn kho."
+                : "Hàng của đơn đã chốt nhưng chưa giao cho đơn vị vận chuyển. Đã trừ khỏi Tồn kho, hàng vẫn còn trong kho."
+            }
+          >
+            {onHandModel ? "Đang giữ" : "Chờ giao"}
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="text-center">
+            <AwaitingShip
+              quantity={onHandModel ? heldShown(row.original) : (row.original.awaitingShip ?? 0)}
+              title={onHandModel ? heldTitle(row.original) : awaitingShipTitle(row.original)}
+              held={onHandModel}
+            />
+          </div>
+        ),
+      });
+      return [
       ...(isAdmin
         ? [
             columnHelper.display({
@@ -784,9 +825,22 @@ export default function ProductsHubPage() {
         ),
       }),
       columnHelper.accessor("quantityInStock", {
-        header: () => <div className="text-center">Tồn kho</div>,
+        header: () => (
+          <div
+            className="text-center"
+            title={
+              onHandModel
+                ? "Hàng thực có trong kho, gồm cả hàng đã có đơn chưa giao cho vận chuyển. Giao cho vận chuyển thì mới giảm."
+                : undefined
+            }
+          >
+            Tồn kho
+          </div>
+        ),
         cell: StockCell,
       }),
+      // ===== ĐANG GIỮ (cách ON_HAND) đứng TRƯỚC Có thể bán — xem heldOrAwaitingColumn bên dưới. =====
+      ...(onHandModel ? [heldOrAwaitingColumn] : []),
       // ===== CÓ THỂ BÁN — số Hubsell đẩy lên MỌI gian đã nối (trung tâm điều
       // tiết): tồn − đang giữ − tồn an toàn. Đây là con số khách phải tin. =====
       columnHelper.display({
@@ -794,15 +848,18 @@ export default function ProductsHubPage() {
         header: () => <div className="text-center">Có thể bán</div>,
         cell: ({ row }) => {
           const p = row.original;
-          const qty = p.quantityInStock;
-          const held = p.holdQuantity ?? 0;
+          // Cách ON_HAND: Tồn kho (trong kho) − đang giữ (đơn đã chốt + chưa thanh toán) − không bán −
+          // an toàn. Cách LEGACY: sổ − giữ tạm − an toàn. Hai phép trừ ra CÙNG một số.
+          const qty = stockShown(p);
+          const held = heldShown(p);
+          const unsellable = onHandModel ? (p.unsellableQuantity ?? 0) : 0;
           const safety = p.safetyStockEffective ?? 0;
-          const available = p.availableToSell ?? Math.max(0, qty - held - safety);
+          const available = p.availableToSell ?? Math.max(0, qty - held - unsellable - safety);
           const linked = (p.channelLinks ?? []).length > 0;
           return (
             <div
               className="text-center"
-              title={`Tồn ${formatNumber(qty)} − giữ ${formatNumber(held)} − an toàn ${formatNumber(safety)} = ${formatNumber(available)}${linked ? " — số này được đẩy lên mọi gian đã nối" : ""}`}
+              title={`${onHandModel ? "Tồn kho" : "Tồn"} ${formatNumber(qty)} − ${onHandModel ? "đang giữ" : "giữ"} ${formatNumber(held)}${unsellable > 0 ? ` − không bán ${formatNumber(unsellable)}` : ""} − an toàn ${formatNumber(safety)} = ${formatNumber(available)}${linked ? " — số này được đẩy lên mọi gian đã nối" : ""}`}
             >
               <span
                 className={cn(
@@ -816,34 +873,18 @@ export default function ProductsHubPage() {
                 <p className="mt-0.5 text-xs text-muted-foreground">an toàn {formatNumber(safety)}</p>
               )}
               <AwaitingShip
-                quantity={p.awaitingShip ?? 0}
-                title={awaitingShipTitle(p)}
+                quantity={onHandModel ? heldShown(p) : (p.awaitingShip ?? 0)}
+                title={onHandModel ? heldTitle(p) : awaitingShipTitle(p)}
                 variant="subline"
                 className={awaitSublineShow}
+                held={onHandModel}
               />
             </div>
           );
         },
       }),
-      // ===== CHỜ GIAO (11/11/2026, khách xin "đơn đang ra 10 con thì hiện 10 con bị giữ lại") — đã trừ
-      // khỏi Tồn kho cho đơn đã chốt, chưa giao ship. Đứng SAU Có thể bán: nó không nằm trong phép
-      // "Tồn − giữ − an toàn = Có thể bán". Chỉ là con số + chú thích; đơn xem ở trang Đơn hàng. =====
-      columnHelper.display({
-        id: "awaitingShip",
-        header: () => (
-          <div
-            className="text-center"
-            title="Hàng của đơn đã chốt nhưng chưa giao cho đơn vị vận chuyển. Đã trừ khỏi Tồn kho, hàng vẫn còn trong kho."
-          >
-            Chờ giao
-          </div>
-        ),
-        cell: ({ row }) => (
-          <div className="text-center">
-            <AwaitingShip quantity={row.original.awaitingShip ?? 0} title={awaitingShipTitle(row.original)} />
-          </div>
-        ),
-      }),
+      // ===== CHỜ GIAO (cách LEGACY) đứng SAU Có thể bán — xem heldOrAwaitingColumn. =====
+      ...(onHandModel ? [] : [heldOrAwaitingColumn]),
       // ===== CỘT MỚI: BÁN TRÊN — trái tim của hub. Gom chip theo sàn + badge
       // lệch tồn; bấm vào là bung chi tiết từng gian ngay dưới dòng. =====
       // "ĐANG Ở" (đợt B) — chỉ khi shop đã tạo vị trí; xem cột trống là hiểu
@@ -897,7 +938,14 @@ export default function ProductsHubPage() {
             columnHelper.display({
               id: "stockValue",
               header: () => (
-                <div className="text-right" title="Tồn kho × giá vốn. Tồn âm tính 0.">
+                <div
+                  className="text-right"
+                  title={
+                    onHandModel
+                      ? "Tồn kho × giá vốn. Tồn kho là hàng trong kho nên gồm cả hàng đã có đơn chưa giao. Tồn âm tính 0."
+                      : "Tồn kho × giá vốn. Tồn âm tính 0."
+                  }
+                >
                   Giá trị tồn
                 </div>
               ),
@@ -905,7 +953,7 @@ export default function ProductsHubPage() {
                 <div className="text-right">
                   <StockValueAmount
                     value={stockValueOf(row.original)}
-                    title={`${formatNumber(Math.max(0, row.original.quantityInStock))} × ${formatNumber(Number(row.original.costPrice))} ₫`}
+                    title={`${formatNumber(Math.max(0, stockShown(row.original)))} × ${formatNumber(Number(row.original.costPrice))} ₫`}
                     emptyTitle="Chưa nhập giá vốn"
                   />
                 </div>
@@ -954,9 +1002,10 @@ export default function ProductsHubPage() {
           </div>
         ),
       }),
-    ],
+      ];
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, canEditProducts, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, awaitSublineShow]
+    [seesCost, isAdmin, canEditProducts, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, awaitSublineShow, onHandModel]
   );
 
   const stockCellMeta = useMemo<StockCellMeta>(
@@ -980,7 +1029,7 @@ export default function ProductsHubPage() {
   function renderGroupRow(g: ProductGroupRows, open: boolean) {
     const rows = g.rows;
     const selectedCount = rows.filter((p) => selected.has(p.id)).length;
-    const qty = rows.reduce((s, p) => s + p.quantityInStock, 0);
+    const qty = rows.reduce((s, p) => s + stockShown(p), 0);
     const available = rows.reduce(
       (s, p) =>
         s +
@@ -991,7 +1040,14 @@ export default function ProductsHubPage() {
     const inactiveCount = rows.filter((p) => p.isActive === false).length;
     const lowCount = rows.filter((p) => p.isLowStock).length;
     const { value: groupValue, noCostCount } = groupStockValue(rows);
-    const awaitingTotal = groupAwaitingShip(rows);
+    // Cách ON_HAND: ô này là "Đang giữ" (đứng trước Có thể bán); cách LEGACY: "Chờ giao" (đứng sau).
+    const awaitingTotal = onHandModel ? groupHeld(rows) : groupAwaitingShip(rows);
+    const awaitingGroupTitle = onHandModel ? HELD_GROUP_TITLE : AWAITING_SHIP_GROUP_TITLE;
+    const heldOrAwaitingCell = (
+      <TableCell className={cn("text-center", CELL_PAD.awaitingShip, awaitColShow)}>
+        <AwaitingShip quantity={awaitingTotal} title={awaitingGroupTitle} held={onHandModel} />
+      </TableCell>
+    );
     const links = rows.flatMap((p) => p.channelLinks ?? []);
     const byChannel = new Map<string, number>();
     for (const l of links) byChannel.set(l.channelName, (byChannel.get(l.channelName) ?? 0) + 1);
@@ -1091,12 +1147,16 @@ export default function ProductsHubPage() {
           <TableCell className="text-right">{range(rows.map((p) => Number(p.costPrice ?? 0)))}</TableCell>
         )}
         <TableCell className="text-right">{range(rows.map((p) => Number(p.sellingPrice)))}</TableCell>
-        <TableCell className="text-center">
-          <span className="text-sm font-semibold tabular-nums" title="Tổng tồn các phân loại">
+        <TableCell className={cn("text-center", CELL_PAD.quantityInStock)}>
+          <span
+            className="text-sm font-semibold tabular-nums"
+            title={onHandModel ? "Tổng hàng trong kho các phân loại" : "Tổng tồn các phân loại"}
+          >
             {formatNumber(qty)}
           </span>
           {seesCost && <StockValueSubline value={groupValue} className={valueSublineShow} />}
         </TableCell>
+        {onHandModel && heldOrAwaitingCell}
         <TableCell className={cn("text-center", CELL_PAD.availableToSell)}>
           <span
             className={cn("text-sm font-semibold tabular-nums", available === 0 ? "text-rose-700" : "text-foreground")}
@@ -1106,14 +1166,13 @@ export default function ProductsHubPage() {
           </span>
           <AwaitingShip
             quantity={awaitingTotal}
-            title={AWAITING_SHIP_GROUP_TITLE}
+            title={awaitingGroupTitle}
             variant="subline"
             className={awaitSublineShow}
+            held={onHandModel}
           />
         </TableCell>
-        <TableCell className={cn("text-center", CELL_PAD.awaitingShip, awaitColShow)}>
-          <AwaitingShip quantity={awaitingTotal} title={AWAITING_SHIP_GROUP_TITLE} />
-        </TableCell>
+        {!onHandModel && heldOrAwaitingCell}
         {locationsEnabled && <TableCell className={TEXT_SUB}>—</TableCell>}
         <TableCell className={CELL_PAD.channels}>
           {chips.length === 0 ? (
@@ -1481,7 +1540,11 @@ export default function ProductsHubPage() {
                         ? "border-rose-600 bg-rose-600 text-white"
                         : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                     )}
-                    title="Chỉ hiện SKU đang hết hàng (tồn kho ≤ 0)"
+                    title={
+                      onHandModel
+                        ? "Chỉ hiện SKU không còn hàng để bán (hàng trong kho đã có đơn giữ hết, hoặc kho trống)"
+                        : "Chỉ hiện SKU đang hết hàng (tồn kho ≤ 0)"
+                    }
                   >
                     Hết hàng {formatNumber(outOfStockCount)}
                   </button>
@@ -1510,6 +1573,9 @@ export default function ProductsHubPage() {
               </div>
             )}
             </div>
+
+            {/* Kho chuẩn quốc tế: dải giải thích một lần + dòng "chưa về kho" (chỉ shop cách ON_HAND). */}
+            {onHandModel && <OnHandNotice notBackYet={notBackYet} />}
 
             {/* Cảnh báo lệch tồn với sàn — việc vận hành, chỉ hiện khi có lỗi chưa xử lý */}
             <SyncAlertBanner />

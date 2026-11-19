@@ -45,7 +45,10 @@ export function adjustStock(body: {
   productId: string;
   type: "IMPORT" | "EXPORT";
   quantity: number;
+  /** Ghi chú tự do. */
   reason?: string;
+  /** Lý do theo danh sách (lib/stock-reason.ts) — máy chủ cũ bỏ qua trường này. */
+  reasonCode?: string;
   locationId?: string;
 }) {
   return api<AdjustStockResponse>("/api/inventory/adjust", { method: "POST", body });
@@ -61,6 +64,7 @@ export function adjustStockBulk(body: {
   type: "IMPORT" | "EXPORT";
   items: { productId: string; quantity: number }[];
   reason?: string;
+  reasonCode?: string;
   locationId?: string;
 }) {
   return api<AdjustStockBulkResponse>("/api/inventory/adjust-bulk", { method: "POST", body });

@@ -20,6 +20,7 @@ import { ApiError } from "@/api/client";
 import type { ProductDto, StockLocationDto } from "@/types/api";
 import { groupVN } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
+import { STOCK_REASONS, type StockReasonCode } from "@/lib/stock-reason";
 import { tierLayout } from "@/lib/variant-tiers";
 import { ActionButton } from "@/components/ActionButton";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
@@ -31,11 +32,9 @@ const PAGE_SIZE = 20;
 
 type AdjustType = "IMPORT" | "EXPORT";
 
-// Lý do chọn nhanh — ghi nguyên văn vào nhật ký kho trên web.
-const REASONS: Record<AdjustType, string[]> = {
-  IMPORT: ["Nhập hàng mới", "Kiểm lại thấy dư", "Khách trả tại shop"],
-  EXPORT: ["Hàng hỏng", "Kiểm lại thấy thiếu", "Bán ngoài sàn", "Tặng / dùng nội bộ"],
-};
+// Lý do chọn nhanh = DANH SÁCH CHUẨN chung với web (kho chuẩn quốc tế lát 4, 20/11/2026 —
+// lib/stock-reason.ts): app gửi MÃ lý do, máy chủ ghi tên lý do vào nhật ký và cộng vào báo cáo
+// "Hàng hỏng, mất & chênh kiểm kê". Ô chữ bên dưới là ghi chú thêm.
 
 /**
  * SKU này có đẩy tồn lên sàn không? App CHỈ thông báo — nối SKU và bật đồng bộ
@@ -53,6 +52,16 @@ function linkState(p: ProductDto): "unlinked" | "off" | "on" {
  * cờ isLowStock backend low-stock.ts) — SKU tồn 5 giữ 5 là hết hàng, không phải "sắp hết".
  */
 const isOut = (p: ProductDto) => p.quantityInStock - p.holdQuantity <= 0;
+
+/**
+ * KHO CHUẨN QUỐC TẾ (20/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 15): shop chạy cách "hàng
+ * trong kho" thì số "Tồn kho" là hàng THỰC CÓ trong kho (gồm hàng đang giữ cho đơn chưa giao), "đang
+ * giữ" gồm cả đơn đã chốt. Máy chủ gắn sẵn stockModel / onHand / heldQuantity vào từng SKU; thiếu
+ * (máy chủ cũ, shop cách cũ) thì app hiện y như trước. Luật "hết hàng" (isOut) không đổi ở cả hai cách.
+ */
+const onHandMode = (p: ProductDto) => p.stockModel === "ON_HAND" && typeof p.onHand === "number";
+const stockShown = (p: ProductDto) => (onHandMode(p) ? (p.onHand as number) : p.quantityInStock);
+const heldShown = (p: ProductDto) => (onHandMode(p) ? (p.heldQuantity ?? p.holdQuantity) : p.holdQuantity);
 
 /** Một MẪU hàng với các phân loại (SKU) của nó — sản phẩm đơn là mẫu một dòng. */
 interface StockGroup {
@@ -203,7 +212,10 @@ export function StockPage() {
     setItems((prev) =>
       prev.map((x) => {
         const s = stocks.get(x.id);
-        return s === undefined ? x : { ...x, quantityInStock: s };
+        if (s === undefined) return x;
+        // Hàng trong kho đổi đúng bằng phần sổ tồn bán vừa đổi (lượt đọc lại ngay dưới sẽ lấy số chuẩn).
+        const onHand = typeof x.onHand === "number" ? x.onHand + (s - x.quantityInStock) : x.onHand;
+        return { ...x, quantityInStock: s, onHand };
       })
     );
     try {
@@ -222,9 +234,9 @@ export function StockPage() {
   const renderGroup = ({ item: g }: { item: StockGroup }) => {
     const multi = g.totalRows > 1;
     const single = multi ? null : g.rows[0];
-    const stock = g.rows.reduce((a, p) => a + p.quantityInStock, 0);
+    const stock = g.rows.reduce((a, p) => a + stockShown(p), 0);
     const sellable = g.rows.reduce((a, p) => a + p.availableToSell, 0);
-    const hold = g.rows.reduce((a, p) => a + p.holdQuantity, 0);
+    const hold = g.rows.reduce((a, p) => a + heldShown(p), 0);
     const outRows = g.rows.filter(isOut).length;
     const lowRows = g.rows.filter((p) => !isOut(p) && p.isLowStock).length;
     const allOut = outRows === g.rows.length;
@@ -446,6 +458,7 @@ function StockSheet({
   /** Số lượng gõ ở từng phân loại (chuỗi số, rỗng = không đổi). */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
+  const [reasonCode, setReasonCode] = useState<StockReasonCode | "">("");
   const [locationId, setLocationId] = useState("");
   const [locOpen, setLocOpen] = useState(false);
   /** Mẫu nhiều tầng: đang chia mục theo tầng nào (-1 = mặc định tầng cuối). */
@@ -459,6 +472,7 @@ function StockSheet({
       setType("IMPORT");
       setDrafts({});
       setReason("");
+      setReasonCode("");
       setLocOpen(false);
       setAxis(-1);
       setError("");
@@ -480,9 +494,19 @@ function StockSheet({
     const n = Number(drafts[p.id] ?? "");
     return Number.isInteger(n) && n > 0 ? n : 0;
   };
-  const nextOf = (p: ProductDto) =>
-    nonSellable ? p.quantityInStock : p.quantityInStock + (type === "IMPORT" ? qtyOf(p) : -qtyOf(p));
+  // Số "Tồn" sau khi lưu, theo đúng cách shop đang xem. Cách "hàng trong kho": nhập / xuất ở vị trí nào
+  // cũng đổi hàng trong kho (kệ không bán vẫn là hàng trong kho); cách cũ: kệ không bán không đổi tồn bán.
+  const nextOf = (p: ProductDto) => {
+    const d = type === "IMPORT" ? qtyOf(p) : -qtyOf(p);
+    if (onHandMode(p)) return stockShown(p) + d;
+    return nonSellable ? p.quantityInStock : p.quantityInStock + d;
+  };
+  // Xuất tay chỉ lấy được phần CHƯA có đơn giữ (sổ tồn bán) — ở cả hai cách, khớp máy chủ.
   const overOf = (p: ProductDto) => type === "EXPORT" && !nonSellable && qtyOf(p) > p.quantityInStock;
+  const overText = (p: ProductDto) =>
+    onHandMode(p)
+      ? `Xuất được tối đa ${groupVN(Math.max(0, p.quantityInStock))} (giữ ${groupVN(heldShown(p))} cho đơn)`
+      : `Kho chỉ còn ${groupVN(p.quantityInStock)}`;
 
   const changed = rows.filter((p) => qtyOf(p) > 0);
   const totalQty = changed.reduce((a, p) => a + qtyOf(p), 0);
@@ -513,15 +537,20 @@ function StockSheet({
           type,
           quantity: qtyOf(p),
           reason: reason.trim() || undefined,
+          reasonCode: reasonCode || undefined,
           locationId: location ? location.id : undefined,
         });
         stocks.set(p.id, res.product.quantityInStock);
-        summary = `Đã ${verb} ${groupVN(qtyOf(p))} · ${p.skuCode} còn ${groupVN(res.product.quantityInStock)}`;
+        const left = onHandMode(p)
+          ? stockShown(p) + (res.product.quantityInStock - p.quantityInStock)
+          : res.product.quantityInStock;
+        summary = `Đã ${verb} ${groupVN(qtyOf(p))} · ${p.skuCode} còn ${groupVN(left)}`;
       } else {
         const res = await adjustStockBulk({
           type,
           items: changed.map((p) => ({ productId: p.id, quantity: qtyOf(p) })),
           reason: reason.trim() || undefined,
+          reasonCode: reasonCode || undefined,
           locationId: location ? location.id : undefined,
         });
         for (const p of res.products) stocks.set(p.productId, p.quantityInStock);
@@ -570,10 +599,10 @@ function StockSheet({
                 out ? "text-red-500 dark:text-red-400" : "text-slate-700 dark:text-slate-200"
               }`}
             >
-              {groupVN(p.quantityInStock)}
+              {groupVN(stockShown(p))}
             </Text>
             {" · "}bán được {groupVN(p.availableToSell)}
-            {p.holdQuantity > 0 ? ` · giữ ${groupVN(p.holdQuantity)}` : ""}
+            {heldShown(p) > 0 ? ` · giữ ${groupVN(heldShown(p))}` : ""}
           </Text>
           {linkState(p) !== "on" ? (
             <Text className="mt-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
@@ -617,11 +646,11 @@ function StockSheet({
           </View>
           {over ? (
             <Text className="mt-1 text-[10px] font-semibold text-red-500 dark:text-red-400" style={TABULAR}>
-              Kho chỉ còn {groupVN(p.quantityInStock)}
+              {overText(p)}
             </Text>
           ) : q > 0 ? (
             <Text className="mt-1 text-[10px] text-slate-500 dark:text-slate-400" style={TABULAR}>
-              {groupVN(p.quantityInStock)} →{" "}
+              {groupVN(stockShown(p))} →{" "}
               <Text className="font-bold text-slate-900 dark:text-slate-100">{groupVN(nextOf(p))}</Text>
             </Text>
           ) : null}
@@ -689,6 +718,8 @@ function StockSheet({
               value={type}
               onChange={(k) => {
                 setType(k);
+                // Danh sách lý do của Nhập và Xuất khác nhau → đổi chiều thì bỏ lý do đang chọn.
+                setReasonCode("");
                 setReason("");
                 setError("");
               }}
@@ -733,13 +764,13 @@ function StockSheet({
                 >
                   {overOf(single) ? (
                     <Text className="text-center text-[13px] font-medium text-red-600 dark:text-red-300">
-                      Kho chỉ còn {groupVN(single.quantityInStock)}, không xuất được {groupVN(qtyOf(single))}
+                      {overText(single)}, không xuất được {groupVN(qtyOf(single))}
                     </Text>
                   ) : (
                     <>
                       <Text className="text-xs text-slate-500 dark:text-slate-400">Tồn kho</Text>
                       <Text className="text-base font-bold text-slate-500 dark:text-slate-400" style={TABULAR}>
-                        {groupVN(single.quantityInStock)}
+                        {groupVN(stockShown(single))}
                       </Text>
                       <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
                       <Text className="text-base font-bold text-slate-900 dark:text-slate-100" style={TABULAR}>
@@ -878,15 +909,20 @@ function StockSheet({
               Lý do (ghi vào nhật ký kho)
             </Text>
             <View className="mb-2 flex-row flex-wrap gap-1.5">
-              {REASONS[type].map((r) => (
-                <PickChip key={r} label={r} active={reason === r} onPress={() => setReason(reason === r ? "" : r)} />
+              {STOCK_REASONS[type].map((r) => (
+                <PickChip
+                  key={r.code}
+                  label={r.label}
+                  active={reasonCode === r.code}
+                  onPress={() => setReasonCode(reasonCode === r.code ? "" : r.code)}
+                />
               ))}
             </View>
             <TextInput
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              placeholder="Hoặc ghi lý do khác — tùy chọn"
+              placeholder="Ghi chú thêm — tùy chọn"
               placeholderTextColor="#94a3b8"
-              value={REASONS[type].includes(reason) ? "" : reason}
+              value={reason}
               onChangeText={setReason}
             />
 

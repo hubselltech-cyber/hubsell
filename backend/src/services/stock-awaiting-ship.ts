@@ -41,6 +41,26 @@ export interface AwaitingShip {
  * trong Map. Đi TỪ tập đơn chờ giao (nhỏ, có chỉ mục) sang nhật ký theo orderId — CTE MATERIALIZED
  * ép hướng này: đi ngược từ nhật ký của mã bán chạy là hàng chục nghìn dòng mỗi mã.
  */
+/**
+ * HÀNG ĐÃ CỘNG SỔ MÀ KHO CHƯA NHẬN KIỆN (kho chuẩn quốc tế lát 2, mục 5.2.1): đơn hủy / giao thất
+ * bại sau khi rời kho của shop ở chế độ "cộng khi sàn báo hủy" — đã cộng lại sổ (stockRestoredAt)
+ * nhưng còn "Chờ hàng về". Màn Tổng kho của shop ON_HAND dùng số này để nói rõ "Tồn kho đang tính
+ * cả N sản phẩm chưa về kho". Đi từ các gian của chủ shop qua chỉ mục một phần
+ * "Order_return_awaiting_idx" (channelId) WHERE returnStatus = 'AWAITING'; không LIMIT.
+ */
+export async function restockedNotBackYet(
+  db: Pick<typeof prisma, "$queryRaw">,
+  ownerId: string
+): Promise<{ units: number; orders: number }> {
+  const rows = await db.$queryRaw<{ units: number; orders: number }[]>`
+    SELECT COALESCE(SUM(-il."changeQuantity"), 0)::int AS units, COUNT(DISTINCT o."id")::int AS orders
+    FROM "Channel" c
+    JOIN "Order" o ON o."channelId" = c."id" AND o."returnStatus" = 'AWAITING' AND o."stockRestoredAt" IS NOT NULL
+    JOIN "InventoryLog" il ON il."orderId" = o."id" AND il."changeQuantity" < 0
+    WHERE c."userId" = ${ownerId}`;
+  return rows[0] ?? { units: 0, orders: 0 };
+}
+
 export async function awaitingShipByProduct(
   db: Db,
   ownerId: string,

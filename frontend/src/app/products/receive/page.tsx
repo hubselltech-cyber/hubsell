@@ -44,6 +44,9 @@ import {
 } from "@/lib/api";
 import { productMatchesCode } from "@/lib/product-code";
 import { formatNumber } from "@/lib/format";
+import { heldShown, isOnHand, stockShown } from "@/lib/stock-model";
+import { StockReasonChips } from "@/components/products/stock-reason-chips";
+import { defaultStockReason, type StockReasonCode } from "@/lib/stock-reason";
 import { canSeeFinancials } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
@@ -83,6 +86,9 @@ export default function ReceiveStockPage() {
   const [type, setType] = useState<SheetType>("IMPORT");
   const [lines, setLines] = useState<Line[]>([]);
   const [reason, setReason] = useState("");
+  // Lý do theo danh sách (kho chuẩn quốc tế lát 4), một lý do cho cả phiếu. Đổi Nhập ↔ Xuất thì về
+  // lý do mặc định của chiều đó (danh sách hai chiều khác nhau).
+  const [reasonCode, setReasonCode] = useState<StockReasonCode | "">(() => defaultStockReason("IMPORT"));
   const [submitting, setSubmitting] = useState(false);
   // PHIẾU KHO (05/11/2026): phiếu vừa ghi — dải kết quả với nút In, giữ tới khi lập phiếu mới / ẩn.
   const [lastVoucher, setLastVoucher] = useState<{
@@ -240,6 +246,7 @@ export default function ReceiveStockPage() {
           ...(showPrice && l.price ? { purchasePrice: Number(l.price) } : {}),
         })),
         reason: reason.trim() || undefined,
+        reasonCode: reasonCode || undefined,
         locationId: effectiveLocationId || undefined,
         ...(isImport ? supplierChoiceToParams(supplier) : {}),
         ...(showPayment ? { payment: payMode === "partial" ? { mode: "partial" as const, amount: partialAmount } : { mode: payMode } } : {}),
@@ -257,6 +264,7 @@ export default function ReceiveStockPage() {
       });
       setLines([]);
       setReason("");
+      setReasonCode(defaultStockReason(type));
       setSupplier(null);
       setPayMode("full");
       setPayAmount("");
@@ -277,7 +285,10 @@ export default function ReceiveStockPage() {
     <button
       type="button"
       aria-pressed={type === key}
-      onClick={() => setType(key)}
+      onClick={() => {
+        setType(key);
+        setReasonCode(defaultStockReason(key));
+      }}
       className={cn(
         "flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
         type === key
@@ -395,7 +406,7 @@ export default function ReceiveStockPage() {
                       <span className={cn(TEXT_SUB, "ml-2 truncate")}>{p.productName}</span>
                     </span>
                     <span className={cn(TEXT_SUB, "shrink-0 tabular-nums")}>
-                      tồn {formatNumber(p.quantityInStock)}
+                      tồn {formatNumber(stockShown(p))}
                     </span>
                   </button>
                 </li>
@@ -434,9 +445,10 @@ export default function ReceiveStockPage() {
               <TableBody>
                 {lines.map((l, i) => {
                   const n = Number(l.quantity) || 0;
-                  const after = isImport
-                    ? l.product.quantityInStock + n
-                    : l.product.quantityInStock - n;
+                  // "Tồn hiện tại / Tồn sau" theo cách hiển thị của shop (hàng trong kho hoặc sổ tồn
+                  // bán); rào xuất vẫn theo phần CHƯA có đơn giữ (sổ tồn bán) ở cả hai cách.
+                  const current = stockShown(l.product);
+                  const after = isImport ? current + n : current - n;
                   const bad =
                     !Number.isInteger(Number(l.quantity)) ||
                     n <= 0 ||
@@ -452,8 +464,15 @@ export default function ReceiveStockPage() {
                           {l.product.productName}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums text-slate-700">
-                        {formatNumber(l.product.quantityInStock)}
+                      <TableCell
+                        className="text-right text-sm tabular-nums text-slate-700"
+                        title={
+                          isOnHand(l.product) && heldShown(l.product) > 0
+                            ? `Trong kho ${formatNumber(current)}, đang giữ ${formatNumber(heldShown(l.product))} cho đơn → xuất được tối đa ${formatNumber(Math.max(0, l.product.quantityInStock))}`
+                            : undefined
+                        }
+                      >
+                        {formatNumber(current)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Input
@@ -561,7 +580,11 @@ export default function ReceiveStockPage() {
             </div>
           )}
           <div className="grid w-full max-w-md gap-1.5">
-            <Label htmlFor="bulk-reason">Lý do (không bắt buộc)</Label>
+            <Label>Lý do</Label>
+            <StockReasonChips type={type} value={reasonCode} onChange={setReasonCode} disabled={submitting} />
+          </div>
+          <div className="grid w-full max-w-md gap-1.5">
+            <Label htmlFor="bulk-reason">Ghi chú (không bắt buộc)</Label>
             <Input
               id="bulk-reason"
               placeholder={

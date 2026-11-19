@@ -1,4 +1,4 @@
-import { Truck } from "lucide-react";
+import { Lock, Truck } from "lucide-react";
 
 import type { Product } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -64,11 +64,17 @@ export function AwaitingShip({
   title,
   variant = "column",
   className,
+  held = false,
 }: {
   quantity: number;
   title: string;
   variant?: "column" | "subline";
   className?: string;
+  /**
+   * Shop ON_HAND (kho chuẩn quốc tế, 20/11/2026): ô này là "ĐANG GIỮ" — hàng đã có đơn nằm TRONG Tồn
+   * kho, đứng TRƯỚC Có thể bán. Cùng khuôn ô, khác biểu tượng (ổ khóa) và chữ đọc cho trình đọc màn hình.
+   */
+  held?: boolean;
 }) {
   if (quantity <= 0) {
     return variant === "column" ? <span className={cn(TEXT_SUB, className)}>—</span> : null;
@@ -82,8 +88,8 @@ export function AwaitingShip({
       className={cn("mx-auto mt-0.5 flex w-fit items-center gap-0.5 text-xs text-slate-500 tabular-nums", className)}
       title={title}
     >
-      <Truck className="size-3 shrink-0" aria-hidden />
-      <span className="sr-only">chờ giao</span>
+      {held ? <Lock className="size-3 shrink-0" aria-hidden /> : <Truck className="size-3 shrink-0" aria-hidden />}
+      <span className="sr-only">{held ? "đang giữ" : "chờ giao"}</span>
       {formatNumber(quantity)}
     </span>
   );

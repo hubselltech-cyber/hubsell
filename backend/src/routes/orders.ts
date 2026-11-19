@@ -2,7 +2,6 @@ import express, { Router } from "express";
 import {
   Carrier,
   ChannelName,
-  InventoryLogType,
   Prisma,
   ReturnStatus,
   ShippingStatus,
@@ -10,8 +9,13 @@ import {
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { ORDER_PAYMENT_INCLUDE, orderPaymentDetail } from "../lib/order-payment-detail";
-import { applyStockDelta } from "../services/stock-ledger";
-import { hasLeftWarehouse, releaseCommittedTx, shipStockTx } from "../integrations/order-stock";
+import {
+  hasLeftWarehouse,
+  releaseStockHoldTx,
+  restoreReturnedStockTx,
+  restoreStockTx,
+  shipStockTx,
+} from "../integrations/order-stock";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
@@ -814,70 +818,42 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
-      // Hủy khi hàng chưa rời kho → ra khỏi bộ đếm "đang giữ" (lát 1 chạy bóng; tự chống lặp).
-      await releaseCommittedTx(tx, order.id);
-      // Tìm các log TRỪ kho gắn với đơn này (changeQuantity < 0)
-      const deductions = await tx.inventoryLog.findMany({
-        where: { orderId: order.id, changeQuantity: { lt: 0 } },
-        include: { product: { select: { id: true, productName: true } } },
+      // Đơn chưa thanh toán bị hủy tay: nhả phần giữ tạm (trước 20/11/2026 đường này bỏ sót →
+      // holdQuantity treo, Có thể bán thấp oan). Hàm tự chống lặp bằng mốc của nó.
+      const hold = await releaseStockHoldTx(tx, order.id);
+      // MỘT bộ hàm cho mọi đường hủy (kho chuẩn quốc tế lát 2): khóa dòng đơn, đọc mốc
+      // stockRestoredAt dưới khóa (webhook hủy tới cùng lúc cũng chỉ cộng một lần), nhả giữ; hàng
+      // chưa rời kho thì cộng lại sổ đúng vị trí đã trừ; hàng ĐÃ rời kho thì theo cài đặt của shop
+      // (cộng ngay, hoặc chờ kho nhận kiện).
+      const r = await restoreStockTx(tx, order.id, "hủy tay", {
+        actorId: req.userId ?? null,
+        reason: `Hoàn kho tự động do hủy đơn ${order.orderCode}`,
       });
-
-      const restored: {
-        productId: string;
-        productName: string;
-        restoredQuantity: number;
-        newQuantity: number;
-      }[] = [];
-
-      for (const log of deductions) {
-        const qty = Math.abs(log.changeQuantity);
-        // Hủy đơn (chưa giao): trả về ĐÚNG vị trí đã trừ.
-        const written = await applyStockDelta(tx, {
-          productId: log.productId,
-          delta: qty,
-          type: InventoryLogType.SYNC,
-          reason: `Hoàn kho tự động do hủy đơn ${order.orderCode}`,
-          orderId: order.id,
-          actorId: req.userId ?? null,
-          locationId: log.locationId,
-        });
-        restored.push({
-          productId: log.productId,
-          productName: log.product.productName,
-          restoredQuantity: qty,
-          newQuantity: written.quantityInStock,
-        });
-      }
+      const restored = r.lines;
 
       const updatedOrder = await tx.order.update({
         where: { id: order.id },
         data: {
           shippingStatus: ShippingStatus.CANCELLED,
-          // Ghi mốc đã cộng kho để luồng quét hàng hoàn không cộng lần nữa.
-          // Chỉ ghi khi thật sự có bút toán hoàn — đơn không có log trừ kho thì
-          // chưa từng trừ, nên cũng chưa cộng gì.
+          // Có cộng lại sổ → coi như hàng đã ở kho. Không cộng (đơn chưa từng trừ kho, hoặc shop
+          // chờ kho nhận kiện) → vào "Chờ hàng về", mốc đếm ngày đối soát bắt đầu từ đây. Đơn đã
+          // được đường khác cộng trước đó thì giữ nguyên trạng thái hoàn đang có.
           ...(restored.length > 0
-            ? {
-                stockRestoredAt: new Date(),
-                returnStatus: ReturnStatus.RECEIVED_INTACT,
-                returnedAt: new Date(),
-              }
-            : {
-                returnStatus: ReturnStatus.AWAITING,
-                // Mốc đếm ngày đối soát bắt đầu từ đây
-                returnRequestedAt: new Date(),
-              }),
+            ? { returnStatus: ReturnStatus.RECEIVED_INTACT, returnedAt: new Date() }
+            : r.outcome === "already-restored"
+              ? {}
+              : { returnStatus: ReturnStatus.AWAITING, returnRequestedAt: new Date() }),
         },
         include: { channel: { select: { channelName: true, shopName: true } } },
       });
 
-      // Hủy đơn vừa hoàn kho → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
+      // Hủy đơn vừa hoàn kho / nhả giữ → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
       stockTicket = await stageStockPush(
         tx,
-        restored.map((l) => l.productId),
+        [...new Set([...restored.map((l) => l.productId), ...hold.productIds])],
         { source: `hủy đơn ${order.orderCode}` }
       );
-      return { order: updatedOrder, restored };
+      return { order: updatedOrder, restored, awaitingReturn: r.outcome === "awaiting-return" };
     });
 
     await finishStockPush(stockTicket);
@@ -1849,56 +1825,6 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
 });
 
 /**
- * Cộng NGƯỢC tồn kho cho một đơn hoàn dựa trên log TRỪ kho của chính đơn đó.
- *
- * Dùng chung cho nhập kho LẺ (/:id/return) và NHẬP KHO TẤT CẢ (bulk-inbound)
- * để hai đường không lệch nhau. Hàm này KHÔNG tự kiểm tra stockRestoredAt —
- * nơi gọi phải kiểm tra trước rồi tự ghi mốc, đúng như chốt chặn hiện hành.
- */
-async function restoreReturnStockTx(
-  tx: Prisma.TransactionClient,
-  order: { id: string; orderCode: string },
-  reason: string,
-  actorId: string | null = null
-) {
-  const restored: {
-    productId: string;
-    productName: string;
-    restoredQuantity: number;
-    newQuantity: number;
-  }[] = [];
-  // Đơn chưa từng được ghi "rời kho" mà kho đã nhận lại hàng → ra khỏi bộ đếm "đang giữ"
-  // (lát 1 chạy bóng; đơn đã rời kho thì hàm không làm gì).
-  await releaseCommittedTx(tx, order.id);
-  const deductions = await tx.inventoryLog.findMany({
-    where: { orderId: order.id, changeQuantity: { lt: 0 } },
-    include: { product: { select: { id: true, productName: true } } },
-  });
-  for (const log of deductions) {
-    const qty = Math.abs(log.changeQuantity);
-    // Hàng HOÀN về kho: shop đặt "nơi nhận hoàn" thì về đó, không thì về đúng
-    // vị trí đã trừ (đợt B).
-    const written = await applyStockDelta(tx, {
-      productId: log.productId,
-      delta: qty,
-      type: InventoryLogType.SYNC,
-      reason,
-      orderId: order.id,
-      actorId,
-      locationId: log.locationId,
-      useReturnDefault: true,
-    });
-    restored.push({
-      productId: log.productId,
-      productName: log.product.productName,
-      restoredQuantity: qty,
-      newQuantity: written.quantityInStock,
-    });
-  }
-  return restored;
-}
-
-/**
  * POST /api/orders/returns/bulk-inbound — NHẬP KHO CÁC ĐƠN ĐANG TÍCH.
  * Body: { ids: string[] } — các đơn tích trên một trang, tối đa 100 (13/11/2026;
  * chế độ "mọi đơn đã nhận" không cần ids đã gỡ cùng nút "Nhập kho tất cả").
@@ -1949,22 +1875,20 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
     for (const order of orders) {
       try {
         const restored = await prisma.$transaction(async (tx) => {
-          const lines =
-            order.stockRestoredAt === null
-              ? await restoreReturnStockTx(
-                  tx,
-                  order,
-                  `Nhập kho hàng hoàn (hàng loạt) — đơn ${order.orderCode}`,
-                  req.userId ?? null
-                )
-              : [];
+          // Khóa dòng đơn + đọc mốc stockRestoredAt DƯỚI khóa (kho chuẩn quốc tế lát 2): đơn đã
+          // cộng sổ từ lúc hủy thì chỉ đổi trạng thái; hàm tự ghi mốc khi có cộng.
+          const { lines } = await restoreReturnedStockTx(
+            tx,
+            order.id,
+            `Nhập kho hàng hoàn (hàng loạt) — đơn ${order.orderCode}`,
+            req.userId ?? null
+          );
           await tx.order.update({
             where: { id: order.id },
             data: {
               returnStatus: ReturnStatus.RECEIVED_INTACT,
               // Đơn đi tắt từ Chờ hàng về chưa có mốc "đã cầm hàng" → ghi tại đây.
               returnedAt: order.returnedAt ?? new Date(),
-              ...(lines.length > 0 ? { stockRestoredAt: new Date() } : {}),
             },
           });
           // Hàng hoàn vừa nhập lại kho → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
@@ -2126,18 +2050,19 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
-      // Chỉ cộng kho khi hàng nguyên vẹn VÀ đơn này chưa từng được cộng
-      const shouldRestore =
-        condition === "INTACT" && order.stockRestoredAt === null;
-
-      const restored = shouldRestore
-        ? await restoreReturnStockTx(
-            tx,
-            order,
-            `Nhận hàng hoàn nguyên vẹn — đơn ${order.orderCode}`,
-            req.userId ?? null
-          )
-        : [];
+      // Chỉ cộng kho khi hàng nguyên vẹn VÀ đơn này chưa từng được cộng. Mốc stockRestoredAt đọc
+      // DƯỚI khóa dòng đơn trong hàm (kho chuẩn quốc tế lát 2) — không tin số đọc ngoài giao dịch.
+      const back =
+        condition === "INTACT"
+          ? await restoreReturnedStockTx(
+              tx,
+              order.id,
+              `Nhận hàng hoàn nguyên vẹn — đơn ${order.orderCode}`,
+              req.userId ?? null
+            )
+          : { lines: [], alreadyRestored: false };
+      const restored = back.lines;
+      const shouldRestore = condition === "INTACT" && !back.alreadyRestored;
 
       const updatedOrder = await tx.order.update({
         where: { id: order.id },
@@ -2157,7 +2082,6 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
           returnedAt: order.returnedAt ?? new Date(),
           // Đơn hoàn về thì coi như đã kết thúc vòng đời giao hàng
           shippingStatus: ShippingStatus.CANCELLED,
-          ...(restored.length > 0 ? { stockRestoredAt: new Date() } : {}),
         },
         include: { channel: { select: { channelName: true, shopName: true } } },
       });
@@ -2168,7 +2092,7 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
         restored.map((l) => l.productId),
         { source: `nhận hàng hoàn — đơn ${order.orderCode}` }
       );
-      return { order: updatedOrder, restored, shouldRestore };
+      return { order: updatedOrder, restored, shouldRestore, alreadyRestored: back.alreadyRestored };
     });
 
     await finishStockPush(stockTicket);
@@ -2183,7 +2107,7 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
       stockSkippedReason:
         condition === "DAMAGED"
           ? "Hàng hư hỏng/mất — không cộng lại tồn kho, đã gắn cờ chờ khiếu nại"
-          : order.stockRestoredAt !== null
+          : result.alreadyRestored
             ? "Đơn này đã được cộng lại tồn kho từ trước (lúc hủy đơn) — không cộng thêm lần nữa"
             : null,
     });

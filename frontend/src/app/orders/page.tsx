@@ -68,6 +68,7 @@ import {
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
+import { useStockSettings } from "@/lib/stock-model";
 import { exportAllOrders } from "@/lib/excel";
 import { openPdfBlob } from "@/lib/print-labels";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
@@ -166,6 +167,8 @@ function UpdateStatusDialog({
 }) {
   const [newStatus, setNewStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Shop "cộng tồn khi kho nhận kiện" (kho chuẩn quốc tế lát 2): hủy đơn đã giao thì chưa cộng tồn.
+  const { restockOnReturn } = useStockSettings();
 
   // Các trạng thái có thể chuyển tới (trừ trạng thái hiện tại)
   const options = [
@@ -195,6 +198,11 @@ function UpdateStatusDialog({
             .map((r) => `${r.productName} +${r.restoredQuantity} (còn ${r.newQuantity})`)
             .join("; ")}`,
           { duration: 7000 }
+        );
+      } else if (newStatus === "CANCELLED" && res.awaitingReturn) {
+        toast.success(
+          `Đã hủy đơn ${order.orderCode}. Hàng đã giao cho vận chuyển nên tồn kho chưa cộng lại — cộng khi kho nhận kiện ở trang Đối soát đơn hoàn.`,
+          { duration: 9000 }
         );
       } else if (newStatus === "CANCELLED") {
         toast.success(
@@ -252,8 +260,10 @@ function UpdateStatusDialog({
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <p>
                 Hủy đơn sẽ <b>tự động cộng hoàn lại tồn kho</b> cho các sản phẩm
-                gốc mà đơn này đã trừ, và ghi vào lịch sử kho. Đơn đã hủy không
-                thể đổi trạng thái nữa.
+                gốc mà đơn này đã trừ, và ghi vào lịch sử kho.
+                {restockOnReturn === "ON_RECEIVE" &&
+                  " Riêng đơn đã giao cho vận chuyển thì chỉ cộng lại khi kho nhận kiện (trang Đối soát đơn hoàn)."}{" "}
+                Đơn đã hủy không thể đổi trạng thái nữa.
               </p>
             </div>
           )}
@@ -342,6 +352,9 @@ function CancelDecideDialog({
   onDone: () => void;
 }) {
   const [submitting, setSubmitting] = useState<"accept" | "reject" | null>(null);
+  const { restockOnReturn } = useStockSettings();
+  // Đơn đang giao = hàng đã rời kho: shop "cộng tồn khi kho nhận kiện" thì chưa cộng lúc sàn hủy.
+  const waitsForParcel = restockOnReturn === "ON_RECEIVE" && order?.shippingStatus === "SHIPPING";
   const packed = order?.shippingStatus === "PROCESSED" || order?.shippingStatus === "SHIPPING";
   const due = cancelDueText(order?.cancelRequestDueAt);
 
@@ -352,7 +365,7 @@ function CancelDecideDialog({
       const r = await decideCancelRequest(order.id, accept);
       toast.success(
         accept
-          ? `Đã chấp nhận hủy đơn ${r.orderCode}${r.shippingStatus === "CANCELLED" ? " — sàn đã hủy, tồn kho đã cộng lại" : " — chờ sàn chốt"}`
+          ? `Đã chấp nhận hủy đơn ${r.orderCode}${r.shippingStatus === "CANCELLED" ? (waitsForParcel ? " — sàn đã hủy, tồn kho cộng lại khi kho nhận kiện" : " — sàn đã hủy, tồn kho đã cộng lại") : " — chờ sàn chốt"}`
           : `Đã từ chối yêu cầu hủy đơn ${r.orderCode} — tiếp tục giao`,
         { duration: 6000 }
       );
@@ -420,7 +433,9 @@ function CancelDecideDialog({
             <p className="font-semibold">Chấp nhận hủy</p>
             <p className="flex-1">
               {packed
-                ? "Sàn hủy đơn + hoàn tiền. Kiện đã bàn giao sẽ quay đầu; tồn kho cộng lại khi sàn báo hủy xong."
+                ? waitsForParcel
+                  ? "Sàn hủy đơn + hoàn tiền. Kiện đã bàn giao sẽ quay đầu; tồn kho cộng lại khi kho nhận kiện."
+                  : "Sàn hủy đơn + hoàn tiền. Kiện đã bàn giao sẽ quay đầu; tồn kho cộng lại khi sàn báo hủy xong."
                 : "Sàn hủy đơn + hoàn tiền. Tồn kho của đơn được cộng lại ngay."}
             </p>
             <Button
