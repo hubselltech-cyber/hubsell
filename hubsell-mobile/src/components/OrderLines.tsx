@@ -58,7 +58,12 @@ export function OrderLines({ items, showPrice = false }: { items: OrderItemDto[]
             <View key={g.key} className={`flex-row items-start gap-3 ${frame}`}>
               <Thumb url={it.imageUrl ?? it.product?.imageUrl} size={48} onPress={() => openZoom(it, g.baseName, it.text)} />
               <View className="min-w-0 flex-1">
-                <Text className="text-[13px] font-medium text-slate-900 dark:text-slate-100" numberOfLines={2}>
+                {/* Không tách được phân loại (đơn cũ mà danh mục sàn không khớp) thì phân loại vẫn nằm ở
+                    ĐUÔI tên → KHÔNG cắt ở 2 dòng, kẻo mất đúng thứ kho cần đọc như trước 19/11. */}
+                <Text
+                  className="text-[13px] font-medium text-slate-900 dark:text-slate-100"
+                  numberOfLines={it.text.variantName ? 2 : 6}
+                >
                   {g.baseName}
                 </Text>
                 {it.text.variantName ? (

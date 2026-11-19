@@ -478,7 +478,8 @@ export default function OrdersScreen() {
           )}
         </View>
         <View className="flex-1">
-          <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={1}>
+          {/* Không tách được phân loại thì nó còn nằm ở đuôi tên → cho tên 4 dòng thay vì cắt ở 1 dòng. */}
+          <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={text.variantName ? 1 : 4}>
             {text.baseName}
           </Text>
           {text.variantName ? (
