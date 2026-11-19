@@ -5,6 +5,32 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 đêm (tiếp) — Kho chuẩn quốc tế: CODE thiết kế lại lát 1 trên local (anh: "ok em làm đi. Phần này quan trọng làm cẩn thận nhé") — CHƯA commit, CHƯA đụng prod
+
+- **Anh hỏi trước khi duyệt:** "Phần này lại phức tạp thế à. Có ảnh hưởng tới khách không?" → không: bản bóng, không màn nào đọc bộ đếm, số đẩy sàn không dùng; bản mới cũng không đổi gì phía khách.
+- **Đã làm (docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 14.11):** một dấu `stockCommittedAt` (rời kho thì xóa); chỉ mục mới `Order_stock_held_idx ("channelId","id")` (migration `20261120090000_stock_committed_single_mark`, chỉ mục cũ chưa bỏ); quét bù = câu chọn dạng CTE + khóa theo danh sách mã; worker tách hai nhịp (bảo trì 1 giờ, đối chiếu riêng) + sổ nhịp `stock-committed-sweep`; chuỗi đối chiếu tự đếm; gọi rời kho trong hàm ghi đơn chung của Shopee / TikTok và ở `PATCH /orders/:id/status` (nguồn `MANUAL`); việc một lần gỡ dấu còn sót.
+- **6 chỗ lệch thiết kế, có số đo (14.11):** đáng nhớ nhất — quét bù dùng MỘT câu chọn cho cả hai nhánh, vì câu riêng cho "gian ngắt" đi dọc cả bảng (33.489 khối) khi nửa số gian đã chết; và giữ chốt chặn `stockShippedAt IS NULL` để khoảng deploy không trừ bộ đếm hai lần.
+- **Kiểm:** tsc + `npm run build` sạch; `stock-committed.test.ts` 21/21; đã thử tắt lời gọi mới để chắc 2 ca canh được; cả bộ backend 2.798 qua, 24 đỏ đều đối chiếu với bản gốc (23 đỏ y hệt do 4 dòng sổ bẩn của đơn thử `DEMOPL-*` + `channel-delete-db` + `retention-db`; 1 ca `upload-db` chập chờn, không import mã em sửa); một nhịp worker chạy thật trên DB local; script thử: câu chọn bản mới 92 khối (424 đơn giữ) / 4.125 khối (20.000 đơn giữ).
+- **Chưa kiểm:** prod (EXPLAIN, `random_page_cost`, số đơn còn dấu sót); câu chọn của ngày chuyển chưa vào script thử; chưa có test chạy đua riêng cho bước `SKIP LOCKED` của quét bù; đường Lazada không đổi, không thêm test.
+- **Chờ anh:** (1) commit; (2) từng bước prod ở docs 14.6 — dựng chỉ mục mới bằng tay, push, xóa biến `STOCK_COMMITTED_SWEEP_MS`, bỏ chỉ mục cũ; (3) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu`.
+- **Thấy kèm, không sửa:** DB local có 4 dòng sổ cái bẩn của đơn `DEMOPL-*` (tài khoản admin dev) làm các tệp test so sổ cái đỏ; không phải dữ liệu của em nên em để nguyên.
+
+---
+## Phiên 19/11 đêm — Kho chuẩn quốc tế: VIẾT THIẾT KẾ LẠI lát 1 (anh: "Viết thiết kế") — chỉ tài liệu + script thử, CHƯA code, chưa commit, không đụng prod
+
+- **Viết ở:** `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 14 (và một đoạn đính chính cuối 13.14). Script thử: `backend/scripts/stock-committed-plan-probe.ts` (chỉ chạy localhost, dựng schema riêng `exp_kho_plan` rồi tự xóa; đã kiểm schema đã dọn).
+- **Thử trên DB local** (bảng đơn giả 470.000 dòng, 230 MB; 5 mức đơn "đã từng giữ" 0,63 % → 50 %; thêm cỡ 20.000 đơn đang giữ):
+  - Hai cột (đang chạy): ước lượng phồng đúng theo tỉ lệ "đã từng giữ" (424 thật → máy đoán 2.852 … 117.646); `CREATE STATISTICS` mcv và biểu thức không chữa được. Câu quét bù dạng đang chạy đi dọc cả bảng ở mọi mức.
+  - Một cột: ước lượng lệch dưới 40 % ở cả 5 mức. NHƯNG ở 20.000 đơn giữ, câu quét bù dạng cũ vẫn đi dọc cả bảng (73.209 khối) vì máy nhân tiếp "đang giữ" × "trạng thái đã giao". Chỉ dạng gom tập trước, cắt lô sau (CTE MATERIALIZED) đứng vững: 4.022 khối.
+  - Câu đọc theo gian có `ORDER BY id LIMIT` cần chỉ mục `("channelId", "id")`: 30.010 → 870 khối.
+  - Bảng nhỏ riêng: đếm rẻ nhất, quét bù đắt nhất (120.309 khối), thêm 2 lệnh ghi mỗi đơn → không chọn.
+  - **Em nói sai ở 13.14:** câu CTE trên hai cột KHÔNG lật sang quét cả bảng (đã thử tới 50 %). Đã ghi đính chính.
+- **Thiết kế đề xuất:** một dấu `stockCommittedAt` (xóa lúc rời kho); chỉ mục `Order_stock_held_idx ("channelId","id")`; ba luật viết câu đọc tập đang giữ; gọi rời kho trong hàm ghi đơn chung của Shopee / TikTok (Lazada đã có) + đường đổi trạng thái tay; gian ngắt / ngủ đông để ở quét bù bằng câu riêng (đổi ý so với 13.14 sau khi đếm ra 10 chỗ ghi); quét bù 1 giờ/lần, đối chiếu `try` riêng, chuỗi tự đếm; 7 bước đưa lên prod.
+- **Đã đếm:** 21 chỗ ghi `Order.shippingStatus`, 10 chỗ đưa gian khỏi trạng thái sống (rà bằng agent; em tự đọc lại 2 chỗ + vị trí 3 hàm ghi đơn).
+- **Chưa kiểm:** prod hôm nay (không đo gì); `random_page_cost` prod; bảng thử xếp gọn hơn prod; chi phí ghi; dạng khóa của câu quét bù mới; Shopee `TO_RETURN` + đường cập nhật Lazada.
+- **Chờ anh:** (1) duyệt mục 14 để em code local; (2) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu`. Biến `STOCK_COMMITTED_SWEEP_MS` trên Render vẫn đang đặt.
+
+---
 ## Phiên 19/11 tối — Quản lý kho: 5 + 3 góp ý của anh Trung khi dùng prod — ĐÃ LÀM + kiểm local, ĐÃ COMMIT + PUSH (anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
 
 - **Push + kiểm prod (docs 14.6):** commit `7ba02958`, Render `/health` đúng bản, Vercel lên. Prod shop công ty (chỉ xem): nút Thống kê thay nút Đồng bộ, hộp mở 0,4 giây và trùng số của bảng (60 sản phẩm · 151 SKU · 66 hết hàng); dải cảnh báo còn một dòng; ô Giá vốn nhập được; `?sync=1` chuyển đúng; tab Đã nối 20/20 có nút Gỡ nối; hộp Nối kho có chữ mờ + viên Tổng kho. Chưa làm trên prod: sửa tồn thật, lưu giá vốn thật, gỡ nối thật, tài khoản nhân viên.
@@ -29,6 +55,15 @@
 - **Chờ anh:** (a) commit + push; (b) ý 3 có phải "bật trước khi nối" không; (c) sửa giá vốn ở kho khi gian có giá riêng: giữ cách báo vàng hay muốn khác.
 - **Ghi ở:** `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 13 + 14.
 
+---
+## Phiên 19/11 ~18:00 (lịch tự chạy, LƯỢT CUỐI) — Kho chuẩn quốc tế: soi đối chiếu chạy bóng — chỉ đọc prod, không commit
+
+- **Kết quả:** KHÔNG có lần đối chiếu mới — dòng `stock-committed-check` vẫn là 14/11 16:59 (cách 121 giờ), lệch cứng 0 (155 = 155). Chuỗi DỪNG ở **3/7**, KHÔNG đủ điều kiện sang lát 2. Nguyên nhân đã biết (docs 13.13 + 13.14), không phải tin mới.
+- **Số sống:** 212 đơn đang giữ, bộ đếm 133, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0 → bộ đếm chưa có dấu hiệu sai.
+- **Ghi ở:** `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 13.12 (dòng 19/11).
+- **Chờ anh:** (1) hết hạn "đợi xong 19/11" → cho em viết thiết kế lại lát 1 theo mục 13.14 không; (2) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu`; (3) biến `STOCK_COMMITTED_SWEEP_MS=3600000` trên Render vẫn đang đặt, xóa khi thiết kế mới lên.
+
+---
 ---
 ## Phiên 19/11 ~15:00 — Video đóng hàng: M1 làm DỨT ĐIỂM — cứu clip đang quay dở (M1b) + gửi tiếp ở mọi trang (K-6) (anh: "anh nghĩ mình làm dứt điểm M1 đi") — ĐÃ DỰNG → COMMIT + PUSH (anh: "Commit và push")
 

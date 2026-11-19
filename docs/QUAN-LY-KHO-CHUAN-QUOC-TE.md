@@ -597,6 +597,9 @@ Bảng `maintenance_jobs` chỉ giữ lần đối chiếu cuối, nên mỗi ng
 | 14/11 (soi 16:10) | 13/11 15:22 (chưa có lần mới) | 0 | 337 = 337 | 0 | 1.151 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 2/7: dòng đối chiếu vẫn là lần 13/11, cách 25 giờ (≤ 26 nên chưa coi là worker hỏng, nhưng lẽ ra đã có lần 14/11 ~15:22; em đoán worker khởi động lại làm lệch nhịp 24 giờ, CHƯA kiểm log). Số sống lúc soi: 732 đơn đang giữ, bộ đếm 231, bộ đếm âm 0. Mai vẫn là 13/11 → xem log Render. |
 | 15/11 (soi 19:48) | 14/11 16:59 (lần mới so với lượt soi 14/11; CHƯA có lần 15/11) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | Lần đối chiếu 14/11 16:59 sạch → chuỗi đối chiếu lệch cứng 0 là 3/7 (12/11, 13/11, 14/11). NHƯNG NHỊP TRỄ, lượt soi hôm nay KHÔNG ĐẠT tiêu chí "cách ≤ 26 giờ": dòng cách 27 giờ, lần 15/11 lẽ ra chạy ~17:01 mà 19:48 vẫn chưa có. Các lần: 12/11 15:22 → 13/11 15:22 → 14/11 16:59 (trễ 1 giờ 37 phút) → 15/11 trễ hơn 2 giờ 47 phút. Theo mã (`workers/stock-committed.ts`), nhịp 2 phút nào cũng hỏi "đủ 24 giờ chưa" nên lẽ ra chỉ trễ ≤ 2 phút; em ĐOÁN `runCommittedCheck` lỗi (quá giờ câu lệnh?) và nhịp sau thử lại, hoặc worker khởi động lại liên tục — CHƯA kiểm log. Quét bù có vẻ vẫn chạy (đã giao chưa quét 0). Số sống lúc soi: 842 đơn đang giữ, bộ đếm 639, bộ đếm âm 0. Cần anh xem log Render `hubsell-worker-sg`, từ khóa `stock-committed` (dòng `lỗi một nhịp`). Đơn giữ lâu nhất 128 giờ. |
 | 16/11 (soi ~16:00) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 47 giờ (> 26). Đã biết trước (mục 13.13 + 13.14: quét bù lỗi đứng trước bước đối chiếu; 15/11 20:30 đã giãn nhịp 1 giờ/lần bằng `STOCK_COMMITTED_SWEEP_MS`), không phải tin mới; từ lúc giãn nhịp tới giờ (~19,5 giờ) vẫn chưa có lần đối chiếu nào chạy được — CHƯA đọc log Render hôm nay. Số sống lúc soi: 567 đơn đang giữ, bộ đếm 428, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0 → bộ đếm chưa có dấu hiệu sai. Anh đã chốt đợi hết 19/11. |
+| 17/11 (soi 16:10) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 71 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~44 giờ sau khi giãn nhịp 1 giờ/lần vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 276 đơn đang giữ, bộ đếm 210, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0. Còn 2 lượt (18, 19/11) mà cần thêm 4 lần → chuỗi 7/7 KHÔNG thể đủ trong lịch này. |
+| 18/11 (soi tối) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 99 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~3 ngày sau giãn nhịp vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 216 đơn đang giữ, bộ đếm 140, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0. Còn 1 lượt (19/11). |
+| 19/11 (soi ~18:00) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi DỪNG ở 3/7 — LƯỢT CUỐI của lịch: dòng đối chiếu vẫn là lần 14/11, cách 121 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~4 ngày sau giãn nhịp vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 212 đơn đang giữ, bộ đếm 133, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0 → bộ đếm chưa có dấu hiệu sai. KHÔNG đủ điều kiện sang lát 2; việc kế = anh quyết mục 13.14 (thiết kế lại lát 1, chuỗi 7 lần đếm lại). |
 
 Đủ 7 dòng liên tiếp lệch cứng 0 (dòng 12/11 tính là dòng 1) → trình anh lát 2. Có dòng lệch cứng khác 0 → dừng đếm, soi nguyên nhân trước, KHÔNG tự sửa số trên prod.
 
@@ -667,6 +670,210 @@ Tạm thời không cần đổi mã: đặt `STOCK_COMMITTED_SWEEP_MS=3600000` 
 **Anh chốt 15/11 tối: "Phần kho mình vẫn đang chạy bóng hẹn 19/11. Đợi xong rồi làm."** → KHÔNG viết thiết kế, KHÔNG code lát 1 trước khi hết lịch 19/11. Lịch soi 16–19/11 vẫn chạy và ghi dòng vào 13.12. Em đã nêu với anh hai điều (anh chưa trả lời): (1) tới 19/11 chuỗi sẽ KHÔNG đủ 7/7 vì quét bù lỗi chặn đối chiếu, nên bản bóng không tự "xong" vào 19/11; (2) trong lúc đợi, câu quét bù vẫn quét bảng đơn mỗi 2 phút — việc giãn nhịp bằng `STOCK_COMMITTED_SWEEP_MS` (bước 0) là đổi cấu hình, không đụng mã, chờ anh cho phép.
 
 **✅ Bước 0 ĐÃ LÀM 15/11 20:30 (anh: "Giãn nhịp đi"):** thêm biến môi trường `STOCK_COMMITTED_SWEEP_MS=3600000` cho dịch vụ `hubsell-worker-sg` trên Render (trang Environment → "Save and deploy", không dựng lại; deploy `dep-dbsr7njl550s7398qelg` thành công sau ~15 giây, bản mã không đổi). Chỉ worker, không đụng dịch vụ web. Từ đây quét bù + bước kiểm "đã tới hạn đối chiếu chưa" chạy 1 giờ một lần (nhịp đầu ~2 phút sau mỗi lần worker khởi động). Gỡ: xóa biến này rồi deploy lại là về 2 phút. Kiểm log sau khi đổi (đọc tới 20:37:24): bản worker mới chạy nhịp đầu lúc 20:33:04 (vẫn `lỗi một nhịp`, vì câu quét bù chưa sửa), sau đó KHÔNG có nhịp 20:35 → nhịp đã giãn; nhịp kế dự kiến ~21:33 (chưa xem). Trước khi đổi, lỗi lặp đều 2 phút tới 20:29:43.
+
+**19/11: phép thử ở mục 14.2 BÁC một suy đoán của mục này.** Ở Lỗ 1 em viết "khi ước lượng đủ lớn máy sẽ chọn quét tuần tự cả bảng thay cho chỉ mục một phần", kể cả với câu CTE MATERIALIZED. Thử tới mức 50 % đơn "đã từng giữ" thì câu CTE vẫn đi qua chỉ mục một phần. Phần còn đúng: ước lượng sai tăng theo đúng công thức, và mọi câu có `ORDER BY id LIMIT` hoặc nối bảng trên tập này đều xấu dần. Thiết kế ở mục 14 đã sửa theo kết quả thử.
+
+## 14. Thiết kế lại lát 1 (19/11/2026, anh: "Viết thiết kế") — ĐỀ XUẤT, chờ anh duyệt, CHƯA code
+
+Hết hạn chạy bóng 19/11 với chuỗi dừng ở 3/7 (mục 13.12). Mục này thay phần "Hướng em đề xuất" số 1 của 13.14. Mọi con số dưới đây đo trên DB local bằng `backend/scripts/stock-committed-plan-probe.ts`; chưa đo gì thêm trên prod hôm nay.
+
+### 14.1. Tóm tắt thay đổi so với bản đang chạy
+
+| # | Bản đang chạy (12/11) | Bản mới | Vì sao |
+|---|---|---|---|
+| 1 | "Đang giữ" = `stockCommittedAt` có VÀ `stockShippedAt` trống | "Đang giữ" = `stockCommittedAt` có. Lúc rời kho, cùng câu UPDATE ghi `stockShippedAt` và XÓA `stockCommittedAt` | Máy ước lượng từ một cột thì sát thật ở mọi mức (14.2 bảng 1) |
+| 2 | Chỉ mục `Order_stock_committed_idx ("channelId")` theo hai cột | `Order_stock_held_idx ("channelId", "id") WHERE "stockCommittedAt" IS NOT NULL`; bỏ chỉ mục cũ | Câu đọc theo từng gian có `ORDER BY id` lấy thứ tự thẳng từ chỉ mục (14.2 bảng 3) |
+| 3 | Câu quét bù: lọc "đang giữ" + trạng thái + gian, `ORDER BY id LIMIT` trong MỘT câu | Gom tập đang giữ trước (CTE MATERIALIZED, không `LIMIT` bên trong), lọc và cắt lô ở ngoài; tách hai nhánh thành hai câu | Một cột CHƯA đủ: ở 20.000 đơn giữ, câu dạng cũ vẫn đi dọc cả bảng (14.2 bảng 3) |
+| 4 | Đơn rời kho qua quét lô / làn đọc con trỏ / sửa tay chỉ được quét bù bắt | Gọi rời kho ngay tại chỗ ghi trạng thái, trong hàm ghi đơn dùng chung của từng sàn (14.4) | Quét bù lùi về lưới an toàn |
+| 5 | Quét bù 2 phút/lần, đứng trước đối chiếu trong cùng một `try` | Quét bù 1 giờ/lần; đối chiếu chạy `try` riêng, lịch riêng | Lỗi bên này không chặn bên kia (gốc của chuỗi 3/7) |
+| 6 | Bảng chỉ giữ lần đối chiếu cuối, phải soi tay mỗi ngày | Dòng đối chiếu tự đếm số lần liên tiếp lệch 0 | Không cần lịch soi nữa |
+
+Không đổi: năm cột đã thêm trên prod, cách cộng bộ đếm lúc đơn chốt, mọi con số khách thấy, số đẩy sàn. Vẫn là bản bóng.
+
+`stockCommittedAt` bị xóa lúc rời kho không làm mất thông tin: giá trị của nó luôn bằng `stockDeductedAt` (`deductStockTx` ghi cùng một `now`, ngày chuyển ghi `= stockDeductedAt`; đã đọc mã 19/11).
+
+### 14.2. Phép thử trên DB local (19/11)
+
+Bảng đơn giả 470.000 dòng (nửa prod), 230 MB, mỗi dòng rộng như prod; đơn "đã từng giữ" là các đơn mới nhất; 285 gian sống. Thử năm mức "đã từng giữ" từ 0,63 % (đúng mức prod 15/11) tới 50 %, hai giá trị `random_page_cost` (4 và 1,1). Ba cách đánh dấu: hai cột (đang chạy), một cột (A), bảng nhỏ riêng chỉ chứa đơn đang giữ (B). Lệnh chạy lại:
+
+```
+npx tsx scripts/stock-committed-plan-probe.ts
+npx tsx scripts/stock-committed-plan-probe.ts --held 20000 --due 20 --fractions 0.2,0.5
+```
+
+**Bảng 1 — máy ước lượng tập đang giữ bao nhiêu dòng (thật: 424).**
+
+| Đã từng giữ | Hai cột | Hai cột + thống kê mcv | Hai cột + thống kê biểu thức | Một cột (A) | Bảng riêng (B) |
+|---|---|---|---|---|---|
+| 0,63 % | 2.852 | 2.820 | 2.930 | 454 | 424 |
+| 2 % | 9.642 | 9.220 | 9.522 | 580 | 424 |
+| 5 % | 22.097 | 21.904 | 21.812 | 548 | 424 |
+| 10 % | 41.973 | 42.582 | 42.745 | 407 | 424 |
+| 50 % | 117.646 | 117.732 | 117.745 | 423 | 424 |
+
+Ở 0,63 % máy local đoán gấp 6,7 lần thật; prod 15/11 là 5.889 / 848 = 6,9 lần. Cùng một hiện tượng. Hai cách "chữa rẻ" bằng `CREATE STATISTICS` không đổi được ước lượng.
+
+**Bảng 2 — số khối 8 kB mỗi câu phải đụng, 424 đơn đang giữ, không có đơn nào cần quét bù** (`random_page_cost` 4; cả bảng đơn ≈ 29.400 khối).
+
+| Câu | Hai cột, 0,63 % | Hai cột, 50 % | Một cột, 0,63 % | Một cột, 50 % | Bảng riêng, 50 % |
+|---|---|---|---|---|---|
+| Quét bù, dạng đang chạy | 33.070 | 34.037 | 89 | 702 | 2.552 |
+| Quét bù, dạng CTE | 89 | 89 | 89 | 89 | chưa thử |
+| Đếm đơn đang giữ | 87 | 87 | 87 | 87 | 4 |
+| Đối chiếu (nối nhật ký kho) | 120 | 2.641 | 120 | 1.784 | 1.701 |
+| Đọc đơn đang giữ của một gian | 113 | 33.241 | 113 | 88 | 57 |
+
+Câu quét bù dạng đang chạy đi dọc khóa chính cả bảng ở mọi mức với hai cột. Với `random_page_cost` 1,1 nó thoát ở mức 0,63 % nhưng dính lại từ 2 %. Câu đọc một gian của hai cột lật sang đi dọc cả bảng từ mức 5 % (10 % nếu `random_page_cost` 1,1). Câu đối chiếu của hai cột ở mức 50 % chạy 214 ms, của một cột 3,7 ms trên cùng dữ liệu, vì máy tưởng tập lớn nên đọc hết nhật ký kho.
+
+**Bảng 3 — cỡ shop lớn: 20.000 đơn đang giữ, 20 đơn cần quét bù, đã từng giữ 50 %.**
+
+| Câu | Hai cột | Một cột, chỉ mục (gian) | Một cột, chỉ mục (gian, mã đơn) | Bảng riêng |
+|---|---|---|---|---|
+| Quét bù, dạng đang chạy | 73.209 | 73.209 | 73.209 | 120.309 |
+| Quét bù nhánh "đã giao", `ORDER BY id LIMIT` | 33.209 | 33.209 | 33.209 | chưa thử |
+| Như trên, bỏ `ORDER BY` | 30.375 (quét tuần tự) | 30.375 | 30.375 | chưa thử |
+| Quét bù, dạng CTE | 4.022 | 4.022 | 4.125 | chưa thử |
+| Quét bù nhánh "gian ngắt", câu riêng | 33.759 | 32 | 32 | chưa thử |
+| Đọc đơn đang giữ của một gian | 30.010 | 30.010 | 870 | 547 |
+| Đếm đơn đang giữ | 4.020 | 4.020 | 4.123 | 167 |
+| Đối chiếu (nối nhật ký kho) | 6.574 | 6.566 | 6.669 | 2.880 |
+
+**Năm điều rút ra:**
+
+1. Đánh dấu bằng hai cột làm ước lượng phồng theo đúng tỉ lệ đơn "đã từng giữ"; thống kê mở rộng không chữa được. Một cột cho ước lượng lệch dưới 40 % ở cả năm mức.
+2. Một cột CHƯA đủ cho câu quét bù. Ở 20.000 đơn giữ, máy nhân tiếp "đang giữ" với "trạng thái đã giao" như hai điều độc lập (đoán 16.000 đơn cần quét, thật 20), nên `LIMIT` lại kéo nó sang đi dọc khóa chính hoặc quét tuần tự. Chỉ dạng "gom tập đang giữ trước, cắt lô sau" là đứng vững: chi phí theo cỡ tập đang giữ (4.022 khối cho 20.000 đơn).
+3. Chỉ mục một cột `("channelId")` chưa đủ cho câu đọc theo gian có `ORDER BY id LIMIT`: gian có 3.000 đơn giữ là đi dọc cả bảng. Chỉ mục `("channelId", "id")` đưa về 870 khối.
+4. Bảng riêng (B) đếm rẻ nhất nhưng quét bù đắt nhất (120.309 khối: mỗi đơn giữ phải nhảy về bảng đơn qua khóa chính để xem trạng thái), và thêm hai lệnh ghi mỗi đơn. Em chọn một cột.
+5. Em nói sai ở 13.14: câu CTE trên hai cột KHÔNG lật sang quét cả bảng (89 khối ở mọi mức, 4.022 khối ở 20.000 đơn giữ). Tức là hướng "vá CTE" em rút lại hôm 15/11 thật ra chữa được câu quét bù. Nó không chữa được ba câu còn lại (đọc theo gian, đối chiếu, và mọi câu lát 2–3 sẽ viết trên tập này), nên em vẫn đề xuất đổi sang một cột, và dùng dạng CTE cho quét bù.
+
+### 14.3. Ba luật viết câu đọc tập "đang giữ"
+
+1. Vị từ duy nhất là `"stockCommittedAt" IS NOT NULL`, khai ở một hằng dùng chung, khớp từng chữ với chỉ mục.
+2. Không đặt `LIMIT` cùng tầng với một điều kiện lọc thêm trên tập này (trạng thái, gian). Gom tập trong CTE `MATERIALIZED` trước, lọc và cắt ở ngoài.
+3. `ORDER BY "id"` chỉ dùng khi đã cố định `"channelId"` (thứ tự lấy từ chỉ mục). Câu toàn nền tảng không sắp xếp trong SQL; cần thứ tự khóa thì sắp danh sách mã ở tầng ứng dụng rồi khóa theo `id = ANY(...)` như `shipOrdersTx` đang làm.
+
+Áp luật này cho cả `cutoverCommittedBatch` và `releaseCommittedOfChannel` (đang có `ORDER BY id LIMIT … FOR UPDATE`). Dạng khóa của câu quét bù mới (chọn mã không khóa, rồi khóa theo danh sách với `SKIP LOCKED`) em CHƯA thử; thử bằng script lúc code.
+
+### 14.4. Rời kho theo sự kiện
+
+Đã đếm 19/11 bằng một lượt rà toàn bộ `backend/src` (trừ test): 21 chỗ ghi `Order.shippingStatus`, không có câu SQL thô nào ghi cột này. Em tự đọc lại hai chỗ (`routes/orders.ts:798`, `routes/warehouse.ts:573`) và vị trí ba hàm ghi đơn; các chỗ còn lại em lấy theo kết quả rà, đọc lại từng chỗ lúc code.
+
+| Nhóm | Chỗ ghi | Hôm nay | Bản mới |
+|---|---|---|---|
+| Webhook đơn ba sàn | `processShopeeOrderEvent`, `processTiktokOrderEvent`, `processLazadaOrderPush` | Có gọi `shipStockTx` | Giữ |
+| Lazada quét lô + làn đọc con trỏ | `syncLazadaOrders`, `order-write-adapters` | Có gọi (nằm trong `upsertLazadaOrderTx`) | Giữ |
+| Shopee, TikTok quét lô + làn đọc con trỏ + đồng bộ hàng hoàn | `syncShopeeOrders`, `syncTiktokOrders`, `order-write-adapters`, `applyShopeeReturnGroup` | KHÔNG gọi | Đưa lời gọi vào `upsertShopeeOrderTx` và `upsertOrderTx` (TikTok), theo cách Lazada đang làm: đơn đang có dấu giữ mà trạng thái mới là Đang giao / Đã giao thì rời kho trong cùng giao dịch |
+| Đổi trạng thái tay | `PATCH /api/orders/:id/status` nhánh không hủy (`routes/orders.ts:798`) | KHÔNG gọi, không nằm trong giao dịch | Bọc giao dịch + gọi rời kho |
+| Biên bản bàn giao | `routes/packing.ts` | Có gọi `shipOrdersTx` | Giữ |
+| Ghi Đã hủy bằng tay | hủy tay (`orders.ts:846`), xử lý hoàn (`orders.ts:2136`), quét nhận hoàn ở kho (`warehouse.ts:573`) | Hủy tay có nhả giữ; xử lý hoàn chỉ nhả khi hàng nguyên vẹn và chưa cộng lại sổ; quét nhận hoàn không nhả | Không đổi ở lát này (xem 14.8) |
+| Chuẩn bị hàng, đơn thử, worker tài khoản demo | 7 chỗ | Không gọi. Chuẩn bị hàng chỉ ghi Đã xử lý; worker demo có ghi Đang giao / Đã giao cho đơn của tài khoản demo | Không đụng; quét bù bắt nếu có |
+
+Cả ba hàm ghi đơn đều đã đọc dòng đơn cũ trước khi ghi (`existing = await tx.order.findUnique`), nên phép kiểm "đơn đang có dấu giữ" không thêm câu đọc nào. Cột `stockCommittedAt` đã nằm trong phần `select` của chúng chưa thì em CHƯA đọc; đọc lúc code. Lời gọi này chỉ đụng bộ đếm giữ, không đụng sổ và không đẩy sàn, nên không trái với quy ước "quét lô không trừ kho" (`tiktok/service.ts:478`).
+
+**Gian ngắt kết nối / ngủ đông: em đổi ý so với 13.14, KHÔNG gắn vào sự kiện.** Đếm ra 10 chỗ đưa gian khỏi trạng thái sống (ngắt tay, hai webhook thu hồi quyền, ba chỗ làm mới token, nhắc gia hạn Lazada, một câu SQL thô ở `auth-loss.ts`, xóa tài khoản, ngủ đông theo trang 200 chủ shop). Gắn lời gọi vào 10 chỗ là 10 chỗ để quên. Thay vào đó quét bù giữ nhánh này thành một câu riêng đi từ danh sách gian không sống sang chỉ mục: 32 khối ở cả hai cỡ thử, không phụ thuộc cỡ tập đang giữ. **(Sửa 19/11 đêm: con số 32 khối chỉ đúng khi gian chết không có đơn. Ở ca nửa số gian đã chết câu riêng này đi dọc cả bảng; bản đã code gộp nhánh này vào câu chọn dạng CTE — xem 14.11 mục 1.)**
+
+### 14.5. Quét bù và đối chiếu
+
+- **Quét bù** chạy 1 giờ/lần (mặc định em tự chọn; hôm nay prod đang chạy đúng nhịp này qua `STOCK_COMMITTED_SWEEP_MS`). Hai câu tách, mỗi câu `try` riêng: nhánh "sàn đã báo rời kho" dạng CTE, nhánh "gian không còn sống" đi từ bảng gian. **(Sửa 19/11 đêm: bản đã code dùng MỘT câu chọn dạng CTE cho cả hai nhánh — 14.11 mục 1.)**
+- **Quét bù bắt được đơn ở nhánh thứ nhất = còn một đường ghi chưa gọi rời kho.** Ghi số đó vào `maintenance_jobs` và log mức cảnh báo, để biết mà bịt, không coi là chạy bình thường.
+- **Đối chiếu** có `try` riêng và giờ chạy riêng, không còn đứng sau quét bù. Ba phép so giữ như 13.5. Thêm một số đo: đơn đã có `stockShippedAt` mà còn dấu giữ, tính là lệch cứng.
+- **Chuỗi tự đếm:** dòng `stock-committed-check` giữ thêm số lần liên tiếp lệch cứng 0 và mốc lần lệch gần nhất. Điều kiện sang lát 2 vẫn là 7 lần liên tiếp; đếm lại từ 0 khi bản mới lên.
+- **Mốc phải xem lại quét bù:** 20.000 đơn giữ tốn khoảng 4.000 khối mỗi lượt. Tới khoảng 200.000 đơn đang giữ (≈ 40.000 khối, 320 MB mỗi giờ) thì thêm chỉ mục theo trạng thái trên tập đang giữ. Con số 200.000 là em tự chọn từ phép nhân trên, chưa có căn cứ khác.
+
+### 14.6. Đưa lên prod
+
+| Bước | Việc | Ai làm |
+|---|---|---|
+| 1 | Code + test trên local, chạy lại script thử với đúng các câu cuối cùng | Em |
+| 2 | Prod, chạy tay ngoài giờ cao điểm: `CREATE INDEX CONCURRENTLY "Order_stock_held_idx" …`, kiểm `indisvalid` | Em chạy sau khi anh gật (ghi lược đồ prod, như 12/11) |
+| 3 | Push. Nhịp đầu của worker chạy việc một lần: xóa dấu giữ của các đơn đã có `stockShippedAt`, theo lô, đọc qua chỉ mục mới | Anh cho push |
+| 4 | Xóa biến `STOCK_COMMITTED_SWEEP_MS` trên Render (mã mới tự mặc định 1 giờ) | Em, sau khi anh gật |
+| 5 | Soi lần đối chiếu đầu. Lệch cứng 0 thì chuỗi bắt đầu đếm. Khác 0 thì dừng, soi, không tự sửa số | Em |
+| 6 | `DROP INDEX CONCURRENTLY "Order_stock_committed_idx"` khi bản cũ không còn chạy | Em chạy sau khi anh gật |
+| 7 | EXPLAIN trên prod cho bốn câu định kỳ + xem `pg_stat_statements` sau 24 giờ | Em |
+
+Hai điểm cần biết ở bước 3:
+
+- Trong vài phút deploy, bản web cũ còn chạy có thể ghi `stockShippedAt` mà không xóa dấu. Đối chiếu lần đầu sẽ đếm đúng các đơn này. Nếu có, chạy lại việc dọn một lần bằng tay; em không để nó tự dọn mãi vì sẽ che lỗi thật.
+- Bộ đếm chưa được đối chiếu từ 14/11. Số sống mỗi ngày không có dấu hiệu sai, nhưng chỉ lần đối chiếu đầu của bản mới mới xác nhận được. Lệch thì dựng lại bằng `resetCommitted()` + ngày chuyển; câu ngày chuyển phải thêm điều kiện `"stockShippedAt" IS NULL` để không giữ lại đơn đã bàn giao.
+
+### 14.7. Test và hàng rào
+
+- **Test chức năng** (DB thật, qua đúng hàm), thêm vào 16 ca đang có: rời kho xóa dấu và gọi lại không trừ hai lần; quét lô Shopee / TikTok sang Đang giao thì đơn ra khỏi bộ đếm ngay; đổi trạng thái tay; việc dọn một lần; ngày chuyển bỏ qua đơn đã bàn giao; chuỗi đối chiếu tăng và về 0 đúng lúc; quét bù lỗi không chặn đối chiếu.
+- **Hàng rào kế hoạch câu lệnh:** script thử ở 14.2 giữ lại trong `backend/scripts/`, cập nhật theo đúng câu cuối cùng, chạy lại mỗi khi sửa một câu định kỳ trên bảng đơn. Em CHƯA có cách tự động hóa nó thành test trên bảng đơn thật: Postgres 17 không cho giả thống kê bảng, nên phải dựng bảng giả riêng như script đang làm.
+- **Đèn báo lúc chạy:** mỗi nhịp tự ghi thời gian chạy và số lỗi liên tiếp vào `maintenance_jobs`. Đưa lên HQ Sức khỏe thuộc mục 2 của 13.14, không nằm trong lát này.
+
+### 14.8. Không làm ở lát này
+
+- Hai hàng rào chung trên HQ và việc soi 11 câu chậm (13.14 mục 2 và 3).
+- Đơn sàn bị ghi Đã hủy qua quét lô mà chưa cộng lại sổ (lỗ có sẵn, 13.3). Đối chiếu tiếp tục đếm "đã hủy còn giữ"; cả tuần chạy bóng số này bằng 0.
+- Quét nhận hàng hoàn ở kho (`routes/warehouse.ts:573`) ghi Đã hủy mà không nhả giữ. Thường đơn đã rời kho từ trước nên không còn dấu; em chưa kiểm có ca nào ngược lại.
+- Gian ngủ đông thức lại: đơn đã bị đưa khỏi bộ đếm lúc gian ngủ không được giữ lại. Bản bóng chưa ai đọc số này; lát 2 phải trả lời.
+
+### 14.9. Chưa kiểm
+
+- Bảng thử bằng nửa prod và xếp gọn lý tưởng (đơn mới nằm liền nhau). Trên prod các lệnh UPDATE làm dòng nằm rải hơn, nên số khối của cách một cột sẽ cao hơn bảng 2 và 3; em chưa đo mức chênh.
+- Thời gian (ms) đo trên máy local khi dữ liệu đã nằm trong bộ đệm; không so được với prod. Dùng số khối làm thước.
+- `random_page_cost` của prod em chưa xem, nên thử cả 4 và 1,1. Postgres local 17.10, prod 17.6 (số đọc 12/11).
+- Chưa đo chi phí ghi của ba cách. Cách một cột không thêm lệnh ghi nào so với hôm nay.
+- Shopee `TO_RETURN` được quy thành Đã giao nhưng nhánh kho của webhook Shopee bỏ qua trạng thái này; Lazada chỉ chạy phần kho khi trạng thái đổi. Em chưa lần hết hai ca này; quét bù vẫn bắt được nếu chúng lọt. (19/11 đêm: ca Shopee đã được bịt ở hàm ghi đơn dùng chung, 14.11 mục 3; ca Lazada vẫn chưa lần.)
+- Tỉ lệ đơn "đã từng giữ" trên prod hôm nay (15/11 là 0,63 %).
+
+### 14.10. Chờ anh
+
+1. ~~Duyệt thiết kế này để em code trên local~~ → anh duyệt 19/11 đêm ("ok em làm đi. Phần này quan trọng làm cẩn thận nhé"), đã code, xem 14.11.
+2. Tắt lịch soi `kho-chuan-quoc-te-soi-doi-chieu` (đã hết lượt 19/11).
+3. Commit (em chưa commit).
+4. Ba việc trên prod ở 14.6, mỗi việc cần anh gật riêng: dựng chỉ mục mới (bước 2), push (bước 3), xóa biến `STOCK_COMMITTED_SWEEP_MS` (bước 4), bỏ chỉ mục cũ (bước 6).
+
+### 14.11. ĐÃ CODE trên local 19/11/2026 đêm — CHƯA commit, CHƯA đụng prod
+
+**Tệp**
+
+| Tệp | Việc |
+|---|---|
+| `prisma/migrations/20261120090000_stock_committed_single_mark` + chú thích `schema.prisma` | chỉ mục `Order_stock_held_idx ("channelId", "id") WHERE "stockCommittedAt" IS NOT NULL`. Không thêm cột. Chỉ mục cũ CHƯA bỏ (bước 6) |
+| `integrations/order-stock.ts` | `shipStockTx` ghi mốc rời kho và xóa dấu giữ trong một câu; `releaseCommittedTx` chỉ còn nhìn một dấu; thêm nguồn `MANUAL` |
+| `services/stock-committed.ts` | viết lại: một vị từ `HELD_ORDER`; quét bù = câu chọn dạng CTE (không khóa) + giao dịch ngắn khóa theo danh sách mã; ngày chuyển cùng dạng, bỏ qua đơn đã có mốc rời kho; `clearShippedMarks` (gỡ dấu còn sót, một lần); đối chiếu thêm số "đã rời kho còn dấu" và chuỗi tự đếm |
+| `workers/stock-committed.ts` | hai nhịp riêng: bảo trì 1 giờ (ngày chuyển → gỡ dấu sót → quét bù, mỗi bước một `try`) và đối chiếu (hỏi 10 phút một lần); ghi sổ nhịp ở `maintenance_jobs` khóa `stock-committed-sweep` |
+| `integrations/shopee/service.ts`, `integrations/tiktok/service.ts` | hàm ghi đơn dùng chung gọi rời kho khi đơn còn dấu giữ mà sàn báo Đang giao / Đã giao; bộ cột "đơn cũ" đọc thêm `stockCommittedAt` |
+| `routes/orders.ts` | `PATCH /:id/status` nhánh không hủy: bọc giao dịch + gọi rời kho, nguồn `MANUAL` |
+| `scripts/stock-committed-plan-probe.ts` | thêm đúng hai câu quét bù bản mới + ca "nửa số gian đã chết" |
+| Test | `stock-committed.test.ts` 16 → 21 ca; `order-write-db.test.ts` thêm kiểm rời kho qua làn đọc con trỏ TikTok; ba bộ dựng "đơn cũ" thêm cột mới; `no-module-state.test.ts` thêm cờ `checking` |
+
+**Lệch so với thiết kế ở trên (sửa trong lúc code, có số đo)**
+
+1. **Quét bù là MỘT câu chọn cho cả hai nhánh, không tách hai câu như 14.5.** Em thử ca gần prod hơn: nửa số gian đã ngắt / ngủ đông và vẫn còn đơn cũ, đơn đang giữ chỉ ở gian sống. Câu riêng cho nhánh "gian ngắt" mà em đo được 32 khối ở 14.2 thì ở ca này đi dọc cả khóa chính: 33.489 khối. Câu chọn dạng CTE gộp hai nhánh vẫn 4.125 khối ở 20.000 đơn giữ, 92 khối ở 424 đơn giữ. Con số "32 khối, không phụ thuộc cỡ tập đang giữ" ở 14.4 vì vậy KHÔNG đúng cho prod; quyết định không gắn sự kiện vào 10 chỗ ghi gian vẫn giữ.
+2. **Giữ thêm một chốt chặn `"stockShippedAt" IS NULL` ở mọi đường trừ bộ đếm.** Lý do: giữa lúc bản mới lên và lúc việc gỡ dấu chạy xong, đơn đã rời kho theo bản cũ vẫn còn dấu; không có chốt này thì webhook tới trong khoảng đó sẽ trừ bộ đếm lần hai. Gặp dấu sót thì các hàm chỉ gỡ dấu, không trừ.
+3. **Rời kho trong hàm ghi đơn không chỉ khi trạng thái vừa đổi** mà mỗi khi đơn còn dấu giữ và sàn đang báo Đang giao / Đã giao. Bắt được cả đơn đã bị ghi trạng thái từ trước mà chưa ra khỏi bộ đếm, và bịt luôn ca Shopee `TO_RETURN` nêu ở 14.9.
+4. **Chuỗi đối chiếu có thêm luật "một đêm chỉ tính một lần":** lần trước cách chưa tới nửa nhịp thì không cộng. Chặn việc chạy lại bằng tay hoặc hai tiến trình worker cùng đối chiếu làm chuỗi nhảy hai nấc.
+5. **Giờ đối chiếu không trôi:** bản cũ so đúng 24 giờ tính từ lúc chạy XONG nên mỗi ngày muộn thêm một nhịp. Nay hỏi 10 phút một lần và coi là tới hạn sớm 5 phút.
+6. **Ngày chuyển không đánh dấu "xong" nếu cả lô vừa chọn không khóa được đơn nào**; nhịp sau chạy tiếp.
+
+**Kiểm trên local**
+
+- `npx tsc --noEmit` và `npm run build` backend: sạch.
+- `stock-committed.test.ts` 21 / 21. Ca mới: dấu còn sót không bị trừ lần hai qua bốn đường (rời kho, nhả giữ, bàn giao theo lô, quét bù) và gỡ một lần là sạch; Shopee ghi đơn qua hàm dùng chung; đổi trạng thái tay qua đúng route HTTP; ngày chuyển bỏ qua đơn đã bàn giao; luật chuỗi; `runCommittedCheck` ghi chuỗi.
+- Thử tắt lời gọi rời kho mới trong hai hàm ghi đơn: ca Shopee và ca TikTok qua làn đọc con trỏ đều đỏ, bật lại thì xanh. Tức là hai ca này thật sự canh được lời gọi.
+- Cả bộ backend: 2.798 ca qua. 25 ca đỏ lượt đầu, trong đó 1 ca do em (hàng rào biến cấp module, đã sửa). 24 ca còn lại em chạy lại trên bản gốc (tạm cất phần sửa): 23 ca đỏ y hệt, đều là test so sổ cái trên DB local đang có 4 dòng sổ bẩn của đơn thử `DEMOPL-*` (phiên khác dựng trưa 19/11), `channel-delete-db` và `retention-db` đỏ có từ trước. Ca thứ 24 là `upload-db` "HẾT GIỜ": chạy riêng ba lần trên cùng mã ra 1 qua, 2 đỏ, và nó không import tệp nào em sửa.
+- Một nhịp worker chạy thật trên DB local: gỡ dấu sót 0 đơn, đối chiếu lệch 0, chuỗi 1, sổ nhịp ghi đủ. DB local không có đơn đang giữ nên lượt này chỉ chứng minh các câu chạy được.
+- Script thử với đúng câu bản mới (bảng 470.000 dòng, đã từng giữ 50 %):
+
+  | Câu | 424 đơn giữ | 20.000 đơn giữ | 20.000 đơn giữ, nửa số gian đã chết |
+  |---|---|---|---|
+  | Quét bù bản mới: chọn | 92 khối | 4.125 khối | 4.125 khối |
+  | Quét bù bản mới: khóa 200 mã | 391 khối | 500 khối | 510 khối |
+  | Đọc đơn đang giữ của một gian | 118 khối | 877 khối | 845 khối |
+  | Quét bù dạng cũ (để so) | 97 khối | 73.209 khối | 73.209 khối |
+
+**CHƯA kiểm**
+
+- Chưa chạy trên prod, chưa EXPLAIN trên prod, chưa đo `random_page_cost` prod.
+- Câu chọn của ngày chuyển (dạng CTE mới) chưa đưa vào script thử; nó chỉ chạy một lần, hoặc khi dựng lại bộ đếm.
+- Ca hai giao dịch chạy đua thật (webhook và quét bù cùng một đơn) chỉ có test "ba lượt rời kho song song" từ trước; chưa có test riêng cho bước khóa `SKIP LOCKED` của quét bù.
+- Đường Lazada không đổi mã; em không viết thêm test cho nó.
+- Chưa đếm trên prod có bao nhiêu đơn còn dấu sót để ước lượng việc gỡ dấu chạy bao lâu.
+- Worker demo ghi Đang giao / Đã giao cho đơn tài khoản demo không gọi rời kho; nếu đơn demo có trừ kho thì quét bù sẽ bắt và log cảnh báo.
 
 ## 12. Nguồn
 
