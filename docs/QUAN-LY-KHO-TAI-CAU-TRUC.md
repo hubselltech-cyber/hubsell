@@ -817,3 +817,15 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - **Rà bằng tay** (lệnh `npx knip` bị lớp phân quyền của phiên chặn, không vòng qua): grep từng export mới — đều có nơi dùng; `fetchSyncSettings`, `applyCostPriceIn` vẫn có nơi gọi.
 - **Không commit trong lượt này** (của phiên khác, để nguyên trên máy): hai mục PROGRESS của lịch tự chạy 19/11, `docs/ADS-TIKTOK-GMV-MAX.md`, `docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md`, `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md`, `hubsell-mobile/src/lib/scan-sounds.ts`, thư mục `hubsell-marketing/`.
 - **Kiểm lại sau dọn:** tsc BE + FE, eslint các tệp sửa sạch; vitest các tệp của lượt (product-group-edit ×2, inventory-stats, cost-import-apply, cost-per-shop) qua.
+
+### 14.6 Push + kiểm prod (19/11 tối)
+
+- Commit `7ba02958`, push lên `master` (kéo theo hai commit docs video đóng hàng đã nằm sẵn trên máy: `1b5dc9f7`, `a86faaf1`). Render `/health` = `7ba02958`; Vercel lên sau đó vài phút. Không migration.
+- **Kiểm prod (shop công ty, màn 1568, CHỈ XEM — không sửa tồn, không lưu giá vốn, không gỡ nối, không nối):**
+  - Tổng kho: nút "Đồng bộ tồn kho" đã mất, có nút "Thống kê". Hộp mở sau 0,4 giây: 60 sản phẩm · 151 SKU · tổng tồn 1.704 · 66 SKU hết hàng · giá trị tồn 193.870.000 ₫ — trùng nhãn cuối bảng ("60 sản phẩm · 151 SKU") và chip "Đang bán 151" / "Hết hàng 66".
+  - Dải cảnh báo: 6 cảnh báo thật của shop thu thành một dòng cao 34px.
+  - Hộp Sửa sản phẩm: cột Giá vốn là ô nhập (mở rồi Hủy, không lưu).
+  - `/products?sync=1` → `/products/marketplace?sync=1`, hộp "Đồng bộ tồn kho lên sàn" mở sẵn.
+  - Sản phẩm trên sàn: tab Cần nối 20/20 dòng là công tắc khóa, không còn dấu "—"; tab Đã nối 20/20 dòng có nút "Gỡ nối", xổ dòng đầu có nút "Gỡ nối" ở từng phân loại; không cuộn ngang.
+  - Hộp Nối kho: ô tìm trống, chữ mờ "Tìm sản phẩm kho muốn nối"; gõ "BL00" ra 4 gợi ý, cả 4 có viên "Tổng kho" (đóng hộp, không nối).
+- **CHƯA làm trên prod:** sửa tồn thật rồi Enter (ý 1 — mới đo trên local), lưu giá vốn thật, gỡ nối thật, hộp hỏi lại quà tặng, tài khoản nhân viên, màn điện thoại.

@@ -7,6 +7,7 @@
 ---
 ## Phiên 19/11 tối — Quản lý kho: 5 + 3 góp ý của anh Trung khi dùng prod — ĐÃ LÀM + kiểm local, ĐÃ COMMIT + PUSH (anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
 
+- **Push + kiểm prod (docs 14.6):** commit `7ba02958`, Render `/health` đúng bản, Vercel lên. Prod shop công ty (chỉ xem): nút Thống kê thay nút Đồng bộ, hộp mở 0,4 giây và trùng số của bảng (60 sản phẩm · 151 SKU · 66 hết hàng); dải cảnh báo còn một dòng; ô Giá vốn nhập được; `?sync=1` chuyển đúng; tab Đã nối 20/20 có nút Gỡ nối; hộp Nối kho có chữ mờ + viên Tổng kho. Chưa làm trên prod: sửa tồn thật, lưu giá vốn thật, gỡ nối thật, tài khoản nhân viên.
 - **Dọn trước khi push (docs 14.5):** gỡ prop `onStateChange` + hàm `notify` của hộp cài đặt đồng bộ (chỉ để nuôi viên số trên nút đã bỏ), dời kiểu `SyncHeaderState` về `setup-guide.tsx`. Hai mục PROGRESS của lịch tự chạy 19/11 + 3 docs + `scan-sounds.ts` của phiên khác KHÔNG nằm trong commit này.
 
 - **ĐỢT HAI (cùng tối, anh nhắn thêm 3 ý — docs mục 14):**
