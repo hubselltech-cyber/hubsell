@@ -447,6 +447,9 @@ cần xóa hẳn khỏi tệp thì là việc khác (phải dựng lại trang).
 0. **Trạng thái 19/11 trưa:** anh xem local xong, bảo "dọn dẹp, commit và push trước. Sau đó build bản TestFlight
    mới để anh test" → toàn bộ mã đã commit + push master; app lên **1.5.0**; anh thử trên TestFlight rồi mới tính
    nộp kho. Các mục dưới còn mở trừ mục đã gạch.
+   **Bản dựng:** TestFlight **1.5.0 (37)**, EAS `6b5788b7`, dựng từ nhánh thử video đã gộp master (commit gộp `9e096ee0`
+   chỉ ở máy) theo lời anh "có phần quay video gói hàng chung luôn". Dựng XONG 10:33 (khoảng 8 phút). Nộp qua `eas submit --id` từ repo chính lúc ~10:36, lượt nộp Expo `96d90b16-8e61-41bb-acb9-2bd02f311113` báo đã tải lên App Store Connect; App Store Connect ghi build 37 **VALID** lúc 10:38 (kiểm bằng `asc-release.mjs status`); chưa nhìn trong app TestFlight trên máy. Backend prod ở `965368e1`.
+   Bản này mang mã thử video → không dùng để nộp duyệt kho.
 1. **Vị trí + tên nút "Xử lý đơn"** và bốn bước trong hộp — em tự chọn; anh đã xem và chỉnh (thanh nổi ở đáy, mục
    2). Phần tích đơn trên thẻ (mục 2.1) làm theo ý anh; điểm em tự quyết: không tích gì thì vẫn làm cả nhóm đang
    lọc. Mã đơn dài đã xử lý ở mục 2.2 (không còn cắt).
