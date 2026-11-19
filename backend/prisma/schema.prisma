@@ -205,6 +205,10 @@ model User {
   /// (12/11/2026): NONE | LT_5M | M5_10 | M10_30 | GT_30M — xem
   /// src/lib/ad-spend-band.ts. Null = đăng ký Google/Apple/app mobile/trước 12/11.
   adSpendBand          String?
+  /// MẪU CHÈN THÔNG TIN LÊN VẬN ĐƠN theo sàn (19/11/2026, services/label-overlay/template.ts):
+  /// { "TIKTOK": { enabled, showSku, showVariant, showName, note, onePage, manualZoneMm } }.
+  /// NULL = chưa cài → in nguyên phiếu của sàn. Chỉ có nghĩa với tài khoản CHỦ SHOP.
+  labelTemplates       Json?
   /// Ảnh đại diện dạng data URL base64 (image/jpeg|png|webp, FE đã thu nhỏ
   /// ~256px nên chỉ vài chục KB) — lưu thẳng trong DB, khỏi dựng object storage
   /// riêng cho một tấm ảnh nhỏ. Null = chưa đặt, FE hiện icon mặc định.

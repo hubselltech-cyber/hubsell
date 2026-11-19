@@ -1,0 +1,13 @@
+-- 19/11/2026 — MẪU CHÈN THÔNG TIN LÊN VẬN ĐƠN (docs/MOBILE-CHUAN-BI-HANG-IN-PHIEU.md mục 5).
+--
+-- User.labelTemplates  JSON theo tên sàn: { "TIKTOK": { enabled, showSku, showVariant, showName,
+--                      note, onePage, manualZoneMm } }. NULL = chưa cài (mọi sàn in nguyên phiếu sàn).
+--
+-- Vì sao đặt ở User (chủ shop) mà không phải Channel: mẫu là "một kiểu phiếu cho mỗi sàn" của
+-- cả shop — gian nối thêm sau tự ăn theo, người bán 20 gian không phải cài 20 lần. Route in
+-- đọc thêm đúng một dòng User theo khóa chính mỗi lượt in.
+--
+-- Chỉ THÊM một cột NULL trên bảng User (bảng nhỏ, không nằm trên đường ghi đơn): là siêu dữ
+-- liệu, không ghi lại dòng nào, không chỉ mục. Bảng đã bật RLS từ trước — cột mới theo luật
+-- của bảng.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "labelTemplates" JSONB;

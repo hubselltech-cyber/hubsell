@@ -17,6 +17,15 @@ import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
 import { getLabelArchiveSpool, getLabelStore, loadSavedLabel, LABEL_ARCHIVE_DAYS } from "../services/label-archive";
 import { summarizePickLines } from "../lib/pick-summary";
+import { groupQueue, parseQueueStage } from "../lib/process-queue";
+import {
+  overlayLabels,
+  overlaySupported,
+  planOverlay,
+  readLabelTemplates,
+  type OverlayItem,
+  type OverlayPlan,
+} from "../services/label-overlay";
 import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import {
@@ -579,6 +588,93 @@ router.get("/pick-summary", async (req: AuthRequest, res, next) => {
     );
 
     res.json({ ...summary, totals: { ...summary.totals, orders: orderCount } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// GET /api/orders/process-queue?stage=ARRANGE|PRINT|REPRINT — HÀNG CHỜ XỬ LÝ cho app mobile
+// (19/11/2026, docs/MOBILE-CHUAN-BI-HANG-IN-PHIEU.md).
+//
+// App bấm một nút là làm cả nhóm đơn (không tích từng dòng như web) nên cần danh sách id
+// của nhóm, gom theo gian → hãng vận chuyển. Cùng bộ lọc sàn / gian / hãng / từ khóa với
+// GET /api/orders; trạng thái bị ĐÈ theo `stage`. Chỉ đọc bảng Order, không gọi sàn.
+//   ARRANGE = Chờ xử lý (bỏ đơn khách chưa thanh toán — sàn chưa cho chuẩn bị; đếm riêng)
+//   PRINT   = Đã xử lý, chưa in phiếu
+//   REPRINT = đã in phiếu, chưa quét đóng gói (in lại)
+// Trả tối đa BULK_MAX đơn (trần của các route /bulk): hỏa tốc trước, rồi đơn cũ trước.
+// `truncated` = còn đơn ngoài lượt này, app nói rõ "làm tiếp sau lượt này".
+// ============================================================
+router.get("/process-queue", async (req: AuthRequest, res, next) => {
+  try {
+    const stage = parseQueueStage(req.query.stage);
+    if (!stage) {
+      res.status(400).json({ error: "Thiếu công đoạn cần xử lý" });
+      return;
+    }
+    const base: Prisma.OrderWhereInput = {
+      ...ordersWhere(req),
+      shippingStatus: stage === "ARRANGE" ? ShippingStatus.PENDING : ShippingStatus.PROCESSED,
+      ...(stage === "ARRANGE"
+        ? { labelPrintedAt: undefined, packingDoneAt: undefined }
+        : stage === "PRINT"
+          ? { labelPrintedAt: null, packingDoneAt: undefined }
+          : { labelPrintedAt: { not: null }, packingDoneAt: null }),
+    };
+    const where: Prisma.OrderWhereInput =
+      stage === "ARRANGE" ? { AND: [base, { paymentStatus: { not: "UNPAID" } }] } : base;
+    const select = {
+      id: true,
+      channelId: true,
+      carrier: true,
+      shippingCarrierName: true,
+      cancelRequestedAt: true,
+      channel: { select: { channelName: true, shopName: true } },
+    } satisfies Prisma.OrderSelect;
+
+    const [total, unpaid, express] = await Promise.all([
+      prisma.order.count({ where }),
+      stage === "ARRANGE"
+        ? prisma.order.count({ where: { AND: [base, { paymentStatus: "UNPAID" }] } })
+        : Promise.resolve(0),
+      prisma.order.findMany({
+        where: { AND: [where, expressShippingWhere()] },
+        select,
+        orderBy: { createdAt: "asc" },
+        take: BULK_MAX,
+      }),
+    ]);
+    const rest =
+      express.length < BULK_MAX
+        ? await prisma.order.findMany({
+            where: { AND: [where, notExpressShippingWhere()] },
+            select,
+            orderBy: { createdAt: "asc" },
+            take: BULK_MAX - express.length,
+          })
+        : [];
+    const rows = [...express, ...rest];
+
+    res.json({
+      stage,
+      total,
+      taken: rows.length,
+      truncated: total > rows.length,
+      max: BULK_MAX,
+      unpaid,
+      groups: groupQueue(
+        rows.map((o) => ({
+          id: o.id,
+          channelId: o.channelId,
+          channelName: o.channel.channelName,
+          shopName: o.channel.shopName,
+          carrier: o.carrier,
+          shippingCarrierName: o.shippingCarrierName,
+          cancelRequested: o.cancelRequestedAt !== null,
+        }))
+      ),
+    });
   } catch (err) {
     next(err);
   }
@@ -1225,7 +1321,16 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       where: { id: { in: orderIds }, channel: channelScope(req) },
       include: {
         channel: true,
-        items: { select: { productName: true, channelSku: true, quantity: true, productId: true } },
+        items: {
+          select: {
+            productName: true,
+            channelSku: true,
+            quantity: true,
+            productId: true,
+            variantName: true,
+            externalId: true,
+          },
+        },
       },
     });
     if (rows.length === 0) {
@@ -1306,6 +1411,31 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       );
     }
 
+    // CHÈN BẢNG SẢN PHẨM GỌN (19/11/2026, services/label-overlay): chỉ áp cho vận đơn tải RIÊNG
+    // từng đơn của sàn đã có luật và chủ shop đang bật mẫu. Ở đây chỉ LẬP KẾ HOẠCH (dòng hàng +
+    // vùng chèn); bảng được vẽ lúc ghép tệp (mergePdfParts) nên `labelPdfs` vẫn là tệp GỐC của
+    // sàn — kho vận đơn đã in lưu bản gốc. Lỗi chèn không làm hỏng lượt in.
+    const overlayPlans = new Map<string, OverlayPlan>();
+    const overlayOrders = orders.filter((o) => labelPdfs.has(o.id) && overlaySupported(o.channel.channelName));
+    if (overlayOrders.length > 0) {
+      const owner = await prisma.user.findUnique({
+        where: { id: req.ownerId! },
+        select: { labelTemplates: true },
+      });
+      const templates = readLabelTemplates(owner?.labelTemplates);
+      for (const platform of new Set(overlayOrders.map((o) => o.channel.channelName))) {
+        if (!templates[platform]?.enabled) continue;
+        const list = overlayOrders.filter((o) => o.channel.channelName === platform);
+        const plans = await planOverlay({
+          platform,
+          template: templates[platform],
+          pdfs: new Map(list.map((o) => [o.id, labelPdfs.get(o.id)!])),
+          itemsByOrder: new Map<string, OverlayItem[]>(list.map((o) => [o.id, o.items])),
+        });
+        for (const [id, plan] of plans) overlayPlans.set(id, plan);
+      }
+    }
+
     const parts = [];
     for (const o of orders) {
       const label = labelPdfs.get(o.id) ?? combinedByFirst.get(o.id) ?? null;
@@ -1326,7 +1456,7 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
             })),
           })
         : null;
-      if (label || pickList) parts.push({ label, pickList });
+      if (label || pickList) parts.push({ label, pickList, overlay: overlayPlans.get(o.id) ?? null });
     }
     if (parts.length === 0) {
       res.status(409).json({ error: "Không có phiếu nào để in", failed });
@@ -1343,6 +1473,8 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       broken: merged.broken,
       failed,
       failedIds: orders.filter((o) => failedCodes.has(o.orderCode)).map((o) => o.id),
+      // Số vận đơn đã chèn bảng sản phẩm gọn / bật mẫu mà không chèn được (in nguyên phiếu sàn).
+      overlay: merged.overlay,
     };
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="hubsell-phieu-${orders.length}-don.pdf"`);
@@ -1398,7 +1530,10 @@ router.get("/:id/saved-label", async (req: AuthRequest, res, next) => {
         channelId: true,
         orderCode: true,
         labelPrintedAt: true,
-        channel: { select: { labelArchiveEnabledAt: true } },
+        channel: { select: { labelArchiveEnabledAt: true, channelName: true } },
+        items: {
+          select: { productName: true, channelSku: true, quantity: true, variantName: true, externalId: true },
+        },
       },
     });
     if (!order) {
@@ -1438,13 +1573,29 @@ router.get("/:id/saved-label", async (req: AuthRequest, res, next) => {
       `[label-archive] in lại đơn ${order.id} gian ${order.channelId}: ${(found.pdf.length / 1024).toFixed(1)} KB` +
         (found.wholeBatch ? ` — trả CẢ tệp gộp ${found.count} đơn (số trang khác số đơn)` : "")
     );
+    // Kho lưu bản GỐC của sàn → in lại cũng chèn bảng sản phẩm gọn theo mẫu ĐANG bật, để tờ
+    // in lại giống tờ in lần đầu. Tệp gộp cả lượt (không tách được trang) thì để nguyên.
+    let pdfOut = found.pdf;
+    if (!found.wholeBatch && overlaySupported(order.channel.channelName)) {
+      const owner = await prisma.user.findUnique({
+        where: { id: req.ownerId! },
+        select: { labelTemplates: true },
+      });
+      const done = await overlayLabels({
+        platform: order.channel.channelName,
+        template: readLabelTemplates(owner?.labelTemplates)[order.channel.channelName],
+        pdfs: new Map([[order.id, found.pdf]]),
+        itemsByOrder: new Map<string, OverlayItem[]>([[order.id, order.items]]),
+      });
+      pdfOut = done.pdfs.get(order.id) ?? found.pdf;
+    }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="hubsell-van-don-${order.orderCode}.pdf"`);
     res.setHeader(
       "X-Hubsell-Saved-Label",
       Buffer.from(JSON.stringify({ wholeBatch: found.wholeBatch, count: found.count }), "utf8").toString("base64")
     );
-    res.send(found.pdf);
+    res.send(pdfOut);
   } catch (err) {
     next(err);
   }

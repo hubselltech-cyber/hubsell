@@ -20,6 +20,7 @@ import dashboardRouter from "./routes/dashboard";
 import productsRouter from "./routes/products";
 import ordersRouter from "./routes/orders";
 import packingRouter from "./routes/packing";
+import labelTemplateRouter from "./routes/label-template";
 import packVideosRouter from "./routes/pack-videos";
 import warehouseRouter from "./routes/warehouse";
 import channelsRouter from "./routes/channels";
@@ -233,6 +234,8 @@ export function createApp() {
   app.use("/api/products", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, productsRouter);
   // Đóng gói & bàn giao (01/11/2026) — mount TRƯỚC /api/orders vì router đơn có /:id.
   app.use("/api/orders/packing", requireAuth, requirePermission("orders"), requireChannel, packingRouter);
+  // Tùy chỉnh phiếu in (19/11/2026) — cũng mount TRƯỚC /api/orders; không lọc theo gian nên không cần requireChannel.
+  app.use("/api/orders/label-template", requireAuth, requirePermission("orders"), labelTemplateRouter);
   app.use("/api/orders", requireAuth, requirePermission("orders"), requireChannel, ordersRouter);
   // Video đóng hàng (16/11/2026, docs/VIDEO-DONG-HANG-THIET-KE.md) — cổng requirePackVideo chặn CẢ NHÓM:
   // bản thí điểm chỉ một tài khoản mở, mọi tài khoản khác nhận 403 FEATURE_LOCKED.
