@@ -909,6 +909,8 @@ Commit `fed244e2` (mã) + `ecf47893` (tài liệu), push `7ba02958..ecf47893`. M
 | 6. Bỏ chỉ mục cũ `Order_stock_committed_idx` | Xong 21:28 (anh: "Em chạy đi", sau khi lượt đầu bị công cụ chặn ở hộp xác nhận "destructive" của Supabase). `DROP INDEX CONCURRENTLY IF EXISTS`; kiểm sau đó: bảng đơn còn `Order_stock_awaiting_ship_idx` + `Order_stock_held_idx`, không chỉ mục nào không hợp lệ; câu đếm đơn đang giữ đi qua chỉ mục mới, 253 khối, 2 ms. Migration `20261120093000_drop_order_stock_committed_idx` (`DROP INDEX IF EXISTS`) để các database dev khớp prod; trên prod nó không tìm thấy gì nên không lấy khóa |
 | 7. EXPLAIN + `pg_stat_statements` sau 24 giờ | EXPLAIN câu chọn đã làm (trên). `pg_stat_statements` sau 24 giờ CHƯA |
 
+Lần deploy thứ hai (commit `d9f34702`, chỉ có migration dọn): 21:32:05 migration ghi xong, không rollback; 21:34:09 nhịp bảo trì đầu sau khi worker khởi động lại chạy 36 ms, quét bù 0 đơn, không lỗi; 185 đơn còn dấu, 0 dấu sót, bộ đếm 211, không mã nào âm. Đối chiếu chưa tới hạn nên không chạy lại (đúng thiết kế).
+
 **Còn lại**
 
 - Chuỗi cần 7 lần liên tiếp: lần 1 là 19/11 21:19, sớm nhất đủ vào 25/11 ~21:19. Đọc bằng `SELECT cursor FROM maintenance_jobs WHERE key = 'stock-committed-check'` (trường `streak`); không cần lịch soi.
