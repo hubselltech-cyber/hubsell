@@ -1636,3 +1636,18 @@ tài khoản chưa mở tính năng).
 **Sau khi push:** commit `7ec8657d` (kèm `f99f1d51` tài liệu của lần trước). 14:57:24 gói mã công khai của
 `app.hubsell.vn/orders/videos/record` đã chứa chuỗi của bản mới (`rec-head`, tệp `/_next/static/chunks/35ew8ip3u0mja.js`) — soi tệp
 tĩnh, không đăng nhập. CHƯA nhìn màn hình trên prod, chưa xem Render. Máy chủ local đã dừng.
+
+### 24.8 Anh hỏi về ổ đĩa đầy (19/11 chiều) — ANH CHỐT: KHÔNG làm thêm gì
+
+Anh hỏi "ổ đĩa đầy thì khách phải tự dọn dẹp à?" rồi "cần phải biết khách hàng vào đâu để xóa bộ nhớ đệm này". Em trả lời [đọc mã + thử
+19/11]: chỉ video CHƯA tải lên mới nằm trên máy khách; tải lên xong là tệp tự xóa, rác còn sót tự dọn lần mở sau; video đã tải lên chỉ
+nằm trên R2. Chỗ xóa tay trong Chrome: biểu tượng bên trái thanh địa chỉ → Cài đặt trang web → Xóa dữ liệu (xóa cả phiên đăng nhập và
+cài đặt camera; em chưa mở Chrome soi lại từng chữ).
+
+Em đề xuất thêm dòng "Đang giữ trên máy này: N video chờ gửi · X MB" + nút "Gửi lại" / "Xóa khỏi máy" (= câu K-7).
+**Anh 19/11: "Vậy được rồi. Không cần."** → ⛔ KHÔNG làm dòng dung lượng / nút xóa video chờ gửi; đừng đề xuất lại trừ khi có khách kẹt
+thật. Đề xuất "ổ đầy mà mạng thông thì vẫn cho quay (giữ trong bộ nhớ), chỉ khóa khi vừa đầy ổ vừa mất mạng" anh CHƯA trả lời — để
+nguyên mã hiện tại (khóa mở clip mới khi một lần ghi thật hỏng).
+
+**Dừng ở đây 19/11 chiều (anh: "Làm tới đây thôi tối làm tiếp").** Prod = `7ec8657d`. Việc chờ: anh thử 4 ca thật trên prod (rút mạng
+10 phút, tắt hẳn Chrome giữa clip, clip 15 phút, một buổi đóng hàng vài chục đơn) + thử camera cận cảnh với webcam thật và tem giấy.
