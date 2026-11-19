@@ -11,7 +11,7 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-aud
  *               gói — bỏ kiện lại (05/11/2026; tạo bằng scripts/gen-scan-cancelled-sound.mjs)
  *
  * Player tạo lười 1 lần rồi giữ suốt phiên app (createAudioPlayer sống ngoài
- * React) — mỗi lượt phát seekTo(0) để bấm liên tục vẫn kêu.
+ * React) — mỗi lượt phát CHỜ seekTo(0) xong rồi mới play() để bấm liên tục vẫn kêu.
  */
 
 export type ScanSound = "success" | "error" | "duplicate" | "cancelled";
@@ -41,8 +41,20 @@ export function playScanSound(kind: ScanSound) {
       p.volume = 1;
       players[kind] = p;
     }
-    p.seekTo(0);
-    p.play();
+    // seekTo là BẤT ĐỒNG BỘ trên iPhone: gọi play() ngay sau seekTo(0) thì lượt phát thứ hai rơi vào lúc player
+    // còn đứng ở CUỐI tệp → "phát" xong tức thì, không ra tiếng; lượt thứ ba tua xong rồi nên lại kêu → nhạc nhảy
+    // cóc tem 1 có / tem 2 mất / tem 3 có (anh Trung thử màn quay video 18/11). Phải chờ tua xong rồi mới phát.
+    const player = p;
+    player
+      .seekTo(0)
+      .then(() => player.play())
+      .catch(() => {
+        try {
+          player.play();
+        } catch {
+          // bỏ qua
+        }
+      });
   } catch {
     // Âm thanh là phụ trợ — lỗi audio không được chặn luồng quét
   }
