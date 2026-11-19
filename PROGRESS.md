@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 ~21:15 — Kho chuẩn quốc tế: thiết kế lại lát 1 ĐÃ LÊN PROD (anh: "Em làm nốt đi rồi push. Mình sẽ check thật trên tài khoản admin@hubsell.vn luôn")
+
+- **Commit + push:** `fed244e2` (mã) + `ecf47893` (tài liệu), `7ba02958..ecf47893`. Chi tiết ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 14.12.
+- **Prod trước push:** dựng `Order_stock_held_idx` bằng `CREATE INDEX CONCURRENTLY` (hợp lệ, 608 kB); `random_page_cost` prod = 1,1; EXPLAIN câu chọn quét bù bản mới đi đúng qua chỉ mục mới (ước 7.033, thật 7.909).
+- **Prod sau push:** `/health` = `ecf47893` sau 120 giây; 21:19 worker gỡ 7.626 dấu sót, quét bù nhả 106 đơn của gian không còn hoạt động (0 sản phẩm), đối chiếu lệch cứng 0 (bộ đếm 203 = từ đơn 203 = "Chờ giao" 203), **chuỗi 1**; không còn dòng `lỗi một nhịp` sau 21:19 (xem tới 21:22).
+- **Tài khoản admin@hubsell.vn (đọc bằng SQL, không đăng nhập):** 12 đơn đang giữ trên 9 mã, bộ đếm từng mã khớp số tính lại từ đơn, lệch 0. Anh đối trên màn hình bằng cột "Chờ giao" ở Tổng kho.
+- **Dọn:** xóa biến `STOCK_COMMITTED_SWEEP_MS` trên Render bằng "Save only" (không khởi động lại worker).
+- **KHÔNG làm được (công cụ chặn, em không đi vòng):** (1) `DROP INDEX CONCURRENTLY "Order_stock_committed_idx"` trên prod — chỉ mục cũ còn nguyên, vô hại; anh chạy tay rồi em thêm migration DROP cho dev; (2) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu` — lượt kế là 13/11/2027.
+- **Chưa kiểm:** `pg_stat_statements` sau 24 giờ; một đơn thật rời kho qua quét lô / làn đọc con trỏ / đổi tay với bản mới; chuỗi cần 7 lần, sớm nhất đủ 25/11 ~21:19.
+
+---
 ## Phiên 19/11 đêm (tiếp) — Kho chuẩn quốc tế: CODE thiết kế lại lát 1 trên local (anh: "ok em làm đi. Phần này quan trọng làm cẩn thận nhé") — CHƯA commit, CHƯA đụng prod
 
 - **Anh hỏi trước khi duyệt:** "Phần này lại phức tạp thế à. Có ảnh hưởng tới khách không?" → không: bản bóng, không màn nào đọc bộ đếm, số đẩy sàn không dùng; bản mới cũng không đổi gì phía khách.

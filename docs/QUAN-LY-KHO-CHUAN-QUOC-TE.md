@@ -875,6 +875,47 @@ Hai điểm cần biết ở bước 3:
 - Chưa đếm trên prod có bao nhiêu đơn còn dấu sót để ước lượng việc gỡ dấu chạy bao lâu.
 - Worker demo ghi Đang giao / Đã giao cho đơn tài khoản demo không gọi rời kho; nếu đơn demo có trừ kho thì quét bù sẽ bắt và log cảnh báo.
 
+### 14.12. ĐÃ LÊN PROD 19/11/2026 ~21:17 (anh: "Em làm nốt đi rồi push. Mình sẽ check thật trên tài khoản admin@hubsell.vn luôn")
+
+Commit `fed244e2` (mã) + `ecf47893` (tài liệu), push `7ba02958..ecf47893`. Mọi số dưới đây đọc trên prod bằng câu SELECT qua Supabase SQL Editor và log Render.
+
+**Trước khi push (21:14)**
+
+- Postgres 17.6, `random_page_cost` = 1,1 (lần đầu xem được). Bảng đơn ≈ 956.000 dòng. Không phiên nào đang chạy, không giao dịch treo.
+- 282 đơn đang giữ thật, bộ đếm 200; khoảng 7.000 đơn còn dấu của bản hai cột (ước từ thống kê bảng, 0,74 %).
+- `CREATE INDEX CONCURRENTLY "Order_stock_held_idx"` xong trong dưới 10 giây: hợp lệ, 608 kB, 7.909 dòng.
+- EXPLAIN ANALYZE câu chọn quét bù bản mới trên prod, lúc tập còn 7.909 đơn có dấu: đi qua `Order_stock_held_idx`, máy ước 7.033 dòng, đụng 7.824 khối (2.446 đọc từ đĩa), 1,55 giây, ra 106 đơn cần quét.
+
+**Sau khi push**
+
+- 21:17:04 migration `20261120090000_stock_committed_single_mark` ghi xong, không rollback. `/health` báo bản `ecf47893` sau 120 giây.
+- 21:19:10 nhịp đầu của worker (log `hubsell-worker-sg`):
+  - gỡ dấu còn sót của 7.626 đơn đã rời kho;
+  - quét bù đưa 106 đơn của gian không còn hoạt động ra khỏi bộ đếm, 0 sản phẩm (các đơn này không có nhật ký trừ kho). Nhánh "sàn đã giao" bắt 0 đơn. Cả nhịp 3,9 giây, không lỗi;
+  - đối chiếu: 179 đơn đang giữ, bộ đếm 203 = tính lại từ đơn 203 = theo "Chờ giao" 203; lệch 0 mã, 0 vị trí, 0 đơn đã rời kho còn dấu; đã hủy còn giữ 0; **chuỗi 1**.
+- Dòng log cuối của bản cũ là `lỗi một nhịp` lúc 20:30:25; sau 21:19 không còn dòng lỗi nào (xem tới 21:22).
+- 21:24: 181 đơn còn dấu, 0 dấu sót, bộ đếm 207, không mã nào âm.
+
+**Tài khoản admin@hubsell.vn trên prod (5 gian, đều đang nối):** 12 đơn đang giữ, đều Chờ xử lý, trên 9 mã. Bộ đếm từng mã bằng đúng số tính lại từ đơn: BL003-DEN 1, TC006-XAMNHAT 1, TC020-XAM 1, TC023-DEN 1, TC025-XAM 2, TC077 2, TC078-DEN 1, TC111 2, TUI006-XAM 1; lệch 0. Em đọc bằng SQL, không đăng nhập tài khoản. Trên màn hình anh đối được bằng cột "Chờ giao" ở Tổng kho của chín mã này (cột đó tính theo trạng thái đơn, độc lập với bộ đếm).
+
+**Bước 14.6 đã làm / chưa làm**
+
+| Bước | Trạng thái |
+|---|---|
+| 2. Dựng chỉ mục mới | Xong 21:15 |
+| 3. Push + việc gỡ dấu một lần | Xong 21:17–21:19 |
+| 4. Xóa biến `STOCK_COMMITTED_SWEEP_MS` trên Render | Xong, lưu bằng "Save only" (không khởi động lại worker; giá trị cũ trùng mặc định mới nên hành vi không đổi). Còn 52 biến |
+| 5. Soi lần đối chiếu đầu | Xong: lệch cứng 0, chuỗi 1 |
+| 6. Bỏ chỉ mục cũ `Order_stock_committed_idx` | **CHƯA.** Công cụ chặn em ở hộp xác nhận "destructive" của Supabase, em không tìm đường vòng. Chỉ mục cũ còn nguyên, hợp lệ, không hại gì. Anh chạy tay: `DROP INDEX CONCURRENTLY IF EXISTS "Order_stock_committed_idx";` Sau đó em thêm migration `DROP INDEX IF EXISTS` cho các database dev |
+| 7. EXPLAIN + `pg_stat_statements` sau 24 giờ | EXPLAIN câu chọn đã làm (trên). `pg_stat_statements` sau 24 giờ CHƯA |
+
+**Còn lại**
+
+- Chuỗi cần 7 lần liên tiếp: lần 1 là 19/11 21:19, sớm nhất đủ vào 25/11 ~21:19. Đọc bằng `SELECT cursor FROM maintenance_jobs WHERE key = 'stock-committed-check'` (trường `streak`); không cần lịch soi.
+- Dòng `stock-committed-sweep`: `processed` > 0 nghĩa là quét bù bắt được đơn "sàn đã giao", tức còn một đường ghi trạng thái chưa gọi rời kho. Lúc 21:19 là 0.
+- Lịch `kho-chuan-quoc-te-soi-doi-chieu` em không tắt được (công cụ chặn). Nó chỉ chạy ngày 13–19/11 nên lượt kế là 13/11/2027.
+- Chưa thấy trên prod: một đơn thật đi từ Chờ xử lý sang Đang giao qua quét lô / làn đọc con trỏ / đổi tay với bản mới (mới 5 phút sau deploy). Lần đối chiếu 20/11 sẽ cho biết.
+
 ## 12. Nguồn
 
 Shopify: help.shopify.com/en/manual/products/inventory/fundamentals/inventory-states · …/inventory/managing-inventory-quantities/adjustment-history · …/inventory-and-locations/adjusting-inventory/adjusting-inventory-quantities · …/inventory-and-locations/inventory-counts/performing-and-reviewing-counts · …/fulfillment/managing-orders/canceling-orders · shopify.dev/docs/apps/build/orders-fulfillment/inventory-management-apps/manage-quantities-states
