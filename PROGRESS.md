@@ -5,6 +5,23 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 ~23:25 → 20/11 — App 1.5.0 cho KHÁCH: bản dựng từ master, KHÔNG có quay video (anh: "chỉ giữ lại tính năng Quay video gói hàng vì vẫn đang ở đường thử… còn lại… gộp sang master và push rồi build bản mới cho khách dùng trước"; "Dựng xong thì em nộp chính thức nhé")
+
+- **Rà trước khi dựng:** phần Chuẩn bị hàng + In phiếu + Tùy chỉnh phiếu in VỐN đã ở master và đã push từ sáng 19/11 (`965368e1`); nhánh thử `thu/video-dong-goi-lat-0` (bản TestFlight 37) chỉ hơn master đúng phần video. Master không có dòng mã video nào (đã grep `vision-camera`, `video-test`, `pack-video`, `thuvideo`). Thứ duy nhất bản 37 có mà master chưa commit = bản sửa âm báo quét (`scan-sounds.ts`, chờ `seekTo` xong mới `play()`).
+- **Commit + push:** `5025ce1e` (sửa âm báo quét) — `25ff4d07..5025ce1e`. Render không deploy lại (commit chỉ đụng app).
+- **Bản dựng (profile production, kênh `production`, commit `5025ce1e`):** iOS **1.5.0 (38)** EAS `633e8187`, dựng xong 23:42; Android **vc 15** EAS `b2dcc48f`. Lượt nộp hẹn sẵn trên Expo: iOS `6232e0e8`, Android `c3a04026` (kênh production, completed).
+- **App Store Connect:** đã tạo phiên bản 1.5.0 (`80dccc67`) + ghi "Có gì mới" (`docs/store/whats-new-1.5.0.txt`, 399 ký tự; KHÔNG nhắc Tùy chỉnh phiếu in).
+- **Bản này mang theo ngoài phần in:** phần Kho của kho chuẩn quốc tế lát 3–4 trên app (số "Tồn" theo cách của shop, chip lý do nhập / xuất theo danh sách chuẩn) + sửa tên không cắt (`9be874e8`) — đều đã ở master.
+- **Kiểm trước khi dựng:** `tsc` sạch; 119 ca test app qua; eslint 47 (mức nền 49). Giả lập web 390 px, backend local, tài khoản seed (shop dev đang ON_HAND): màn Đơn hàng hiện thanh "Xử lý đơn 30", hộp Xử lý đơn đủ 4 bước (28 chờ xử lý, 2 chưa in phiếu); Kho: nhập 1 lý do "Nhập hàng" → 11.019 → 11.020, xuất 1 lý do "Sửa sai số" → về 11.019 (hai lượt `POST /api/inventory/adjust` 200), xuất 99.999 bị chặn đúng câu "Xuất được tối đa 9.998 (giữ 1.022 cho đơn)", nút lưu mờ. Console chỉ có 403 của các đường tài chính (tài khoản seed local đang bị khóa gói — có sẵn).
+- **Checklist DUA-APP mục 9 — nói rõ phần BỎ QUA:** mục 1–5 (Tài chính), 8 (Quét đóng gói), 9 (Phiếu nhặt hàng) KHÔNG chạy lại vì mã các màn đó không đổi từ 1.4.3 (đã so `git diff` 1.4.3 → master: chỉ đổi Đơn hàng, các hộp Xử lý / In, Tùy chỉnh phiếu in, Kho, 3 dòng màn Gian hàng). Mục 6–7: Đơn hàng đã soi 320–430 + tối ở phiên in sáng 19/11; hộp Kho mới chỉ kiểm 390 sáng bằng DOM (công cụ chụp cắt hình), CHƯA soi 320 + tối. Mục 10: mới thử 1 SKU đơn ở shop ON_HAND; chưa thử mẫu ≥ 12 phân loại nhập 2 phân loại một lượt, chưa thử shop cách cũ.
+- **CHƯA kiểm:** máy thật / máy in thật / vận đơn thật với bản 38 (anh thử bản 37, khác bản 38 ở chỗ không có video + có phần Kho mới); luồng Chuẩn bị → In hôm nay không chạy lại (đã chạy sáng 19/11, mã không đổi).
+- **⚠️ Điểm em nêu với anh:** bản này đưa màn "Tùy chỉnh phiếu in" tới mọi chủ shop trong khi mục 6 docs MOBILE-CHUAN-BI-HANG-IN-PHIEU (đo trên vận đơn thật: 46 mm, "mỗi đơn một tờ" mặc định BẬT) chưa chạy. Mẫu mặc định TẮT, khách phải tự bật. Ẩn lối vào được bằng OTA runtime 1.5.0, không cần dựng lại — chờ anh quyết.
+- **Anh hỏi xen (19/11 đêm):** đặt Quay video thành tab con trong Kho → khảo sát ghi `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 17.3; anh: "phần này thì sẽ chuyển sau".
+- **00:29 20/11 — CHƯA nộp duyệt bản nào:** Expo gói miễn phí xếp hàng: lượt đẩy iOS `6232e0e8` vẫn IN_QUEUE từ 23:35 (54 phút), Android mới bắt đầu dựng 00:29. Anh: "Để tự nộp được không em? Tắt máy đi ngủ" → đặt lịch một lần `hubsell-mobile-1-5-0-nop-not-20-11` 06:30 20/11 (máy tắt thì chạy khi mở app): kiểm trước, rồi gắn build 38 + gửi duyệt iOS, ghi "Có gì mới" Google Play vc 15; không dựng lại, không commit. Android tự lên kênh production từ máy chủ Expo, không cần máy anh.
+- **✅ 00:33 20/11 — iOS ĐÃ GỬI DUYỆT:** Expo đẩy xong, vòng chờ gắn build 38 vào 1.5.0 lúc 00:33, `asc-release.mjs submit 1.5.0` → **WAITING_FOR_REVIEW, reviewSubmission `78222c6c-78f7-4266-8cd0-a02f93d67a79`** (đọc lại bằng `status` 00:34). Thư Apple cho lượt này mang mã đó.
+- **Trạng thái nộp Android:** xem dòng cập nhật ngay dưới.
+
+---
 ## Phiên 19/11 ~23:15 — Kho chuẩn quốc tế: BẬT cách "hàng trong kho" cho shop admin@hubsell.vn trên prod (anh: "Bật cho admin")
 
 - **Đã chạy trên prod 23:14:** một câu `INSERT … ON CONFLICT` vào `shop_sync_settings` cho đúng shop admin@hubsell.vn (`stockModel = 'ON_HAND'`; các giá trị khác trùng mặc định). Chi tiết + câu tắt lại ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 19.2.

@@ -677,6 +677,40 @@ Tab con là **trang mở đầu + hàng chờ tải lên**, không phải camera
 
 **Chưa kiểm:** chưa chạy thử dòng nào (lượt này chỉ đọc mã); chưa nhìn thanh 4 tab trên máy thật; `GET /api/channels` cho nhân viên em chỉ thấy có nhánh theo vai, chưa đọc ruột; phần "nhân viên làm được Trả lời sàn trên web" suy từ cổng máy chủ, chưa bấm thử bằng tài khoản nhân viên.
 
+### 17.3 Anh hỏi lại 19/11 đêm: "cho vào 1 tab ở kho lại hợp lý… Đỡ việc làm đường phân quyền nhân viên phức tạp" — cách (C), CHỈ KHẢO SÁT, chưa code
+
+**Cách (C) = tab con thứ ba trong KHO cho CẢ HAI vai** (`Tồn kho | Đơn hoàn | Quay video`), không phải cách (B) cũ (B là nhân viên ở
+Kho, chủ shop ở Đơn hàng — hai vai hai chỗ, lý do em chê ở 17.2). Kho là tab dưới DUY NHẤT mà chủ shop và nhân viên đều có sẵn
+[C `(admin)/_layout.tsx`, `(warehouse)/_layout.tsx`; `KhoScreen.tsx` dùng chung hai vai] → **em đổi đề nghị từ (A) sang (C).**
+
+| | (A) tab Đơn hàng cho nhân viên | **(C) tab con trong Kho, cả hai vai** |
+|---|---|---|
+| Tệp app đụng | dời 915 dòng `(admin)/orders.tsx` sang `screens/`, thêm `(warehouse)/orders.tsx`, sửa `_layout` nhân viên, tab con mới | `KhoScreen.tsx` thêm một ô ở `SegmentedTabs` + trang mở đầu / hàng chờ. KHÔNG đụng màn Đơn hàng, KHÔNG đụng thanh tab dưới |
+| Thanh tab dưới của nhân viên | 4 tab → nút QR lệch giữa (C3) | giữ 3 tab, QR vẫn giữa → C3 hết |
+| Rào thí điểm | giấu / hiện cả một TAB DƯỚI theo "chủ đã mở video" (C2) | chỉ giấu / hiện một ô tab con → C2 hết |
+| Nhân viên thấy thêm | danh sách đơn + tổng tiền đơn | không thêm gì |
+| Chỉ việc | "Đơn hàng → Quay video" | "Kho → Quay video", một câu cho cả hai vai |
+| Quay khui hàng hoàn | nút riêng ở Kho → Đơn hoàn (lát N4) | cùng tab đó, công tắc Đóng hàng / Khui hàng hoàn ngay trong tab → bỏ được nút riêng, cả hai kiểu quay nằm một chỗ |
+| Lệch với web | khớp (web: Video đóng hàng nằm dưới Đơn hàng) | lệch: web ở Đơn hàng, app ở Kho — chấp nhận được, người gói hàng đứng ở kho |
+
+**Cái (C) KHÔNG bỏ được:** sửa máy chủ ở 17.2 mục (d) (lát N1). Hôm nay nhân viên của chủ thí điểm vẫn bị `403 FEATURE_LOCKED` dù lối
+vào đặt ở đâu, vì cổng tính theo email NGƯỜI ĐĂNG NHẬP và chỉ nhận chủ tài khoản [C `require-pack-video.ts`, `access.ts`]. Đó mới là
+"đường phân quyền" thật; đặt ở Kho chỉ bỏ được phần rối phía app. Vẫn không thêm ô quyền mới, không migration.
+
+**Gọn thêm được phần quyền nếu anh đồng ý (câu D1):** thay hai khả năng `recordPack` (`orders`) / `recordUnbox` (`warehouse.returns`)
+bằng MỘT luật — **ai vào được Kho trên app thì quay được** (đang là `orders` hoặc `warehouse.returns` hoặc `warehouse.products`
+[C `permissions.ts` `homePathFor`]), chủ đã mở video. Bảng thử chéo N1 co từ "4 kiểu quyền × đóng / khui × từng đường" còn "vào được Kho /
+không". Giữ lại một rào: thông tin đơn hiện trên màn quay (`/match`: tên gian, món hàng) chỉ trả cho người có quyền `orders`; người chỉ
+có quyền kho vẫn quay được, video vẫn gắn vào đơn, màn quay không hiện món hàng [S — chưa đọc lại `library.ts` cho ca này].
+
+**Lát theo (C):** N1 máy chủ (như 17.2 d, theo luật D1 nếu anh chốt) → N2' `KhoScreen` thêm tab con + trang mở đầu + hàng chờ, bỏ ô ở
+Tổng quan → N5 thử bằng tài khoản nhân viên. N2 (dời màn Đơn hàng), N3 (tab Đơn hàng cho nhân viên), N4 (nút khui riêng) KHÔNG cần nữa.
+
+**Anh chốt:** D1 luật "vào được Kho = quay được" (em đề nghị có) · D2 nhãn tab con "Quay video" (ngắn cho vừa 3 ô ở màn 320 px; mỗi ô
+~96 px, chữ 12 px — [S] chưa đo) · D3 bỏ ô "Quay video đóng gói" ở Tổng quan (em đề nghị bỏ, một lối). C5, C6, C7 ở 17.2 còn nguyên.
+
+**Chưa kiểm:** lượt này chỉ đọc mã + tài liệu; chưa dựng, chưa đo thanh 3 ô ở 320 px + giao diện tối, chưa thử tài khoản nhân viên.
+
 ## 18. NHIỀU BÀN trên một máy + đường truyền khi hàng chục nghìn shop đóng hàng cùng lúc (18/11/2026 — ĐỀ XUẤT, anh CHƯA duyệt, chưa code)
 
 > Anh Trung 18/11: "anh đang muốn đẩy sớm kế hoạch làm nhiều màn hình quay video đóng hàng như lúc trước mình đã khảo sát. Yêu cầu làm như

@@ -1,0 +1,6 @@
+Bản 1.5.0:
+• Xử lý đơn ngay trên điện thoại: tích đơn ở danh sách hoặc bấm "Xử lý đơn" để Chuẩn bị hàng theo từng gian, từng hãng vận chuyển.
+• In phiếu vận đơn từ điện thoại: mở tệp bằng app của máy in hoặc in qua Wi-Fi.
+• Bộ lọc Đơn hàng xếp gian hàng theo từng sàn; mã đơn dài hiện đủ.
+• Kho: chọn lý do khi nhập, xuất (hỏng, mất, bán ngoài sàn…).
+• Sửa âm báo quét đôi lúc mất tiếng trên iPhone.

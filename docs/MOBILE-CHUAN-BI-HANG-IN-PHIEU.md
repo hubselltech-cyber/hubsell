@@ -450,6 +450,13 @@ cần xóa hẳn khỏi tệp thì là việc khác (phải dựng lại trang).
    **Bản dựng:** TestFlight **1.5.0 (37)**, EAS `6b5788b7`, dựng từ nhánh thử video đã gộp master (commit gộp `9e096ee0`
    chỉ ở máy) theo lời anh "có phần quay video gói hàng chung luôn". Dựng XONG 10:33 (khoảng 8 phút). Nộp qua `eas submit --id` từ repo chính lúc ~10:36, lượt nộp Expo `96d90b16-8e61-41bb-acb9-2bd02f311113` báo đã tải lên App Store Connect; App Store Connect ghi build 37 **VALID** lúc 10:38 (kiểm bằng `asc-release.mjs status`); chưa nhìn trong app TestFlight trên máy. Backend prod ở `965368e1`.
    Bản này mang mã thử video → không dùng để nộp duyệt kho.
+   **Bản cho KHÁCH (19/11 đêm → 20/11):** anh bảo "chỉ giữ lại tính năng Quay video gói hàng vì vẫn đang ở đường thử… build bản
+   mới cho khách dùng trước", "Dựng xong thì em nộp chính thức nhé" → dựng từ **master** `5025ce1e` (không có mã video; thêm bản sửa
+   âm báo quét): iOS **1.5.0 (38)** EAS `633e8187`, Android **vc 15** EAS `b2dcc48f`, kênh `production`. iOS gửi duyệt 00:33 20/11 —
+   WAITING_FOR_REVIEW, reviewSubmission `78222c6c-78f7-4266-8cd0-a02f93d67a79`. Android: xem PROGRESS phiên 19/11 ~23:25.
+   Checklist mục 9 của DUA-APP chỉ chạy phần màn đã đổi (Đơn hàng, Kho); phần bỏ qua ghi rõ ở PROGRESS. Máy thật / máy in thật /
+   vận đơn thật với bản 38: CHƯA kiểm. ⚠️ Mục 2 dưới đây (đo phiếu thật) CHƯA chạy mà màn Tùy chỉnh phiếu in đã theo bản này tới
+   khách — em đề nghị ẩn tạm lối vào bằng OTA runtime 1.5.0 cho tới khi đo xong; chờ anh quyết.
 1. **Vị trí + tên nút "Xử lý đơn"** và bốn bước trong hộp — em tự chọn; anh đã xem và chỉnh (thanh nổi ở đáy, mục
    2). Phần tích đơn trên thẻ (mục 2.1) làm theo ý anh; điểm em tự quyết: không tích gì thì vẫn làm cả nhóm đang
    lọc. Mã đơn dài đã xử lý ở mục 2.2 (không còn cắt).
