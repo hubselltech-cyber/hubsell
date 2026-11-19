@@ -10,7 +10,7 @@
 // to hơn ngày giờ một bậc. Cùng câu chữ với app điện thoại (hubsell-mobile/src/lib/pack-video-overlay.ts).
 // ============================================================
 
-import { STAMP_BOX_RATIO } from "./config";
+import { CODE_LINES_DELAY_MS, STAMP_BOX_RATIO } from "./config";
 import { pipRect, pipSourceCrop, type PipSettings } from "./pip-layout";
 
 /**
@@ -38,6 +38,14 @@ export function stampCodeLines(trackingCode: string, orderCode: string | null): 
   const order = orderCode ? cleanCode(orderCode) : "";
   if (order) lines.push(`Mã đơn hàng: ${order}`);
   return lines;
+}
+
+/**
+ * Đã tới lúc hiện các dòng mã chưa — `elapsedMs` tính từ khung đầu của clip. Dùng CHUNG cho tệp video (clip-pipeline)
+ * và màn xem trực tiếp (camera-stage) để hai chỗ không lệch nhau.
+ */
+export function codeLinesDue(elapsedMs: number): boolean {
+  return elapsedMs >= CODE_LINES_DELAY_MS;
 }
 
 export interface StampBox {

@@ -20,7 +20,7 @@ import type * as Mediabunny from "mediabunny";
 
 import { KEY_FRAME_INTERVAL_US, MAX_ENCODE_QUEUE, WRITE_CHUNK_BYTES } from "./config";
 import { startPump, type FramePump, type PumpMode } from "./frame-pump";
-import { stampCodeLines, type PipFrame, type StampCanvas } from "./stamp-canvas";
+import { codeLinesDue, stampCodeLines, type PipFrame, type StampCanvas } from "./stamp-canvas";
 import type { ClipOutcome, ClipSinkLike, RecorderLog } from "./types";
 
 /** Số byte đầu của khung đầu tiên ghi vào sổ cứu clip (để tìm lại chỗ bắt đầu dữ liệu khung hình trong tệp dở). */
@@ -38,7 +38,7 @@ export interface FrameTap {
 interface Clip {
   code: string;
   manual: boolean;
-  /** Các dòng mã in lên từng khung hình của clip này (dưới ngày giờ). Clip quay tay không có tem → rỗng. */
+  /** Các dòng mã in lên khung hình của clip này (dưới ngày giờ), từ sau giây đầu. Clip quay tay không có tem → rỗng. */
   labelLines: string[];
   decidedAtMs: number;
   framesFed: number;
@@ -314,8 +314,12 @@ export class ClipPipeline {
     }
     if (keyFrame) this.lastKeyTsUs = ts;
 
-    // Chữ đi theo CLIP đang nhận khung hình: khung đầu của clip mới đã mang mã của tem mới.
-    this.opts.stamp.draw(source, undefined, this.feedClip?.labelLines, this.opts.pip?.() ?? null);
+    // Chữ đi theo CLIP đang nhận khung hình. Hai dòng mã hiện TRỄ CODE_LINES_DELAY_MS so với khung đầu của clip (tính
+    // theo mốc giờ của khung hình, nên trong tệp đúng từng khung) — giây đầu của clip mới chỉ có ngày giờ.
+    const feed = this.feedClip;
+    const lines =
+      feed && feed.boundaryTsUs !== null && codeLinesDue((ts - feed.boundaryTsUs) / 1000) ? feed.labelLines : undefined;
+    this.opts.stamp.draw(source, undefined, lines, this.opts.pip?.() ?? null);
     const frame = new VideoFrame(this.opts.stamp.canvas, { timestamp: ts, duration: this.frameDurUs, alpha: "discard" });
     try {
       encoder.encode(frame, { keyFrame });

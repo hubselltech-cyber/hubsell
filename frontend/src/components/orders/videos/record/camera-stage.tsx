@@ -5,6 +5,7 @@ import { AlertTriangle, Camera, CameraOff, PackageOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CODE_LINES_DELAY_MS } from "@/lib/pack-video-recorder/config";
 import type { RecorderState } from "@/lib/pack-video-recorder/recorder";
 import type { SessionClip } from "@/lib/pack-video-recorder/session";
 import { formatStamp, stampCodeLines } from "@/lib/pack-video-recorder/stamp-canvas";
@@ -35,12 +36,24 @@ import { KIND_ACCENT, formatElapsed, useElapsedSeconds } from "./record-bits";
  * chữ và đúng thứ tự in vào tệp (stampCodeLines). Anh Trung thử bản in mã: "quay xong thì đã in mã vận đơn ra
  * rồi còn màn xem trực tiếp lúc quay thì chưa hiện ra".
  */
-function LiveStamp({ lines }: { lines: readonly string[] }) {
+/**
+ * 20/11/2026 — hai dòng mã hiện TRỄ 1 giây so với lúc clip mở (CODE_LINES_DELAY_MS, anh Trung: "để 1 giây trễ"), đúng
+ * như trong tệp. `showAtMs` = mốc được hiện của clip đang quay; đổi clip là ẩn ngay, không nháy mã mới trước mốc.
+ */
+function LiveStamp({ lines, showAtMs }: { lines: readonly string[]; showAtMs: number | null }) {
   const [text, setText] = React.useState(() => formatStamp(new Date()));
   React.useEffect(() => {
     const timer = setInterval(() => setText(formatStamp(new Date())), 250);
     return () => clearInterval(timer);
   }, []);
+  // Ghi lại MỐC đã tới (không phải cờ bật / tắt): clip mới có mốc khác → tự ẩn ngay trong lượt vẽ đó.
+  const [dueFor, setDueFor] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (showAtMs === null) return;
+    const timer = setTimeout(() => setDueFor(showAtMs), Math.max(0, showAtMs - Date.now()));
+    return () => clearTimeout(timer);
+  }, [showAtMs]);
+  const shown = showAtMs !== null && dueFor === showAtMs ? lines : [];
   return (
     <div className="pointer-events-none absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-1">
       <span
@@ -50,7 +63,7 @@ function LiveStamp({ lines }: { lines: readonly string[] }) {
       >
         {text}
       </span>
-      {lines.map((line) => (
+      {shown.map((line) => (
         <span
           key={line}
           className="max-w-full truncate rounded bg-black/60 px-2 py-0.5 font-mono text-base font-semibold text-white"
@@ -223,7 +236,12 @@ export function CameraStage({
         )}
         {/* Ô cận cảnh nằm DƯỚI ngày giờ + dòng mã, đúng thứ tự vẽ trong tệp video. */}
         {cameraOn && <CloseupOverlay state={state} adjusting={adjustingPip} videoRef={closeupVideoRef} onPip={onPip} />}
-        {cameraOn && <LiveStamp lines={stampLines} />}
+        {cameraOn && (
+          <LiveStamp
+            lines={stampLines}
+            showAtMs={current && !current.manual ? current.startedAtMs + CODE_LINES_DELAY_MS : null}
+          />
+        )}
         <div className="absolute right-3 top-3">
           <StatusPill state={state} />
         </div>

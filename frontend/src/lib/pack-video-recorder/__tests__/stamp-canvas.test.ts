@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { layoutCodeBoxes, stampCodeLines } from "../stamp-canvas";
+import { CODE_LINES_DELAY_MS } from "../config";
+import { codeLinesDue, layoutCodeBoxes, stampCodeLines } from "../stamp-canvas";
 
 /** Phông đơn cách: mỗi ký tự rộng 0,6 cỡ chữ (gần với Consolas). */
 const mono = (text: string, fontPx: number) => text.length * fontPx * 0.6;
@@ -17,6 +18,14 @@ test("chỉ có mã vận đơn → một dòng; có mã đơn hàng → hai dò
     "Mã vận đơn: SPXVN06316825343B",
     "Mã đơn hàng: 261118KC2FFVYY",
   ]);
+});
+
+test("hai dòng mã hiện trễ 1 giây so với khung đầu của clip (anh Trung 20/11/2026)", () => {
+  assert.equal(CODE_LINES_DELAY_MS, 1000);
+  assert.equal(codeLinesDue(0), false, "khung đầu của clip chưa có mã");
+  assert.equal(codeLinesDue(999), false);
+  assert.equal(codeLinesDue(1000), true);
+  assert.equal(codeLinesDue(60_000), true);
 });
 
 test("mã có khoảng trắng / quá dài được dọn; mã đơn hàng rỗng thì không in dòng thứ hai", () => {

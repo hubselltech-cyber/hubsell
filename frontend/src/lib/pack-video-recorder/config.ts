@@ -52,6 +52,13 @@ export const CAMERA_RECOVER_DEBOUNCE_MS = 1500;
 export const STAMP_BOX_RATIO = 0.035;
 
 /**
+ * Hai dòng mã ("Mã vận đơn", "Mã đơn hàng") hiện TRỄ ngần này so với khung đầu của clip (anh Trung 20/11/2026: "để 1
+ * giây trễ… cảnh đưa lên hạ xuống cũng mất tầm 1 giây") — video mở ra thấy tem còn trước camera rồi mã mới hiện, không
+ * có sẵn mã từ giây 0. Ngày giờ vẫn in từ khung đầu. Mốc cắt clip KHÔNG đổi. Tài liệu thiết kế mục 25.
+ */
+export const CODE_LINES_DELAY_MS = 1000;
+
+/**
  * Tệp WebAssembly của bộ đọc mã (zxing-wasm), phục vụ từ `frontend/public` — không gọi mạng ngoài.
  * Tên tệp mang số phiên bản: nâng `zxing-wasm` trong package.json thì PHẢI chép tệp mới và đổi tên ở đây.
  */
