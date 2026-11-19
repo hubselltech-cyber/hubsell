@@ -9,18 +9,47 @@
 //   3. camera có lại → tự mở lại và quay về chờ tem (KHÔNG tự quay tiếp clip quay tay).
 // ============================================================
 
-import { cameraErrorText, listCameras, openCameraStream, type CameraDevice } from "./camera";
+import { cameraErrorText, closeupErrorText, listCameras, openCameraStream, type CameraDevice } from "./camera";
 import { ClipPipeline, webCodecsMissing } from "./clip-pipeline";
+import { CloseupSource } from "./closeup-source";
 import { CAMERA_RECOVER_DEBOUNCE_MS, RECORD_BITRATE, RECORD_FPS } from "./config";
 import { resolvePumpMode } from "./frame-pump";
+import { PIP_DEFAULT, clampPip, type PipSettings } from "./pip-layout";
 import { Scanner } from "./scanner";
 import { playAlarm, playBoop, playDone, playTing, unlockAudio } from "./sound";
-import { StampCanvas } from "./stamp-canvas";
+import { StampCanvas, type PipFrame } from "./stamp-canvas";
 import { TemCutter } from "./tem-cutter";
 import { manualClipCode } from "./tracking-code";
-import { CLIP_KIND_LABEL, type ClipKind, type ClipOutcome, type RecorderLog, type ScannedCode } from "./types";
+import {
+  CLIP_KIND_LABEL,
+  type ClipKind,
+  type ClipOutcome,
+  type ClipSinkLike,
+  type RecorderLog,
+  type ScannedCode,
+} from "./types";
 
 export type RecorderPhase = "off" | "opening" | "ready" | "recording" | "lost";
+
+/** Tình trạng camera cận cảnh: tắt · đang bật · đang chạy · mất giữa chừng (chờ cắm lại). */
+export type CloseupPhase = "off" | "opening" | "on" | "lost";
+
+/**
+ * CAMERA CẬN CẢNH (tùy chọn, mặc định tắt — anh Trung 19/11/2026: "bình thường là mình vẫn sẽ dùng 1 camera").
+ * Chỉ là nguồn hình cho ô ghép ở góc video; KHÔNG đọc tem, KHÔNG mở / cắt / dừng clip.
+ */
+export interface CloseupState {
+  /** Người dùng đã bật tùy chọn (nhớ theo máy). */
+  enabled: boolean;
+  /** Camera đã chọn làm camera cận. */
+  deviceId: string | null;
+  phase: CloseupPhase;
+  label: string;
+  width: number;
+  height: number;
+  /** Câu báo khi không bật được / mất camera cận. Camera chính vẫn quay bình thường. */
+  problem: string | null;
+}
 
 export interface RecorderState {
   phase: RecorderPhase;
@@ -37,6 +66,9 @@ export interface RecorderState {
   problem: string | null;
   /** Tem vừa bị từ chối vì đã quay rồi (để màn hình nháy thông báo). */
   repeat: { code: string; atMs: number } | null;
+  closeup: CloseupState;
+  /** Chỗ đặt ô cận cảnh trong khung video (tỷ lệ) — khách chỉnh một lần, nhớ theo máy. */
+  pip: PipSettings;
 }
 
 export interface RecorderEvents {
@@ -52,11 +84,14 @@ export interface RecorderEvents {
   /** Clip ĐANG QUAY vừa được đổi loại (rào "đơn này đang hoàn về"). */
   onClipRelabel?(kind: ClipKind): void;
   /**
-   * HẾT GIỜ THÌ DỪNG (18/11/2026): hỏi trước khi mở MỘT clip MỚI. false = hết giờ quay → không mở clip mới;
-   * clip đang quay dở vẫn quay nốt (tới khi bấm Dừng / đưa tem kế). Không có = luôn được (máy chủ vẫn chặn
-   * ở bước tải lên — đây chỉ là lớp báo sớm cho người đóng hàng).
+   * Hỏi trước khi mở MỘT clip MỚI: trả LÝ DO không mở được (câu cho người đóng hàng), hoặc null = mở được.
+   * Hai ca chặn: HẾT GIỜ QUAY (18/11/2026 — máy chủ vẫn chặn ở bước tải lên, đây là lớp báo sớm) và Ổ ĐĨA ĐÃ
+   * GHI HỎNG THẬT (lát M1). Clip đang quay dở luôn được quay nốt (tới khi bấm Dừng / đưa tem kế).
    */
-  canOpenClip?(): boolean;
+  clipBlocker?(): string | null;
+  /** Xin chỗ ghi tệp cho một clip (kho clip chờ gửi) + bỏ tệp của clip hỏng. */
+  openSink(): Promise<ClipSinkLike>;
+  discardFile(fileKey: string): Promise<void>;
 }
 
 /** Trạng thái lúc chưa bật gì — cũng là trạng thái màn hình vẽ ở lượt đầu. */
@@ -70,9 +105,14 @@ export const INITIAL_RECORDER_STATE: RecorderState = {
   current: null,
   problem: null,
   repeat: null,
+  closeup: { enabled: false, deviceId: null, phase: "off", label: "", width: 0, height: 0, problem: null },
+  pip: PIP_DEFAULT,
 };
 
 const LOST_TEXT = "Mất camera — kiểm tra dây USB, nên cắm thẳng vào máy. Cắm lại là camera tự bật.";
+const CLOSEUP_LOST_TEXT = "Mất camera cận cảnh — video vẫn quay tiếp bằng camera chính. Kiểm tra dây USB; cắm lại là tự bật.";
+const CLOSEUP_SAME_TEXT = "Camera cận cảnh đang trùng với camera chính — chọn một camera khác.";
+const CLOSEUP_BUSY_TEXT = "Dừng clip đang quay rồi mới đổi camera cận cảnh.";
 
 export class PackRecorder {
   private video: HTMLVideoElement | null = null;
@@ -87,6 +127,13 @@ export class PackRecorder {
   private recoverTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private busy = false;
+
+  private closeup: CloseupSource | null = null;
+  private closeupPreview: HTMLVideoElement | null = null;
+  /** Tăng mỗi lần mở / đóng camera cận → lượt mở cũ về trễ thì tự bỏ. */
+  private closeupSeq = 0;
+  private closeupLostLabel: string | null = null;
+  private closeupRecoverTimer: ReturnType<typeof setTimeout> | null = null;
 
   private state: RecorderState = INITIAL_RECORDER_STATE;
 
@@ -110,6 +157,150 @@ export class PackRecorder {
   attach(video: HTMLVideoElement, boxCanvas: HTMLCanvasElement | null): void {
     this.video = video;
     this.boxCanvas = boxCanvas;
+  }
+
+  /** Gắn thẻ <video> hiện hình camera cận trong ô ghép của khung xem trước (null khi ô bị gỡ khỏi màn hình). */
+  attachCloseupPreview(video: HTMLVideoElement | null): void {
+    this.closeupPreview = video;
+    if (video) {
+      video.srcObject = this.closeup?.stream ?? null;
+      if (this.closeup) void video.play().catch(() => {});
+    }
+  }
+
+  private patchCloseup(next: Partial<CloseupState>): void {
+    this.patch({ closeup: { ...this.state.closeup, ...next } });
+  }
+
+  /** Nạp cài đặt đã nhớ của máy này (gọi một lần ngay sau khi tạo bộ quay, trước khi bật camera). */
+  configureCloseup(saved: { enabled: boolean; deviceId: string | null; pip: PipSettings }): void {
+    this.patch({
+      closeup: { ...this.state.closeup, enabled: saved.enabled, deviceId: saved.deviceId },
+      pip: clampPip(saved.pip),
+    });
+  }
+
+  /** Bật / tắt tùy chọn camera cận cảnh. Đang quay thì từ chối (đổi bố cục giữa clip = video trông như bị chỉnh sửa). */
+  setCloseupEnabled(on: boolean): boolean {
+    if (this.state.current) {
+      this.events.log("warn", CLOSEUP_BUSY_TEXT);
+      return false;
+    }
+    if (this.state.closeup.enabled === on) return true;
+    this.closeupLostLabel = null;
+    this.closeCloseup();
+    this.patchCloseup({ enabled: on, phase: "off", problem: null });
+    this.events.log("info", on ? "Bật tùy chọn camera cận cảnh" : "Tắt camera cận cảnh — quay bằng một camera");
+    if (on) void this.openCloseup();
+    return true;
+  }
+
+  /** Chọn camera nào làm camera cận cảnh. Đang quay thì từ chối. */
+  selectCloseup(deviceId: string): boolean {
+    if (this.state.current) {
+      this.events.log("warn", CLOSEUP_BUSY_TEXT);
+      return false;
+    }
+    this.closeupLostLabel = null;
+    this.closeCloseup();
+    this.patchCloseup({ deviceId, phase: "off", problem: null });
+    void this.openCloseup();
+    return true;
+  }
+
+  /** Đổi chỗ đặt / cỡ / mức phóng to của ô cận cảnh. Đang quay thì từ chối. */
+  setPip(next: PipSettings): boolean {
+    if (this.state.current) return false;
+    this.patch({ pip: clampPip(next) });
+    return true;
+  }
+
+  /** Ô cận cảnh cho khung hình đang vẽ — đường quay gọi mỗi khung. null = không ghép gì. */
+  private readonly pipFrame = (): PipFrame | null => {
+    const c = this.state.closeup;
+    if (!c.enabled) return null;
+    const frame = this.closeup?.current() ?? null;
+    if (frame) return { image: frame.image, srcW: frame.width, srcH: frame.height, settings: this.state.pip, note: null };
+    // Chỉ vẽ ô báo khi camera cận ĐANG CÓ mà mất giữa chừng; chưa bật được thì video như quay một camera.
+    if (c.phase === "lost") return { image: null, srcW: 0, srcH: 0, settings: this.state.pip, note: "Mất camera cận cảnh" };
+    return null;
+  };
+
+  /** Mở camera cận (khi tùy chọn đang bật, đã chọn camera, và camera chính đang chạy). Hỏng thì chỉ báo, không ném. */
+  private async openCloseup(): Promise<boolean> {
+    const { enabled, deviceId } = this.state.closeup;
+    const mainOn = this.state.phase === "ready" || this.state.phase === "recording";
+    if (this.disposed || !enabled || !deviceId || !mainOn) return false;
+    if (deviceId === this.state.camera?.deviceId) {
+      this.patchCloseup({ phase: "off", problem: CLOSEUP_SAME_TEXT });
+      return false;
+    }
+    const seq = ++this.closeupSeq;
+    const wasLost = this.state.closeup.phase === "lost";
+    if (!wasLost) this.patchCloseup({ phase: "opening", problem: null });
+    try {
+      const source = await CloseupSource.open(deviceId, this.events.log);
+      const stillWanted =
+        !this.disposed && seq === this.closeupSeq && this.state.closeup.enabled && this.state.closeup.deviceId === deviceId;
+      if (!stillWanted) {
+        source.close();
+        return false;
+      }
+      this.closeup = source;
+      this.closeupLostLabel = null;
+      source.onEnded = () => this.onCloseupEnded(source);
+      this.attachCloseupPreview(this.closeupPreview);
+      this.patchCloseup({ phase: "on", label: source.label, width: source.width, height: source.height, problem: null });
+      this.events.log("info", `Đã bật camera cận cảnh ${source.label} (${source.width}×${source.height})`);
+      return true;
+    } catch (err) {
+      if (this.disposed || seq !== this.closeupSeq) return false;
+      if (wasLost) {
+        this.patchCloseup({ phase: "lost", problem: CLOSEUP_LOST_TEXT });
+      } else {
+        const text = closeupErrorText(err);
+        this.events.log("error", text);
+        this.patchCloseup({ phase: "off", problem: text });
+      }
+      return false;
+    }
+  }
+
+  private closeCloseup(): void {
+    this.closeupSeq++;
+    const source = this.closeup;
+    this.closeup = null;
+    source?.close();
+    if (this.closeupPreview) this.closeupPreview.srcObject = null;
+  }
+
+  /** Camera cận tự mất giữa chừng: KHÔNG dừng quay, KHÔNG cắt clip — chỉ báo, ô trong video hiện chữ báo. */
+  private onCloseupEnded(source: CloseupSource): void {
+    if (this.disposed || source !== this.closeup) return;
+    this.closeupLostLabel = source.label;
+    this.closeCloseup();
+    playAlarm();
+    this.events.log("error", CLOSEUP_LOST_TEXT);
+    this.patchCloseup({ phase: "lost", problem: CLOSEUP_LOST_TEXT });
+    this.scheduleCloseupRecover();
+  }
+
+  private scheduleCloseupRecover(): void {
+    if (!this.closeupLostLabel || this.disposed) return;
+    if (this.closeupRecoverTimer) clearTimeout(this.closeupRecoverTimer);
+    this.closeupRecoverTimer = setTimeout(() => void this.tryRecoverCloseup(), CAMERA_RECOVER_DEBOUNCE_MS);
+  }
+
+  private async tryRecoverCloseup(): Promise<void> {
+    const label = this.closeupLostLabel;
+    if (!label || this.disposed || this.closeup || !this.state.closeup.enabled) return;
+    const back = (await listCameras()).find((d) => d.label === label && d.deviceId !== this.state.camera?.deviceId);
+    if (!back) return; // chưa cắm lại — lần đổi thiết bị sau sẽ thử tiếp
+    if (back.deviceId !== this.state.closeup.deviceId) this.patchCloseup({ deviceId: back.deviceId });
+    if (await this.openCloseup()) {
+      this.events.log("info", "Camera cận cảnh đã có lại");
+      playTing();
+    }
   }
 
   private patch(next: Partial<RecorderState>): void {
@@ -165,8 +356,11 @@ export class PackRecorder {
         bitrate: RECORD_BITRATE,
         pumpMode,
         stamp: this.stamp,
+        pip: this.pipFrame,
         tap: this.scanner,
         log: this.events.log,
+        openSink: this.events.openSink,
+        discardFile: this.events.discardFile,
       });
       await this.pipeline.open();
       this.cutter.reset();
@@ -182,6 +376,8 @@ export class PackRecorder {
       this.applyScan();
       this.events.log("info", `Đã bật camera ${label} (${width}×${height})`);
       void this.refreshDevices(); // sau khi được cấp quyền mới đọc được tên camera
+      // Camera cận cảnh (nếu khách đã bật tùy chọn) mở SAU và RIÊNG: hỏng thì camera chính vẫn quay bình thường.
+      void this.openCloseup();
       return true;
     } catch (err) {
       await this.teardown();
@@ -200,6 +396,7 @@ export class PackRecorder {
     this.busy = true;
     try {
       this.lost = null;
+      this.closeupLostLabel = null;
       if (this.recoverTimer) clearTimeout(this.recoverTimer);
       const had = this.state.camera;
       await this.teardown();
@@ -318,11 +515,12 @@ export class PackRecorder {
     this.pipeline?.setOrderCode(code, orderCode);
   }
 
-  /** Lớp báo sớm "hết giờ quay" — kêu + ghi nhật ký khi bị từ chối. */
+  /** Lớp báo sớm "hết giờ quay" / "ổ đĩa đầy" — kêu + ghi nhật ký khi bị từ chối. */
   private mayOpenClip(): boolean {
-    if (!this.events.canOpenClip || this.events.canOpenClip()) return true;
+    const why = this.events.clipBlocker?.() ?? null;
+    if (!why) return true;
     playBoop();
-    this.events.log("error", "Hết giờ quay — không mở được video mới. Mua thêm giờ để quay tiếp.");
+    this.events.log("error", why);
     return false;
   }
 
@@ -373,6 +571,7 @@ export class PackRecorder {
   private readonly onDeviceChange = (): void => {
     void this.refreshDevices();
     this.scheduleRecover();
+    this.scheduleCloseupRecover();
   };
 
   private scheduleRecover(): void {
@@ -416,6 +615,12 @@ export class PackRecorder {
     scanner?.dispose();
     for (const t of stream?.getTracks() ?? []) t.stop();
     if (this.video) this.video.srcObject = null;
+    // Camera cận sống theo camera chính: đóng SAU đường quay để các khung cuối của clip vẫn có ô cận cảnh.
+    this.closeCloseup();
+    const closeup = this.state.closeup;
+    if (!this.closeupLostLabel && (closeup.phase !== "off" || closeup.problem)) {
+      this.patchCloseup({ phase: "off", problem: null });
+    }
   }
 
   /** Gọi khi rời màn quay: dọn camera, worker, bộ mã hóa. */
@@ -425,7 +630,9 @@ export class PackRecorder {
       navigator.mediaDevices?.removeEventListener?.("devicechange", this.onDeviceChange);
     }
     if (this.recoverTimer) clearTimeout(this.recoverTimer);
+    if (this.closeupRecoverTimer) clearTimeout(this.closeupRecoverTimer);
     this.lost = null;
+    this.closeupLostLabel = null;
     await this.teardown();
     this.disposed = true;
   }

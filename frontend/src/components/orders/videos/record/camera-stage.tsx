@@ -11,7 +11,10 @@ import { formatStamp, stampCodeLines } from "@/lib/pack-video-recorder/stamp-can
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
+import type { PipSettings } from "@/lib/pack-video-recorder/pip-layout";
+
 import { ChannelBadge, shopNameOf } from "../video-bits";
+import { CloseupOverlay } from "./closeup-overlay";
 import { KIND_ACCENT, formatElapsed, useElapsedSeconds } from "./record-bits";
 
 /**
@@ -153,10 +156,18 @@ export function CameraStage({
   currentClip,
   videoRef,
   boxRef,
+  closeupVideoRef,
+  adjustingPip,
+  onPip,
   onTurnOn,
   onSwitchToUnbox,
   onKeepPack,
 }: {
+  /** Thẻ <video> của ô cận cảnh (camera thứ hai, tùy chọn) — bộ quay gắn luồng hình vào. */
+  closeupVideoRef: (video: HTMLVideoElement | null) => void;
+  /** Đang ở chế độ "Chỉnh vị trí" ô cận cảnh. */
+  adjustingPip: boolean;
+  onPip: (next: PipSettings) => void;
   state: RecorderState;
   /** Clip đang quay của lượt (để hiện đơn khớp với tem). */
   currentClip: SessionClip | null;
@@ -210,6 +221,8 @@ export function CameraStage({
             )}
           </div>
         )}
+        {/* Ô cận cảnh nằm DƯỚI ngày giờ + dòng mã, đúng thứ tự vẽ trong tệp video. */}
+        {cameraOn && <CloseupOverlay state={state} adjusting={adjustingPip} videoRef={closeupVideoRef} onPip={onPip} />}
         {cameraOn && <LiveStamp lines={stampLines} />}
         <div className="absolute right-3 top-3">
           <StatusPill state={state} />

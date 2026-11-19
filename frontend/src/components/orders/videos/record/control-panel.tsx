@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Camera, Clock, Package, PackageOpen, Play, RotateCcw, Scissors, Square } from "lucide-react";
+import { Camera, Clock, Focus, Move, Package, PackageOpen, Play, RotateCcw, Scissors, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { formatHoursBalance } from "@/lib/pack-video";
+import { PIP_DEFAULT, PIP_LIMITS, type PipSettings } from "@/lib/pack-video-recorder/pip-layout";
 import type { RecorderState } from "@/lib/pack-video-recorder/recorder";
 import { retrySessionClip, type SessionClip } from "@/lib/pack-video-recorder/session";
 import type { ClipKind } from "@/lib/pack-video-recorder/types";
@@ -72,13 +73,149 @@ function ModeCard({ state, onChange }: { state: RecorderState; onChange: (kind: 
   );
 }
 
-/** Ô CAMERA: bật / tắt một chạm, tên camera + khổ hình, chọn camera khi máy có nhiều cái. */
+export interface CloseupControls {
+  /** Đang ở chế độ "Chỉnh vị trí" ô cận cảnh trên khung xem trước. */
+  adjusting: boolean;
+  onEnabled: (on: boolean) => void;
+  onSelect: (deviceId: string) => void;
+  onAdjusting: (on: boolean) => void;
+  onPip: (next: PipSettings) => void;
+}
+
+/**
+ * CAMERA CẬN CẢNH — TÙY CHỌN, mặc định tắt (anh Trung 19/11/2026: "tùy chọn 2 camera cho người có nhu cầu, còn bình
+ * thường là mình vẫn sẽ dùng 1 camera"). Tắt thì chỉ là MỘT hàng có công tắc. Bật thì: chọn webcam thứ hai → hình
+ * của nó được ghép vào một góc video; nút "Chỉnh vị trí" để kéo ô / đổi cỡ / phóng to MỘT lần, máy nhớ.
+ * Camera cận KHÔNG đọc tem, KHÔNG cắt clip — giơ tem vẫn là giơ cho camera chính.
+ */
+function CloseupSection({ state, controls }: { state: RecorderState; controls: CloseupControls }) {
+  const { closeup, pip } = state;
+  const recording = state.phase === "recording";
+  const mainOn = state.phase === "ready" || recording;
+  // Camera chính không được chọn lại làm camera cận.
+  const choices = state.devices.filter((d) => d.deviceId !== state.camera?.deviceId);
+  const known = !!closeup.deviceId && choices.some((d) => d.deviceId === closeup.deviceId);
+  const zoomText = pip.zoom.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          <Focus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          Camera cận cảnh
+          <span className="rounded bg-slate-100 px-1.5 py-px text-[11px] font-medium text-slate-600">Tùy chọn</span>
+        </span>
+        <Switch
+          checked={closeup.enabled}
+          disabled={recording}
+          onCheckedChange={controls.onEnabled}
+          aria-label={closeup.enabled ? "Tắt camera cận cảnh" : "Bật camera cận cảnh"}
+          title={recording ? "Dừng clip đang quay rồi mới đổi" : undefined}
+        />
+      </div>
+      {!closeup.enabled ? (
+        <p className={TEXT_SUB}>Thêm webcam thứ hai soi tem, ghép vào một góc video.</p>
+      ) : (
+        <>
+          {choices.length === 0 ? (
+            <p className={TEXT_SUB}>
+              {mainOn
+                ? "Chưa thấy webcam thứ hai — cắm thêm một webcam vào cổng USB khác trên máy (không qua ổ chia)."
+                : "Bật camera chính trước, rồi chọn webcam thứ hai ở đây."}
+            </p>
+          ) : (
+            <NativeSelect
+              aria-label="Chọn camera cận cảnh"
+              value={known ? (closeup.deviceId ?? "") : ""}
+              disabled={recording || closeup.phase === "opening"}
+              onChange={(event) => {
+                if (event.target.value) controls.onSelect(event.target.value);
+              }}
+            >
+              {!known && <option value="">Chọn camera cận cảnh…</option>}
+              {choices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+          {closeup.problem ? (
+            <p role="alert" className="text-sm font-medium text-rose-700">
+              {closeup.problem}
+            </p>
+          ) : closeup.phase === "on" ? (
+            <p className={TEXT_SUB}>
+              <span className="block truncate" title={`${closeup.label} · ${closeup.width}×${closeup.height}`}>
+                {closeup.label} · {closeup.width}×{closeup.height}
+              </span>
+              Giơ tem cho camera chính để bắt đầu quay, rồi đặt tem dưới camera cận cảnh.
+            </p>
+          ) : closeup.phase === "opening" ? (
+            <p className={TEXT_SUB}>Đang bật camera cận cảnh…</p>
+          ) : (
+            choices.length > 0 && (
+              <p className={TEXT_SUB}>
+                {mainOn ? "Chọn webcam soi tem ở ô trên." : "Camera cận cảnh bật cùng lúc với camera chính."}
+              </p>
+            )
+          )}
+          {controls.adjusting ? (
+            <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-sm font-medium text-emerald-800">
+                Kéo ô trên khung hình để dời, kéo góc để đổi cỡ.
+              </p>
+              <label className="flex items-center gap-3 text-sm text-emerald-800">
+                <span className="shrink-0">Phóng to</span>
+                <input
+                  type="range"
+                  min={PIP_LIMITS.minZoom}
+                  max={PIP_LIMITS.maxZoom}
+                  step={0.1}
+                  value={pip.zoom}
+                  onChange={(event) => controls.onPip({ ...pip, zoom: Number(event.target.value) })}
+                  className="h-2 min-w-0 flex-1 cursor-pointer accent-emerald-600"
+                  aria-label="Phóng to hình cận cảnh"
+                />
+                <span className="w-9 shrink-0 text-right tabular-nums">{zoomText}×</span>
+              </label>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => controls.onPip(PIP_DEFAULT)}>
+                  Về mặc định
+                </Button>
+                <Button size="sm" onClick={() => controls.onAdjusting(false)}>
+                  Xong
+                </Button>
+              </div>
+            </div>
+          ) : (
+            closeup.phase === "on" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={recording}
+                title={recording ? "Dừng clip đang quay rồi mới chỉnh vị trí" : undefined}
+                onClick={() => controls.onAdjusting(true)}
+              >
+                <Move className="size-4" aria-hidden />
+                Chỉnh vị trí
+              </Button>
+            )
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Ô CAMERA: bật / tắt một chạm, tên camera + khổ hình, chọn camera khi máy có nhiều cái; dưới cùng là tùy chọn cận cảnh. */
 function CameraCard({
   state,
+  closeup,
   onToggle,
   onSelect,
 }: {
   state: RecorderState;
+  closeup: CloseupControls;
   onToggle: () => void;
   onSelect: (deviceId: string) => void;
 }) {
@@ -128,6 +265,7 @@ function CameraCard({
             ))}
           </NativeSelect>
         )}
+        <CloseupSection state={state} controls={closeup} />
       </CardContent>
     </Card>
   );
@@ -177,6 +315,8 @@ function ClipLine({ clip }: { clip: SessionClip }) {
   const elapsed = useElapsedSeconds(clip.status === "recording" ? clip.startedAtMs : null);
   const duration = clip.status === "recording" ? elapsed : (clip.durationSec ?? 0);
   const label = clip.manual ? "Quay tay" : shortCode(clip.code);
+  // Clip đang chờ sau một lần gửi hỏng: nói rõ là máy đang TỰ thử lại (không cần bấm gì).
+  const retrying = clip.status === "queued" && !!clip.error;
   return (
     <li className="flex items-center justify-between gap-2 border-t py-1.5 text-sm">
       <span className="flex min-w-0 items-center gap-1.5">
@@ -186,6 +326,14 @@ function ClipLine({ clip }: { clip: SessionClip }) {
         <span className={cn("min-w-0 truncate", !clip.manual && "font-mono")} title={clip.code}>
           {label}
         </span>
+        {clip.restored && (
+          <span
+            className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[11px] font-medium text-slate-600"
+            title="Quay từ lượt trước, lúc đó chưa gửi được — đang gửi tiếp"
+          >
+            lượt trước
+          </span>
+        )}
       </span>
       <span className="flex shrink-0 items-center gap-2 tabular-nums">
         <span className="text-muted-foreground">{formatElapsed(duration)}</span>
@@ -213,7 +361,9 @@ function ClipLine({ clip }: { clip: SessionClip }) {
           >
             {clip.status === "uploading"
               ? `đang tải lên ${Math.round(clip.progress * 100)} %`
-              : STATUS_TEXT[clip.status]}
+              : retrying
+                ? "chờ thử lại"
+                : STATUS_TEXT[clip.status]}
           </span>
         )}
       </span>
@@ -311,6 +461,8 @@ function useOutOfHours(): boolean {
 export function ControlPanel({
   state,
   clips,
+  diskFull,
+  closeup,
   onKind,
   onToggleCamera,
   onSelectCamera,
@@ -319,6 +471,10 @@ export function ControlPanel({
 }: {
   state: RecorderState;
   clips: SessionClip[];
+  /** Tùy chọn camera cận cảnh (webcam thứ hai soi tem). */
+  closeup: CloseupControls;
+  /** Ổ đĩa đã ghi hỏng thật → không mở video mới (dải báo phía trên nói lý do). */
+  diskFull: boolean;
   onKind: (kind: ClipKind) => void;
   onToggleCamera: () => void;
   onSelectCamera: (deviceId: string) => void;
@@ -327,12 +483,12 @@ export function ControlPanel({
 }) {
   const recording = state.phase === "recording";
   const outOfHours = useOutOfHours();
-  // Hết giờ: chỉ khóa nút khi CHƯA quay — đang quay thì nút là "Dừng", luôn bấm được.
-  const blocked = state.phase === "opening" || state.phase === "lost" || (!recording && outOfHours);
+  // Hết giờ / ổ đĩa đầy: chỉ khóa nút khi CHƯA quay — đang quay thì nút là "Dừng", luôn bấm được.
+  const blocked = state.phase === "opening" || state.phase === "lost" || (!recording && (outOfHours || diskFull));
   return (
     <div className="min-w-0 space-y-3">
       <ModeCard state={state} onChange={onKind} />
-      <CameraCard state={state} onToggle={onToggleCamera} onSelect={onSelectCamera} />
+      <CameraCard state={state} closeup={closeup} onToggle={onToggleCamera} onSelect={onSelectCamera} />
       <AutoCutCard state={state} onChange={onAutoCut} />
       <button
         type="button"

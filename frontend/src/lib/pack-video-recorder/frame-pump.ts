@@ -24,7 +24,7 @@ interface TrackProcessorCtor {
   new (init: { track: MediaStreamTrack; maxBufferSize?: number }): { readable: ReadableStream<VideoFrame> };
 }
 
-function trackProcessorCtor(): TrackProcessorCtor | null {
+export function trackProcessorCtor(): TrackProcessorCtor | null {
   const ctor = (globalThis as { MediaStreamTrackProcessor?: TrackProcessorCtor }).MediaStreamTrackProcessor;
   return typeof ctor === "function" ? ctor : null;
 }

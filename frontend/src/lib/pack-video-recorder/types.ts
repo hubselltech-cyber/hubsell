@@ -23,7 +23,31 @@ export interface ScannedCode {
   corners: { x: number; y: number }[] | null;
 }
 
-/** Clip vừa quay xong, còn nằm trong bộ nhớ chờ tải lên. */
+/** Một lần ghi của bộ ghép MP4, đã thành một mảnh riêng (xem clip-store.ts). */
+export interface ClipPiece {
+  position: number;
+  length: number;
+  /** "disk" = nằm trên ổ của trình duyệt (bền); "ram" = nằm trong bộ nhớ (ổ không ghi được). */
+  where: "disk" | "ram";
+  name: string;
+}
+
+/** Tệp MP4 của một clip đã quay xong, dưới dạng các mảnh chờ gửi. */
+export interface ClipFile {
+  fileKey: string;
+  sizeBytes: number;
+  pieces: ClipPiece[];
+  /** true = mọi mảnh nằm trên ổ → clip sống qua tải lại trang. */
+  durable: boolean;
+}
+
+/** Chỗ nhận dữ liệu của một clip đang quay — bộ quay xin một cái cho mỗi clip. */
+export interface ClipSinkLike {
+  stream(): WritableStream<{ type: "write"; data: Uint8Array; position: number }>;
+  finish(): ClipFile;
+}
+
+/** Clip vừa quay xong, chờ tải lên. */
 export interface FinishedClip {
   /** Mã tem, hoặc QUAYTAY… / KHUITAY… với clip quay tay. */
   code: string;
@@ -34,8 +58,8 @@ export interface FinishedClip {
   width: number;
   height: number;
   frames: number;
-  /** Tệp MP4 hoàn chỉnh (moov đầu tệp). */
-  buffer: ArrayBuffer;
+  /** Tệp MP4 hoàn chỉnh (`moov` CUỐI tệp), nằm ở kho clip chờ gửi. */
+  file: ClipFile;
 }
 
 export type ClipOutcome = { ok: true; clip: FinishedClip } | { ok: false; code: string; error: string };

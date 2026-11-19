@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -10,6 +11,7 @@ import { PACK_VIDEOS_PATH } from "@/lib/pack-video";
 import { CameraStage } from "./camera-stage";
 import { ControlPanel } from "./control-panel";
 import { JournalPanel } from "./journal-panel";
+import { QueueNotice } from "./queue-notice";
 import { usePackRecorder } from "./use-pack-recorder";
 
 /**
@@ -31,6 +33,10 @@ export function RecordScreen() {
   const mode = useSearchParams().get("mode");
   const recorder = usePackRecorder(mode === "unbox" ? "UNBOX" : "PACK");
   const currentClip = recorder.clips.find((c) => c.status === "recording") ?? null;
+  // "Chỉnh vị trí" ô cận cảnh: chỉ có nghĩa khi camera cận đang chạy và KHÔNG có clip đang quay (bộ quay cũng từ
+  // chối đổi bố cục giữa clip) → clip vừa mở hay camera cận vừa mất thì tự thoát chế độ chỉnh.
+  const [adjustWanted, setAdjustWanted] = React.useState(false);
+  const adjusting = adjustWanted && recorder.state.closeup.phase === "on" && recorder.state.phase !== "recording";
 
   return (
     <div className="space-y-5">
@@ -39,12 +45,18 @@ export function RecordScreen() {
         Về danh sách video
       </Link>
 
+      {/* Tình trạng hàng chờ gửi (mất mạng, mạng chậm, ổ đĩa đầy) — tự mất khi hết; vẫn quay bình thường. */}
+      <QueueNotice queue={recorder.queue} onRetryNow={recorder.retryQueueNow} />
+
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(19rem,1fr)]">
         <CameraStage
           state={recorder.state}
           currentClip={currentClip}
           videoRef={recorder.videoRef}
           boxRef={recorder.boxRef}
+          closeupVideoRef={recorder.closeupVideoRef}
+          adjustingPip={adjusting}
+          onPip={recorder.setPip}
           onTurnOn={() => void recorder.toggleCamera()}
           onSwitchToUnbox={recorder.switchCurrentToUnbox}
           onKeepPack={recorder.keepAsPack}
@@ -52,6 +64,14 @@ export function RecordScreen() {
         <ControlPanel
           state={recorder.state}
           clips={recorder.clips}
+          diskFull={recorder.queue.disk === "full"}
+          closeup={{
+            adjusting,
+            onEnabled: recorder.setCloseupEnabled,
+            onSelect: recorder.selectCloseup,
+            onAdjusting: setAdjustWanted,
+            onPip: recorder.setPip,
+          }}
           onKind={recorder.setKind}
           onToggleCamera={() => void recorder.toggleCamera()}
           onSelectCamera={(deviceId) => void recorder.selectCamera(deviceId)}

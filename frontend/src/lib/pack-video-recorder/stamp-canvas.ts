@@ -11,6 +11,19 @@
 // ============================================================
 
 import { STAMP_BOX_RATIO } from "./config";
+import { pipRect, pipSourceCrop, type PipSettings } from "./pip-layout";
+
+/**
+ * Ô CẬN CẢNH cho MỘT khung hình (19/11/2026, mục 22 tài liệu thiết kế): hình mới nhất của camera cận + chỗ đặt.
+ * `image` null = camera cận đang mất giữa chừng → vẽ ô xám có chữ `note` (video nói thật là lúc đó không có hình).
+ */
+export interface PipFrame {
+  image: CanvasImageSource | null;
+  srcW: number;
+  srcH: number;
+  settings: PipSettings;
+  note: string | null;
+}
 
 /** Dòng mã cao hơn dòng ngày giờ ngần này lần (3,5 % → 4,2 % chiều cao khung, bằng app điện thoại). */
 const CODE_LINE_SCALE = 1.2;
@@ -137,12 +150,56 @@ export class StampCanvas {
     return this.codeBoxes;
   }
 
-  /** Vẽ một khung camera kèm ngày giờ hiện tại và (nếu có) các dòng mã của clip đang quay. */
-  draw(source: CanvasImageSource, now: Date = new Date(), lines: readonly string[] = []): void {
+  /**
+   * Vẽ ô cận cảnh. Vẽ TRƯỚC ngày giờ và các dòng mã → khách có kéo ô lên góc trái trên thì chữ vẫn nằm trên, không
+   * bao giờ bị che.
+   */
+  private drawPip(L: Layout, pip: PipFrame): void {
+    const ctx = this.ctx;
+    const r = pipRect(pip.settings, L);
+    let drawn = false;
+    if (pip.image && pip.srcW > 0 && pip.srcH > 0) {
+      const c = pipSourceCrop(pip.settings, L, { width: pip.srcW, height: pip.srcH });
+      try {
+        ctx.drawImage(pip.image, c.sx, c.sy, c.sw, c.sh, r.x, r.y, r.w, r.h);
+        drawn = true;
+      } catch {
+        // khung của camera cận vừa bị đóng (camera rớt đúng lúc vẽ) → vẽ ô báo bên dưới
+      }
+    }
+    if (!drawn) {
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      const note = pip.note ?? "";
+      if (note) {
+        let fontPx = Math.max(9, Math.round(L.boxH * 0.72));
+        ctx.font = fontOf(fontPx);
+        const textW = ctx.measureText(note).width;
+        const room = r.w - Math.round(L.boxH * 0.6);
+        if (textW > room && textW > 0) {
+          fontPx = Math.max(7, Math.floor((fontPx * room) / textW));
+          ctx.font = fontOf(fontPx);
+        }
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(note, r.x + r.w / 2, r.y + r.h / 2);
+      }
+    }
+    // Viền trắng mảnh, nằm trọn bên trong ô — tách ô khỏi cảnh toàn cảnh.
+    const line = Math.max(2, Math.round(L.height / 360));
+    ctx.lineWidth = line;
+    ctx.strokeStyle = "#ffffff";
+    ctx.strokeRect(r.x + line / 2, r.y + line / 2, r.w - line, r.h - line);
+  }
+
+  /** Vẽ một khung camera kèm (nếu bật) ô cận cảnh, ngày giờ hiện tại và (nếu có) các dòng mã của clip đang quay. */
+  draw(source: CanvasImageSource, now: Date = new Date(), lines: readonly string[] = [], pip: PipFrame | null = null): void {
     const L = this.layout;
     if (!L) throw new Error("Chưa đặt kích thước canvas");
     const ctx = this.ctx;
     ctx.drawImage(source, 0, 0, L.width, L.height);
+    if (pip) this.drawPip(L, pip);
     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
     ctx.fillRect(L.margin, L.margin, L.boxW, L.boxH);
     ctx.font = L.font;

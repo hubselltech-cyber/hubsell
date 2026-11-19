@@ -885,6 +885,99 @@ là đầy ổ C của anh. → M1 (N5): không chặn theo `estimate()`; phải
 **M0 xong**, trừ hai việc để sau: giơ tem ở nhiều bàn cùng lúc (cần người giơ tem; đọc tem từng bàn đã chứng minh 16/11 và không nghẽn ở
 6 bàn), và máy không có card rời.
 
+### 18.10 Khảo sát lại theo mô hình lớn (18/11/2026 ~21:30, lịch anh đặt: "Tối cần khảo sát lại cho phù hợp với mô hình lớn nữa")
+
+Mốc quy mô anh đã chốt: 50.000 khách, > 1 triệu đơn / ngày, "hàng chục nghìn shop đóng hàng cùng lúc". Cách làm: tra lại TRANG GỐC cho
+từng giả định [S] của mục 18, đọc lại mã, rồi mới kết luận. **[C]** = đọc được ở trang gốc / đọc mã / đo · **[S]** = suy ra, nguồn thứ
+cấp (báo dẫn lại), hoặc số em tự chọn. Hạ tầng đang chạy (đọc từ sổ tay dự án): Supabase Pro cỡ **Small**, Render web **Starter 512 MB**,
+worker 1c-2g, R2 đứng tên cá nhân.
+
+#### A. Điều của mục 18 ĐỨNG VỮNG
+
+| # | Điều | Căn cứ |
+|---|---|---|
+| A1 | R2 không có trần lượt ghi / giây theo bucket hay tài khoản; trần duy nhất đụng mình là ghi cùng MỘT tên tệp 1 lần / giây (429) | [C] developers.cloudflare.com/r2/platform/limits. Riêng câu "20 Gbps đổ vào một bucket chắc chắn được" thì KHÔNG có trang nào bảo đảm → [S], phải hỏi Cloudflare trước khi tới mốc đó |
+| A2 | Video đi thẳng trình duyệt → R2, máy chủ mình không chạm byte nào | [C] R2 nhận ghi ở điểm biên "close to the user" rồi mới chuyển về vùng lưu (developers.cloudflare.com/r2/how-r2-works); Cloudflare có điểm biên ở Hà Nội, TP.HCM, Đà Nẵng (cloudflare.com/network). Lượt gửi từ Việt Nam có chắc vào điểm biên Việt Nam không: [S] |
+| A3 | Chỗ vỡ ở hai đầu (trình duyệt + máy chủ mình), không ở R2 | xem B1, B2 — số tra được còn nặng hơn em ước lúc chiều |
+| A4 | Thứ tự M1 → M2 trước M3 | giữ; lý do mạnh thêm (B1) |
+| A5 | `moov` cuối tệp, ghi dần xuống ổ | [C] đo lại ở M1 (mục 21): tệp trên R2 là `ftyp mdat … moov`, trình phát đọc thẳng R2 nạp thông tin ≈ 1 giây, tua giữa / cuối 0,25–0,35 giây |
+| A6 | Một máy tầm trung gánh 6 bàn | [C] bảng Nvidia nay ghi **12 phiên mã hóa cùng lúc** cho card GeForce (developer.nvidia.com/video-encode-decode-support-matrix), không phải 8; driver cũ 3–5–8 phiên là [S, nguồn thứ cấp]. Intel Quick Sync **không có trần số phiên** [C, intel.com bài 000088556] |
+| A7 | Đường lên của shop đủ cho N bàn | [S] i-Speed (VNNIC, báo dẫn lại): cáp quang cố định tải LÊN trung bình ≈ 172–201 Mbps, di động ≈ 28 Mbps — đo tới máy chủ TRONG NƯỚC. 6 bàn cần ≈ 6 Mbps → dư kể cả phát 4G, trừ lúc chặng quốc tế nghẽn (B5) |
+
+#### B. Điều PHẢI SỬA
+
+| # | Mục 18 viết | Thật ra | Sửa thế nào |
+|---|---|---|---|
+| B1 | Bảng 18.2 coi database gánh được tới 84 giao dịch ghi / giây sau M2 | [C] Supabase **Small: 1.000 IOPS nền, 22 MB / giây, 90 kết nối thẳng / 400 qua bộ gom** (supabase.com/docs/guides/platform/compute-and-disk); vượt nền là đốt quỹ IO — đúng kiểu sự cố 28/10. Ước của em [S]: phần video chỉ nên dùng bền **≈ 100–150 giao dịch ghi nhỏ / giây** vì database còn gánh cả app chính. → mã hiện tại (2 lượt ghi / video) **đã chạm trần ở ≈ 3.500–5.000 shop cùng lúc**; chưa gộp lô thì mốc 10.000 shop (280 lượt / giây) KHÔNG chạy được | **M2 (gộp lô) là ĐIỀU KIỆN để mở cho nhiều khách, không còn là "tối ưu".** Sau gộp lô, cỡ Small đỡ được tới ≈ 30.000 shop về số lượt ghi (84 / giây ≈ quá nửa trần ước) — sát, phải đo ở M4 |
+| B2 | "Máy chủ web chịu 310–920 lượt gọi / giây sau M2" (ngầm định) | [C] Render không công bố trần lượt gọi / kết nối nào cho web service; máy đang dùng là Starter 512 MB từng hết bộ nhớ 21/10 + 03/11. [C] băng thông RA tính tiền: gói hiện tại 5 GB / tháng, vượt 0,15 USD / GB (render.com/docs/outbound-bandwidth). Ước [S]: 2 triệu video / ngày × ≈ 5 KB trả lời ≈ 10 GB / ngày ≈ 45 USD / tháng — tiền nhỏ nhưng phải biết | Không ai nói trước được máy 512 MB chịu bao nhiêu → **M4 (thử chịu tải local) là nơi ra con số**, không đoán. Em KHÔNG đề nghị nâng máy / nâng gói lúc này (chưa tìm gốc bằng số đo thì chưa nói chuyện nâng) |
+| B3 | N1 "clip ghi THẲNG xuống ổ" (một tệp dài, như trang đo M0) | [C] trình duyệt chỉ chốt tệp khi ĐÓNG luồng ghi (`createWritable`: "changes won't be reflected … until the stream has been closed" — fs.spec.whatwg.org, MDN). Tab sập giữa chừng = mất hết phần đã ghi; một lần ghi hỏng làm hỏng cả luồng. Cách của M0 đo được tốc độ nhưng KHÔNG bền | M1 đã đổi: **mỗi lần ghi ≈ 1 MiB thành một tệp mảnh riêng, đóng ngay** (mục 21). Mảnh nào xong là nằm chắc trên ổ |
+| B4 | N5 "cảnh báo khi chỗ trống trình duyệt cho < 5 GB, ngừng mở clip khi < 1 GB" (theo `storage.estimate()`) | [S, thông báo của nhóm Chromium trên blink-dev] từ Chrome 133 `estimate().quota` = đã dùng + 10 GiB, cố ý để chống dò dấu vết → KHÔNG BAO GIỜ đo được chỗ trống (khớp số đo 18.9: báo 10 GB khi ổ còn 2,4 GB). Hạn mức thật = 60 % TỔNG dung lượng ổ, không tính theo chỗ trống [C, web.dev/articles/storage-for-the-web] | M1: bỏ hai ngưỡng đó. Chặn mở clip mới CHỈ khi một lần ghi thật hỏng; cảnh báo sớm bằng một lần ghi thử 64 MB (số tự chọn ≈ 10 phút quay của một bàn) |
+| B5 | N6 cáp biển "kiến thức chung, chưa tra lại" | [S, báo dẫn Cục Viễn thông] 02/2023 cả 5 tuyến cùng lỗi; **25/08/2026 4 / 8 tuyến lỗi cùng lúc, "có thể ảnh hưởng tới 30 % lưu lượng"**; sửa tính bằng tuần tới tháng. [C] đường dẫn ký sẵn của R2 KHÔNG chạy trên tên miền riêng (developers.cloudflare.com/r2/api/s3/presigned-urls) → nhà mạng lỗi đường tới `r2.cloudflarestorage.com` thì mình không có đường vòng | Đây là ca "thường niên", không phải ca hiếm → hàng chờ bền + thử lại không giới hạn (M1) là thứ gánh chính. Thêm một việc rẻ: R2 có tính năng **Local Uploads** [C, developers.cloudflare.com/r2/buckets/local-uploads, miễn phí]: ghi gần người gửi rồi tự chép về vùng lưu → câu K-3 |
+| B6 | 18.2 "≈ 5 lượt gọi máy chủ / video" | [C, đọc lại mã] làm mới nhóm `["pack-videos"]` chỉ gọi lại truy vấn ĐANG hiện; trên màn quay chỉ có số giờ → thật ra **≈ 4 lượt / video** (match · tạo · chốt · số giờ) | Số trong bảng 18.2 hạ ≈ 20 %; kết luận không đổi. M1 đã gộp lượt thứ tư còn tối đa 1 lần / 30 giây → **≈ 3 lượt / video** từ M1 |
+| B7 | N14 "bộ mã hóa phần cứng có trần số phiên, hết thì Chrome lùi sang CPU" | Trần GeForce nay 12 (A6). Ca phải lo là **máy văn phòng không có card rời**: Chrome có đường mã hóa phần cứng Intel / AMD qua Media Foundation [S, chỉ thấy trong mã Chromium]; không có thì lùi sang OpenH264 bằng CPU, không trần độ phân giải [C, mã Chromium 129]. Sức thật của GPU tích hợp / CPU: CHƯA AI ĐO | Trước khi M3 chốt số bàn tối đa phải đo trên một máy không card rời (câu K-5). Mã sản phẩm đang để bộ mã hóa `no-preference` — M3 nên hiện "phần cứng / CPU" từng ô như 18.4 đã ghi |
+| B8 | 18.9 "`persist()` = true → Chrome giữ" | [C, MDN] vẫn mất khi người dùng "Xóa dữ liệu duyệt web"; chế độ ẩn danh chỉ ≈ 5 % ổ hoặc ≈ 300 MB. Trên `localhost:3010` (trình duyệt thử) `persist()` = false | M1: ghi nhật ký khi trình duyệt chưa hứa giữ; tệp chờ gửi mất khỏi ổ thì báo rõ, không gửi tệp cụt |
+
+#### C. Thứ mục 18 CHƯA THẤY (em tìm ra khi dựng M1)
+
+1. **Hàng chờ nằm theo TRÌNH DUYỆT chứ không theo tài khoản.** Hai tài khoản dùng chung một máy (ca kho thuê nhân viên rất thường) → clip của
+   shop A có thể bị gửi bằng phiên của shop B. M1 đã chặn: mỗi clip ghi kèm tài khoản đã quay, chỉ gửi khi đúng tài khoản đó đăng nhập.
+2. **Hai tab cùng mở màn quay** → cùng một clip gửi hai lần. Máy chủ đã chống trùng bằng `clientId`, nhưng phí băng thông và đua nhau xóa
+   tệp. M1 đã chặn bằng khóa giữa các tab (Web Locks).
+3. **Clip ĐANG QUAY lúc trang sập thì không cứu được**: `moov` viết ở cuối, chưa có `moov` thì tệp không phát được. Đơn đóng 15 phút mà
+   Chrome sập ở phút 14 = mất cả 14 phút. Đây là lỗ còn lại của M1 → câu K-2.
+4. **Clip chờ quá 25 giờ mà shop đã hết giờ quay** → máy chủ từ chối (luật 19: chỉ nhận clip bắt đầu lúc còn giờ trong cửa sổ 25 giờ). Mất
+   mạng dài + hết giờ = clip nằm "lỗi" tới khi mua giờ. M1 giữ tệp, có nút Thử lại; luật cửa sổ là của máy chủ (M2 xem lại).
+5. **Hàng chờ chỉ tự gửi tiếp khi mở màn QUAY.** Chrome sập, mở lại Hubsell mà vào trang khác thì clip nằm im. Đủ cho thí điểm một tài
+   khoản; trước khi mở cho khách phải đưa lượt "gửi tiếp" lên khung chung của app → câu K-6.
+6. **Máy chủ chưa nói được "chờ N giây"**: lớp gọi API của web không đưa tiêu đề `Retry-After` ra ngoài. M1 đã viết sẵn chỗ nhận; M2 làm
+   phần máy chủ + lớp gọi.
+
+#### D. Thông báo sự kiện của R2 (bỏ bước "chốt tải" khỏi máy chủ mình) — có nên không?
+
+Cách chạy [C]: tệp vừa lên → R2 bắn sự kiện `object-create` (có `key`, `size`, `eTag`) vào Cloudflare Queues → một Worker gom tới 100 sự
+kiện / lượt rồi gọi máy chủ mình MỘT lần. Trần 5.000 sự kiện / giây / hàng (mình cần 420). Giao **ít nhất một lần** (có thể trùng), không
+cam kết độ trễ. Giá: phải có gói Workers Paid 5 USD / tháng + 0,40 USD / triệu thao tác, mỗi sự kiện 3 thao tác → ước [S] **≈ 77 USD /
+tháng ở 2 triệu video / ngày, ≈ 221 USD ở 6 triệu** (developers.cloudflare.com/queues/platform/pricing).
+
+Được: máy chủ mình nhận 1 lượt / 100 video thay vì 1 lượt / video; video lên kho rồi mà trình duyệt tắt trước khi báo vẫn được ghi sổ.
+Mất: thêm một khối mã chạy ở nơi thứ tư (Worker), thêm một dịch vụ trả tiền trên tài khoản Cloudflare CÁ NHÂN (thuế nhà thầu: Cloudflare
+chưa đăng ký thuế Việt Nam — giữ nguyên cách mua cá nhân), và video hiện "đã lưu" trễ theo nhịp gom.
+
+**Chính kiến của em: CHƯA làm.** Gộp lô ở trình duyệt (M2) đã cắt được 10–20 lần số lượt chốt mà không thêm dịch vụ nào; M1 đã lo ca
+"tắt trước khi báo" (mở lại là gửi tiếp, máy chủ chống trùng). Để dành làm **lưới an toàn ở M5**: chỉ dùng để dò các dòng kẹt `PENDING`,
+không thay đường chính. Nếu M4 cho thấy máy chủ web là chỗ nghẽn thì mới đưa lên làm đường chính.
+
+#### E. Các lát — đổi gì
+
+| Lát | Trước | Nay |
+|---|---|---|
+| M1 hàng chờ bền | đề xuất | **đã dựng trên local 18/11** (mục 21); thêm ba thứ ngoài đề xuất: gắn tài khoản, khóa giữa các tab, ghi theo mảnh |
+| M1b cứu clip đang quay dở (MỚI, chờ anh K-2) | chưa có | ghi kèm "sổ khung hình" (cỡ + mốc giờ từng khung) mỗi vài giây; mở lại trang thì dựng lại `moov` từ các mảnh đã nằm trên ổ. Ước 1–2 ngày. Không có nó thì lỗ C3 còn nguyên |
+| M2 máy chủ nhẹ đi | "tối ưu" | **điều kiện để mở cho khách thứ hai** (B1). Thêm vào phạm vi: lộ `Retry-After` ra lớp gọi của web; xem lại cửa sổ 25 giờ (C4); đưa lượt "gửi tiếp" lên khung chung (C5) |
+| M0b đo máy không card rời (MỚI, chờ anh K-5) | "để sau" | phải xong TRƯỚC khi M3 chốt số bàn tối đa (B7) |
+| M3 màn Nhiều bàn | sau M2 | giữ thứ tự. Hàng chờ của M1 đã theo từng clip nên nhiều bàn dùng chung được, không phải viết lại |
+| M4 thử chịu tải | 1.000 → 10.000 shop | thêm hai mốc phải ra số: (1) máy web 512 MB chịu bao nhiêu lượt / giây, (2) database Small chịu bao nhiêu giao dịch ghi / giây khi app chính vẫn chạy. Hai số này quyết khi nào mới phải nói chuyện hạ tầng |
+| M5 | tách tiến trình video | thêm lựa chọn: thông báo sự kiện R2 làm lưới an toàn (mục D) |
+
+**Điều anh có thể không thích, em nói thẳng:** với hạ tầng hôm nay, thiết kế sau M2 đủ cho **vài nghìn shop quay cùng lúc**; mốc "hàng chục
+nghìn cùng lúc" thì không cỡ database / máy web nào ở bậc hiện tại gánh nổi dù mã có gọn tới đâu — tới đó nâng hạ tầng là việc đúng,
+không phải lỗi mã. Việc của mình bây giờ là (a) làm cho mỗi video tốn ít lượt gọi nhất (M1 + M2), (b) có số đo M4 để biết CHÍNH XÁC mốc
+nào phải nâng, thay vì đoán. Em không đề nghị nâng gì lúc này.
+
+#### F. Chờ anh quyết
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| K-1 (= N-b cũ) | Hàng chờ bền trên ổ (tệp tạm tự xóa khi lên kho, không nút xem / giữ) có trái chốt "bỏ lưu local" không? M1 ĐÃ làm theo cách này | không trái — nó là cách để video chắc chắn lên hệ thống. Anh xác nhận giúp |
+| K-2 | Làm M1b (cứu clip đang quay dở khi trang sập)? | có, trước M3 — nhiều bàn thì một lần sập mất nhiều clip dở hơn |
+| K-3 | Bật **Local Uploads** cho bucket R2 (miễn phí, bật trong bảng điều khiển Cloudflare)? | có cho bucket THẬT lúc anh tạo; bucket thử thì bật luôn để đo trước / sau. Em không tự bật khi anh chưa bảo |
+| K-4 | Thông báo sự kiện R2 (≈ 77–221 USD / tháng + gói Workers) | chưa; để M5 làm lưới an toàn |
+| K-5 | Anh có máy nào KHÔNG có card rời (laptop văn phòng) để đo 2–4 bàn? | cần trước M3 |
+| K-6 | Đưa lượt "gửi tiếp video đang chờ" lên khung chung của app (mở Hubsell ở trang nào cũng gửi tiếp) | có, làm cùng M2 |
+| K-7 | Clip gửi mãi không được vì lỗi không thử lại được (hết giờ quay, phiên hết hạn) — giữ trên ổ vô hạn hay cho nút "Bỏ video này"? | giữ + nút Thử lại (đang vậy). Nút "Bỏ" là xóa bằng chứng → chỉ thêm khi anh bảo |
+
+Ghi chú nguồn: trang tài liệu Supabase có một đoạn chữ nhắn riêng cho công cụ AI (bảo gửi phản hồi về Supabase) — bỏ qua, không làm theo.
+
 ## 19. Mua giờ quay + hết giờ thì dừng + luật tự xóa CHẠY BÓNG (18/11/2026 20:00, lịch anh đặt 16/11 — ĐÃ PUSH 18/11 ~21:25 chung commit với mục 20)
 
 > Anh 16/11: "Cả 2 việc này em đặt lịch làm 20:00 ngày 18/11 nhé." Việc 1 = luồng mua giờ quay; việc 2 = luật tự xóa video theo
@@ -1128,8 +1221,325 @@ mục 19.8, thêm một cột so với đề nghị cũ (`package_payments.packH
 5. Đặt `PACK_VIDEO_HOUR_SALES_OPEN=1` trên Render (dịch vụ web) khi anh muốn mở bán; migration tự áp lúc deploy.
 6. Thử một khoản thật số nhỏ (20 giờ = 30.000 đ) rồi xem tờ hóa đơn đầu tiên trước khi mở cho khách thứ hai.
 
-### 20.9 Sau khi push (18/11 ~21:25)
+### 20.9 Sau khi push (18/11 ~21:25, commit `b63ed8e6`)
+
+- ✅ KHOẢN THẬT ĐẦU TIÊN 18/11 21:31 (anh: "Mua xong. bị trừ luôn 10 phút trước đó quay vượt"): anh mua 20 giờ = 30.000 đ qua payOS trên prod; HQ Gói dịch vụ có chứng từ "Mua 20 giờ quay video · Cổng thanh toán · +30.000₫ · Hệ thống (payOS)"; HQ Kế toán có bút toán THU "Thu tiền mua 20 giờ quay video đóng hàng", hóa đơn đã đẩy tờ nháp lên meInvoice, đang "Chờ anh ký"; số dư = 20 giờ − ≈10 phút đã quay thử từ trước (đúng luật "vượt gói khấu trừ vào lần thanh toán tiếp theo"). Em KHÔNG tự nhìn được số dư phía khách (Chrome lúc kiểm đang đăng nhập nick HQ) — số dư là theo lời anh. CHƯA xem tờ hóa đơn đã ký, chưa xem log webhook.
+
+- ✅ 18/11 ~21:35 anh chọn "Bật mở bán" → em đặt `PACK_VIDEO_HOUR_SALES_OPEN=1` trên Render dịch vụ web `hubsell-backend-sg` (qua trang Environment, Render tự deploy lại, log "No pending migrations to apply" + "Your service is live"); prod: nút "Thanh toán 300.000 ₫" đã bấm được, hết dòng "Chưa mở thanh toán". ⏳ anh tự mua thử 20 giờ = 30.000 đ (em KHÔNG bấm trả tiền thay) → sau đó kiểm: giờ cộng, sổ giờ, chứng từ HQ, tờ hóa đơn đầu tiên. Tắt bán: xóa biến đó trên Render.
+
+- Prod: đã kiểm prod ~21:25: Render `/health` = `b63ed8e6`, `POST /hours/checkout` chưa đăng nhập trả 401, web `app.hubsell.vn/orders/videos` (nick admin) hiện "Vượt gói 9 phút" + hộp mua mới, nút Thanh toán báo "Chưa mở thanh toán" (env chưa bật); CHƯA xem log worker dọn, CHƯA thử trả tiền thật.
 
 - Chữ anh sửa: "Phần thời gian vượt gói sẽ khấu trừ vào lần thanh toán tiếp theo."; "Quay lố" → "Vượt gói" (hàng tab, ô số dư hộp mua, màn quay).
 - Bản đẩy gồm CẢ mục 19 (hết giờ thì dừng + luật xóa chạy bóng) vì các tệp đan nhau. Trước push: cả bộ backend 2.742 đậu / 6 rớt (6 lỗi sổ cái có sẵn), `next build` qua, worker dọn chạy một lượt bóng trên local.
 - ⚠️ Prod sau deploy: `admin@hubsell.vn` 0 giờ → không mở được video mới tới khi cấp giờ (bước 2 mục 19.11 CHƯA làm — chờ anh cho số giờ) hoặc bật `PACK_VIDEO_HOUR_SALES_OPEN=1` rồi mua.
+
+## 21. Lát M1 "hàng chờ bền" — ĐÃ DỰNG TRÊN LOCAL 18/11/2026 ~21:30–22:00 (chỉ web; CHƯA commit, CHƯA push; lịch anh đặt: "M1 để tối làm")
+
+Phạm vi đúng mục 18.4 / 18.5: N1, N2, N4, N5, N7 + bỏ làm mới sau mỗi clip. Không sửa backend, không migration, không đụng prod.
+⚠️ **Câu K-1 (N-b cũ) anh CHƯA trả lời** — lát này đang làm theo đề nghị của em: tệp trên ổ chỉ là hàng đang chờ gửi, lên kho là xóa,
+không có nút xem / giữ / tải video từ máy. Anh xác nhận rồi mới commit.
+
+### 21.1 Có gì
+
+| Rủi ro | Đã làm | Tệp |
+|---|---|---|
+| N1 mất clip khi tải lại trang / Chrome sập | clip ghi xuống ổ riêng của trang (OPFS) NGAY trong lúc quay, `moov` cuối tệp (`fastStart: false` + `StreamTarget`, khúc 1 MiB); **mỗi khúc một tệp mảnh, đóng ngay** (18.10 B3); sổ hàng chờ ở IndexedDB; mở lại màn quay là tự gửi tiếp; xin `navigator.storage.persist()`; lên kho xong xóa sổ rồi xóa tệp | `lib/pack-video-recorder/clip-store.ts` (lõi), `clip-store-opfs.ts` (trình duyệt), `byte-overlay.ts` (ghép mảnh), `clip-pipeline.ts` |
+| N2 bỏ cuộc sau 4 lần | thử lại KHÔNG giới hạn; trần chờ 4 → 8 → … → 300 giây, lệch ngẫu nhiên toàn phần trong [2 giây, trần]; mất mạng thì đứng chờ không đốt lượt; có mạng lại / bấm "Thử ngay" là chạy ngay; clip hỏng xuống cuối hàng; chỉ dừng hẳn với lỗi biết chắc vô ích (chưa mở tính năng, hết giờ quay, phiên hết hạn, tệp hỏng) — tệp VẪN giữ, có nút Thử lại | `upload-backoff.ts`, `upload-queue.ts`, `upload-transport.ts` |
+| N4 mạng chậm hơn tốc độ quay | đo tốc độ tải thật bằng chính số byte kho đã nhận (cửa sổ 20 giây), so với tốc độ quay; dải vàng "Mạng tải lên chậm hơn tốc độ quay — đang chờ N video (≈ M phút)"; KHÔNG dừng quay | `upload-speed.ts`, `components/orders/videos/record/queue-notice.tsx` |
+| N5 ổ đầy | KHÔNG tin `storage.estimate()`. Một mảnh ghi hỏng → mảnh đó + phần còn lại của clip nằm trong bộ nhớ (clip đang quay QUAY NỐT), báo động + dải đỏ, chỉ khóa MỞ clip mới; clip lên kho → đo lại ổ → tự mở khóa. Cảnh báo sớm: ghi thử 64 MB lúc mở hàng chờ và tối đa 5 phút một lần khi có clip xong | `clip-store.ts` (`PieceSink`), `session.ts` (`checkDisk`, `diskBlocker`) |
+| N7 vé hết hạn | vé xin ngay trước mỗi lượt gửi (giữ nguyên) | `upload-transport.ts` |
+| N9 (phần web) | làm mới số liệu máy chủ gộp tối đa 1 lần / 30 giây thay vì sau mỗi video | `use-pack-recorder.ts`, `upload-speed.ts` (`createThrottle`) |
+| ngoài đề xuất (18.10 C1, C2) | clip gắn tài khoản đã quay — không gửi nhầm sang tài khoản khác dùng chung máy; khóa giữa các tab (Web Locks) — hai tab không gửi trùng, không dọn nhầm clip đang quay | `clip-store.ts`, `clip-store-opfs.ts`, `session.ts` |
+
+Một dải báo duy nhất trên màn quay, ca nặng nhất thắng: ổ đầy (đỏ) > mất mạng > chưa gửi được, đang tự thử lại (có nút "Thử ngay") > mạng
+chậm > ổ sắp đầy. Không có nút gạt — dải tự mất khi tình trạng hết. Ô Nhật ký giữ nguyên, thêm các dòng: mất mạng / có mạng lại / còn N
+video từ lượt trước / thử lại sau N giây / ổ đầy / ổ có chỗ lại. Dòng clip trong "Lượt quay này" có nhãn "lượt trước" và chữ "chờ thử lại".
+
+Số TỰ CHỌN (chưa có số đo, ghi rõ trong mã): trần chờ 5 phút · nền 4 giây · sàn 2 giây (sàn có căn cứ: R2 1 ghi / giây / tên tệp) · ghi
+thử 64 MB · 5 phút / lần ghi thử · gợi ý "sắp đầy" khi trình duyệt báo < 1 GB · báo "mạng chậm" từ 2 video chờ · báo "chưa gửi được" từ
+2 lần hỏng liên tiếp · làm mới 30 giây · cửa sổ đo tốc độ 20 giây.
+
+### 21.2 Cây tệp (đúng luật: `lib/` thuần, không nhập ngược từ `components/`)
+
+```
+frontend/src/lib/pack-video-recorder/
+  upload-backoff.ts      MỚI  thuần — dãy thời gian chờ
+  upload-queue.ts        MỚI  thuần — máy trạng thái hàng chờ (đồng hồ / mạng truyền vào)
+  upload-speed.ts        MỚI  thuần — đo tốc độ, câu báo, gộp làm mới
+  byte-overlay.ts        MỚI  thuần — ghép tệp từ các lần ghi
+  clip-store.ts          MỚI  thuần — kho mảnh + sổ, ổ đĩa / sổ truyền vào
+  clip-store-opfs.ts     MỚI  trình duyệt — OPFS, IndexedDB, Web Locks, ghi thử
+  upload-transport.ts    MỚI  đường gửi (xin vé → PUT → chốt) + phân loại lỗi — tách khỏi session.ts
+  session.ts             SỬA  dùng các khối trên; thêm tình trạng hàng chờ, mở lại hàng chờ
+  clip-pipeline.ts       SỬA  ghi xuống kho mảnh, `moov` cuối tệp
+  recorder.ts, types.ts  SỬA  `clipBlocker` (lý do không mở clip) thay `canOpenClip`; kiểu tệp theo mảnh
+  __tests__/upload-queue.test.ts, clip-store.test.ts   MỚI
+frontend/src/components/orders/videos/record/
+  queue-notice.tsx       MỚI  dải báo
+  record-screen.tsx, control-panel.tsx, use-pack-recorder.ts   SỬA
+```
+
+Frontend chưa có bộ chạy test → test viết bằng `node:test` có sẵn của Node, chạy bằng bộ nạp TypeScript của backend (không thêm gói nào):
+`cd frontend` rồi `node --import ../backend/node_modules/tsx/dist/loader.mjs --test "src/lib/pack-video-recorder/__tests__/*.test.ts"`.
+
+### 21.3 Đã kiểm (số thật)
+
+- Test hàm thuần **23 / 23**: dãy thời gian chờ; hỏng 12 lần liên tiếp vẫn thử (4 → 8 → … → 300 giây); clip hỏng không chặn clip sau;
+  mất mạng không đốt lượt; có mạng lại bỏ khoảng nghỉ; ổ đầy giữa clip (ổ giả) tệp vẫn đúng từng byte; sổ theo tài khoản; tệp cụt / mất;
+  thứ tự dải báo; gộp làm mới. `tsc` + `eslint` sạch, `next build` qua.
+- Chạy thật trên local (`localhost:3010` + backend 4010 đang chạy sẵn, tài khoản `admin@hubsell.vn`, R2 bucket thử) trong trình duyệt
+  của Claude, **camera GIẢ** (luồng hình vẽ 1280×720 30 khung / giây thay cho webcam — trình duyệt đó không có camera):
+  1. quay 9 giây → lên kho → ổ 0 tệp;
+  2. giả mất mạng (ép `navigator.onLine` + sự kiện `offline`) → quay 2 clip (7 + 10 giây) → trên ổ 2 thư mục × 3 mảnh (1,45 MB + 2,06 MB),
+     sổ 2 dòng → **tải lại trang thật** → nhật ký "Còn 2 video quay từ lượt trước… đang gửi tiếp" → cả 2 lên kho → ổ 0 thư mục, sổ 0 dòng;
+  3. chặn mọi lượt PUT tới R2 → dải vàng "Chưa gửi được… tự thử lại sau N giây" + nút Thử ngay, khoảng chờ thật 6 · 3 · 10 giây (lệch
+     ngẫu nhiên), 4 lượt PUT bị chặn; tải lại trang → 2 clip lên kho;
+  4. giả ổ đầy (ép lệnh mở tệp ghi ném `QuotaExceededError`) GIỮA clip → clip quay nốt 20 giây, dải đỏ, nút Bắt đầu quay khóa, clip
+     (1 mảnh trên ổ + phần còn lại trong bộ nhớ, 4,07 MB) vẫn lên kho đúng cỡ; bỏ giả lập + Thử ngay → "Ổ đĩa đã có chỗ lại", nút mở;
+  5. **tua với `moov` cuối tệp, đọc thẳng R2 qua đường dẫn ký sẵn**: tệp là `ftyp mdat…`, yêu cầu khoảng byte trả 206; clip 20 giây nạp
+     thông tin 951 ms, tua giữa 311 ms, tua cuối 284 ms; clip 6 giây 1.044 / 253 / 350 ms;
+  6. không cuộn ngang ở 1280 / 1440 / 1700; dải báo đọc rõ ở giao diện tối.
+- Để lại trên local: 8 clip thử "QUAYTAY2145xx–2148xx" (≈ 1,5 phút, ≈ 17 MB) trong sổ video local + bucket thử.
+
+### 21.4 CHƯA kiểm — phải làm trước khi tin
+
+1. **Webcam thật + tem thật** (lượt này camera giả; đường đọc tem / tự cắt không đổi mã nhưng chưa chạy lại).
+2. **Mất mạng thật** (rút dây / tắt Wi-Fi): mới giả bằng cờ của trình duyệt và bằng chặn lượt PUT.
+3. **Ổ đầy thật**: lỗi Chrome ném khi ổ vật lý đầy chưa ai ghi lại (18.10) — mã bắt MỌI lỗi ghi nên không phụ thuộc tên lỗi, nhưng chưa thấy tận mắt.
+4. Chrome sập thật / tắt máy giữa lúc đang gửi; hai tab cùng mở màn quay; hai tài khoản chung một máy.
+5. Clip dài (15 phút ≈ 92 MB, đi đường tải theo mảnh > 32 MB) và hàng chờ dài (vài trăm clip).
+6. Giao diện tối: mới soi dải báo bằng cách ép lớp `dark`, chưa bấm nút đổi giao diện.
+7. Màn quay trên điện thoại (app) không dùng mã này — hàng chờ của app là việc riêng.
+
+### 21.5 Giới hạn còn lại (đã ghi ở 18.10 mục C)
+
+Clip ĐANG quay lúc trang sập không cứu được (→ M1b, K-2) · hàng chờ chỉ tự gửi tiếp khi mở màn quay (→ K-6) · clip chờ quá 25 giờ mà hết
+giờ quay thì máy chủ từ chối (→ M2) · chưa nghe `Retry-After` của máy chủ (→ M2).
+
+### 21.6 Khi anh bảo commit
+
+Chỉ gom tệp của M1: 10 tệp mới + 7 tệp sửa ở mục 21.2 + phần mục 18.10 / 21 của tệp này + mục PROGRESS của phiên. KHÔNG gom: các tệp
+`docs/ADS-*`, `docs/DONG-TIEN-*`, `docs/QUAN-LY-KHO-*`, `hubsell-mobile/src/lib/scan-sounds.ts`, `hubsell-marketing/*` (của phiên khác).
+Trước khi push: làm mục 21.4 điểm 1–2 với webcam của anh.
+
+---
+
+## 22. Camera CẬN CẢNH soi tem, ghép vào góc video toàn cảnh — KHẢO SÁT + ĐỀ XUẤT (19/11/2026, anh CHƯA duyệt, chưa code)
+
+Anh Trung 19/11: "thêm một cổng quay video cận cảnh (mục đích quay tờ vận đơn nằm im 1 chỗ trên bàn) song song với quá trình quay camera
+toàn cảnh rồi ghép vào một video… vị trí ghép cận cảnh vào một góc nhỏ trong video toàn cảnh thì khách hàng được phép di chuyển cài đặt
+1 lần cho phù hợp với góc quay của khách. Và phần cận cảnh này là tùy chọn thêm trên cài đặt chỉ áp dụng cho webcam." Anh vẽ ô đỏ ở
+**góc phải dưới** khung hình, cỡ ≈ 17 % bề ngang × 29 % chiều cao (đo trên ảnh chụp), và khoanh ô Camera + khoảng trống dưới ô "Chọn
+camera…" = chỗ đặt tùy chọn. Đây là P5 của tài liệu khảo sát mục 64.4 (trước xếp "để sau") — nay anh gọi làm.
+
+Ký hiệu: **[C]** đã đo / đã đọc mã · **[tính]** em tính, chưa đo · **[S]** suy đoán.
+
+**★★ ANH CHỐT 19/11 (sau khi đọc đề xuất):** "tùy chọn 2 camera cho người có nhu cầu, còn bình thường là mình vẫn sẽ dùng 1 camera. Cam cận
+cảnh thì không có chức năng ngắt video, chỉ ngắt khi nó nhận được tín hiệu ngắt từ cam toàn cảnh."
+→ (1) Mặc định MỘT camera, mọi thứ như hiện nay; cận cảnh là tùy chọn TẮT sẵn. (2) Camera cận CHỈ là nguồn hình cho ô ghép: **không đọc
+tem, không mở / cắt / dừng clip**. Đọc tem + tự cắt vẫn CHỈ ở camera toàn cảnh, luật và câu hướng dẫn "Giơ tem vào camera" giữ nguyên.
+⛔ Đề xuất "bật cận cảnh thì đọc tem bằng camera cận" của em BỎ — đừng đề xuất lại. Các đoạn dưới đã sửa theo.
+
+### 22.1 Kết luận trước
+
+- **Làm được, không đụng máy chủ, không migration, không đổi cách tính giờ.** Vẫn MỘT tệp video, MỘT bộ mã hóa, một lượt tải lên.
+- **Ghép ngay lúc quay**, ở đúng chỗ đang in ngày giờ + mã vận đơn (`stamp-canvas.ts`): mỗi khung hình toàn cảnh vẽ thêm khung mới nhất
+  của camera cận vào một ô. Không ghép sau khi quay (sàn đòi video liền, không chỉnh sửa; ghép sau = máy chủ phải mã hóa lại).
+- **Điểm phải đo trước khi code: ô nhỏ ở 720p có đọc được chữ trên tem không** (mục 22.3) — em tính là KHÔNG nếu soi cả tờ tem.
+
+### 22.2 Căn cứ đã có [C]
+
+- Chrome mở 2 camera thật cùng lúc trong MỘT tab, mỗi cái 1280×720 · 30 khung / giây (khảo sát 62.5, 17/11).
+- Hai webcam cắm chung MỘT ổ chia USB rời → chỉ một con chạy, ở mọi cỡ hình (mục 18.7, 18/11) → camera cận phải cắm cổng khác trên máy.
+- Máy anh (i5-10400F + GTX 1650 SUPER) chạy 6 đường quay riêng cùng lúc còn dư (18.9). Đề xuất này nhẹ hơn nhiều: chỉ thêm MỘT lần vẽ
+  hình mỗi khung, không thêm bộ mã hóa.
+- Đường quay hiện tại [đọc mã 19/11]: `frame-pump.ts` đọc khung camera → `StampCanvas.draw()` vẽ khung + ngày giờ + dòng mã →
+  `VideoEncoder` → mediabunny. Bộ đọc tem (`scanner.ts`) nhận khung GỐC qua `FrameTap`. Camera đã chọn nhớ ở `localStorage` của máy
+  (`use-pack-recorder.ts`).
+
+### 22.3 Bài toán điểm ảnh — chỗ dễ làm xong mà vô dụng [tính]
+
+Tem A6 100 × 150 mm; chữ dòng mã vận đơn cao ≈ 3–4 mm (ước, chưa đo tem thật); đọc chắc cần chữ cao ≥ 12 điểm ảnh ≈ 4 điểm ảnh / mm
+(khảo sát 64.2). Bề ngang tem mà ô soi được ở mức đọc chắc:
+
+| Khổ video | Ô rộng | Điểm ảnh ngang của ô | Soi rõ được bề ngang |
+|---|---|---|---|
+| 720p (đang dùng) | 17 % (ô anh vẽ) | ≈ 215 | ≈ 54 mm |
+| 720p | 30 % | 384 | ≈ 96 mm |
+| 1080p | 17 % | ≈ 326 | ≈ 82 mm |
+| 1080p | 25 % | 480 | ≈ 120 mm |
+
+→ Ô cỡ anh vẽ ở 720p: nếu camera cận soi CẢ tờ tem thì chữ mã vận đơn chỉ ≈ 6–9 điểm ảnh — thấy có tem, thấy mã vạch, KHÔNG đọc chắc
+dòng chữ nhỏ (khớp số đo thật 64.6: tem chiếm 30 % khung 768×1024 đã không đọc được dòng mã). Ba cách kéo lên, dùng kết hợp được:
+1. **Chỉ soi VÙNG MÃ** của tem (mã vạch + dòng mã vận đơn, ≈ 6–9 cm), không soi cả tờ → ô nhỏ vẫn đủ. Cần nút **phóng to** trong ô vì
+   webcam rẻ lấy nét cố định, không đặt sát tem được [S].
+2. Cho khách kéo to ô (tới ≈ 35–40 % bề ngang).
+3. Nâng video lên 1080p khi bật cận cảnh → tệp nặng ≈ 2 lần → giá vốn một giờ quay tăng tương ứng (mục 16) — anh quyết, sau khi có số đo.
+
+Thêm: bitrate 800k có giữ nét chữ nhỏ đứng yên trong ô không — CHƯA biết [S: vùng đứng yên nén rất tốt, nhưng khung khóa mỗi giây ở
+800k có thể làm nhòe]. Dòng "Mã vận đơn: …" in chữ to vẫn giữ nguyên, ô cận cảnh là để thấy TEM THẬT.
+
+### 22.4 Thiết kế đề xuất
+
+**Ghép hình**
+- Camera cận mở ở khổ gốc lớn nhất nó có (ưu tiên 1920×1080) để phóng to còn nét; khung mới nhất được giữ lại, camera toàn cảnh dẫn
+  nhịp (lệch tối đa một khung ≈ 33 ms). Đọc khung bằng đúng đường của camera chính (không phụ thuộc tab ẩn).
+- Vị trí + cỡ + mức phóng to là MỘT hàm thuần `pip-layout.ts` dùng chung cho tệp quay và khung xem trước → hai chỗ không lệch (bài học
+  18/11: thêm gì vào tệp phải hiện y hệt ở màn xem trực tiếp cùng lượt).
+- Ô có viền trắng mảnh; không cho đè lên góc trái trên (ngày giờ + dòng mã).
+
+**Cài đặt (một lần, nhớ theo MÁY)**
+- Trong ô Camera, dưới ô chọn camera: hàng "Camera cận cảnh (soi tem)" + công tắc, mặc định TẮT. Bật thì hiện ô chọn camera thứ hai
+  (không cho chọn trùng camera chính) + nút "Chỉnh vị trí".
+- "Chỉnh vị trí": kéo ô trên khung xem trước, kéo góc để đổi cỡ, thanh phóng to 1×–3×; mặc định góc phải dưới như anh vẽ. Bấm Xong là nhớ.
+- Lưu ở `localStorage` của máy (cùng chỗ nhớ camera): vị trí tùy góc đặt camera của TỪNG bàn, và mã thiết bị camera vốn chỉ có nghĩa
+  trên đúng trình duyệt đó → không lưu máy chủ.
+- Khóa chỉnh khi đang quay (đổi bố cục giữa clip dễ bị coi là chỉnh sửa).
+
+**Luồng đóng hàng khi bật cận cảnh**
+- **KHÔNG đổi gì** (anh chốt 19/11): giơ tem vào camera TOÀN CẢNH là quay, tem khác là cắt; nút Bắt đầu / Dừng như cũ. Bộ đọc tem
+  (`scanner.ts`) và máy tự cắt (`tem-cutter.ts`) không đụng tới. Camera cận không được nối vào bộ đọc tem.
+- Người đóng hàng giơ tem cho camera toàn cảnh xong thì đặt tờ tem xuống chỗ camera cận soi; ô ghép cứ thế hiện hình camera cận suốt
+  clip. Clip mở / cắt lúc nào thì ô ghép theo đúng lúc đó, vì nó nằm trong cùng khung hình.
+- Lỗ "tem nằm yên sau khi bấm Dừng thì kêu 'đã quay rồi' mỗi 3 giây" em nêu lúc đầu KHÔNG còn: camera cận không đọc tem.
+
+**Sự cố**
+- Mất camera cận giữa clip: KHÔNG dừng quay; ô trong video hiện chữ "Mất camera cận cảnh" (video trung thực), báo động, cắm lại tự nối;
+  đọc tem + tự cắt không bị ảnh hưởng (vốn ở camera toàn cảnh). Mất camera toàn cảnh: như hiện nay (lưu clip tới lúc mất).
+- Không mở được camera thứ hai khi camera chính đang chạy (`NotReadableError`): câu báo "Camera cận cảnh không chạy chung cổng với camera
+  chính — cắm sang cổng USB khác trên máy" + nút thử lại. Camera chính vẫn quay bình thường.
+
+**Không làm:** ghép sau khi quay · quay hai tệp riêng · app điện thoại (anh: chỉ webcam) · lưu cài đặt trên máy chủ · ảnh tem lưu ngoài
+video (anh đã bỏ 18/11).
+
+### 22.5 Các lát
+
+| Lát | Việc | Xong khi |
+|---|---|---|
+| **C0 — đo** (trang thử `tools/thu-webcam`, không đụng sản phẩm) | 2 webcam thật cắm 2 cổng riêng + tem GIẤY nằm dưới camera cận; ghép ô; quay ở 720p / 1080p × ô 17 / 25 / 35 % × 800k / 1,5 Mbps; cắt khung từ TỆP đo chữ mã vận đơn cao bao nhiêu điểm ảnh; khoảng lấy nét gần nhất của webcam; khung rớt; tab ẩn; đọc tem ở camera toàn cảnh có chậm đi khi mở thêm camera thứ hai không | có bảng số → chốt cỡ ô mặc định, mức phóng to, có cần 1080p không |
+| **C1 — lõi** | `pip-layout.ts` (thuần + test) · nguồn camera thứ hai · `StampCanvas` vẽ ô · `PackRecorder` vòng đời 2 camera + rào mất camera cận (KHÔNG đụng `scanner.ts` / `tem-cutter.ts`) | test + quay được bằng camera giả |
+| **C2 — màn hình** | hàng cài đặt trong ô Camera · chế độ Chỉnh vị trí · ô hiện đúng trên khung xem trước · câu chữ mới · soi 1280–1700, sáng / tối | anh thử local với webcam thật |
+| **C3** | anh duyệt → push | — |
+
+C1 sửa đúng các tệp lát M1 đang để dở chưa commit (`clip-pipeline.ts`, `recorder.ts`, `session.ts`) → **M1 phải commit trước**, hoặc
+C1 dựng chồng lên M1 và đi cùng một lượt.
+
+### 22.6 Chờ anh
+
+- **D-1** Duyệt C0 + chuẩn bị: 2 webcam cắm THẲNG hai cổng trên máy (không qua ổ chia), một tay đỡ cho camera cận, vài tờ tem giấy.
+- ~~**D-2**~~ ĐÃ CHỐT 19/11: đọc tem + cắt clip CHỈ ở camera toàn cảnh; camera cận không có chức năng ngắt video.
+- **D-3** Ô cận cảnh soi vùng mã (đọc được chữ, em khuyên) hay cả tờ tem (thấy trọn tem, chữ nhỏ mờ) — chốt sau số đo C0; kèm việc
+  có nâng 1080p không.
+
+### 22.7 Chưa kiểm
+
+Toàn bộ mục 22.3 là số tính · chưa mở 720p + 1080p cùng lúc trên hai webcam (mới đo 2 × 720p) · chưa biết webcam của anh lấy nét gần
+nhất bao nhiêu · sàn có coi ô ghép là "chỉnh sửa" không: không có câu nào của sàn nói; Dohana, ghihinh, EPack đang ghép công khai
+(khảo sát 64.3, 64.5) · màn Nhiều bàn (M3, chưa dựng) sau này mỗi bàn = camera chính + camera cận tùy chọn → số webcam trên một máy
+tăng gấp đôi, băng thông USB phải đo lại.
+
+### 22.8 ĐÃ DỰNG TRÊN LOCAL 19/11/2026 ~14:00 (anh: "Ok em khảo sát rồi thì làm luôn đi") — chỉ web, CHƯA commit, CHƯA push
+
+Lát C1 + C2 làm một lượt, dựng chồng lên lát M1 đang để dở. Lát đo C0 (webcam thật + tem giấy) CHƯA chạy → các nút cỡ ô / phóng to
+trong sản phẩm chính là công cụ để anh đo. Không sửa backend, không migration, không đụng prod.
+
+**Có gì**
+
+| Phần | Tệp | Việc |
+|---|---|---|
+| Bố cục ô (thuần + 8 test) | `lib/pack-video-recorder/pip-layout.ts`, `__tests__/pip-layout.test.ts` MỚI | vị trí / cỡ / phóng to theo TỶ LỆ khung video; kéo, đổi cỡ, vùng lấy từ camera cận (lấy phần giữa, đúng tỷ lệ ô, không méo); phần khung xem trước mà hình thật chiếm |
+| Nguồn camera cận | `closeup-source.ts` MỚI; `camera.ts`, `frame-pump.ts` sửa | mở camera thứ hai (thử 1920×1080 → 1280×720 → 640×480), giữ khung mới nhất; câu lỗi riêng. ⛔ không nối bộ đọc tem |
+| Ghép vào tệp | `stamp-canvas.ts`, `clip-pipeline.ts` sửa | vẽ ô + viền trắng TRƯỚC ngày giờ và dòng mã (chữ luôn nằm trên, không bao giờ bị ô che) |
+| Vòng đời | `recorder.ts` sửa | `closeup` + `pip` trong trạng thái; mở SAU và RIÊNG với camera chính; mất camera cận → báo động, ô xám "Mất camera cận cảnh" trong video, quay tiếp, cắm lại tự nối; đang quay thì từ chối bật / tắt / đổi camera cận / đổi vị trí |
+| Màn hình | `closeup-overlay.tsx` MỚI; `camera-stage.tsx`, `control-panel.tsx`, `record-screen.tsx`, `use-pack-recorder.ts` sửa | hàng "Camera cận cảnh · Tùy chọn" trong ô Camera (mặc định tắt); chọn webcam thứ hai; "Chỉnh vị trí": kéo ô, kéo 4 góc, thanh Phóng to 1×–4×, Về mặc định, Xong; ô hiện y hệt trên khung xem trước; nhớ ở `localStorage` khóa `hubsell.packVideo.closeup` |
+
+`scanner.ts` và `tem-cutter.ts` KHÔNG đổi một dòng (đúng điều anh chốt: camera cận không ngắt video).
+
+**Khác đề xuất 22.4 (em tự quyết lúc làm):** ô có bề ngang và bề cao TỰ DO (anh vẽ ô gần vuông, tem lại là khổ dọc) · không cấm kéo ô
+lên góc trái trên — thay bằng vẽ chữ đè lên ô · phóng to quanh TÂM hình, chưa có dời vùng soi (khách xê tờ tem / camera) · camera cận
+chưa bật được ngay từ đầu thì video như quay một camera, không vẽ ô trống; chỉ vẽ ô báo khi đang có mà mất giữa chừng.
+
+**Số TỰ CHỌN (chưa có số đo, ghi rõ trong mã):** ô mặc định 20 % × 32 % ở góc phải dưới · giới hạn ô 12–50 % ngang, 15–60 % cao ·
+phóng to tối đa 4× · thứ tự khổ hình thử mở.
+
+**Đã kiểm 19/11 (trình duyệt của Claude, HAI CAMERA GIẢ 1280×720 + 1920×1080 — trình duyệt đó bị chặn camera thật):**
+- Test thuần 38 / 38 (8 test mới của ô ghép); `tsc` + `eslint` sạch; không có lớp `dark:` nào.
+- Bật camera chính → bật tùy chọn → chọn camera thứ hai: ô hiện góc phải dưới trên khung xem trước.
+- Soi ĐÚNG khung hình đưa vào bộ mã hóa (chặn `VideoEncoder.encode`, vẽ ra soi): có ô + viền trắng + ngày giờ; đổi cỡ ô + phóng to 2×
+  thì khung mã hóa trùng khung xem trước (ô xem trước x 0,633 · w 0,366 so với số đã nhớ 0,633 · 0,367).
+- Mất camera cận GIỮA clip: clip quay tiếp (đồng hồ chạy), ô xám có chữ trong khung mã hóa, dải báo đỏ; camera có lại → ô có hình lại;
+  bấm Dừng → MỘT clip 35 giây "đã lưu", lên kho local.
+- Đang quay: công tắc cận cảnh và nút Chỉnh vị trí đều khóa.
+- Kéo ô và kéo góc bằng chuột thật; thanh phóng to bằng phím; số nhớ vào `localStorage`. Tải lại trang → bật camera chính là camera
+  cận tự bật theo, ô về đúng chỗ đã chỉnh.
+- Camera cận không mở được (giả `NotReadableError`): hiện câu "…không chạy chung cổng với camera chính — cắm sang một cổng USB khác…",
+  camera chính vẫn "Sẵn sàng". Mất ≈ 9 giây mới ra câu báo (thử 3 khổ hình × 2 lượt).
+- Không cuộn ngang ở 1280 / 1700; giao diện tối đọc rõ (ép lớp `dark`).
+
+**CHƯA kiểm — phải làm trước khi tin:**
+1. **Webcam thật**: hai webcam thật cùng lúc (mới đo 2 × 720p ngày 17/11, chưa đo 720p + 1080p), tem GIẤY thật → chữ mã vận đơn trong
+   ô đọc được ở cỡ ô / mức phóng to nào (mục 22.3 vẫn là số tính).
+2. Rút dây camera cận thật giữa clip; hai webcam chung ổ chia (câu báo); webcam 4:3.
+3. Mở TỆP đã lên kho xem lại (lượt này soi khung ở cửa bộ mã hóa, chưa tải tệp về mở).
+4. Tốc độ khung khi có thêm camera 1080p trên máy không có card rời; quay dài; tab ẩn.
+5. Có tem thật: dòng "Mã vận đơn / Mã đơn hàng" cùng ô cận cảnh (lượt này chỉ quay tay nên không có dòng mã).
+
+**Anh hỏi 19/11: "Cái toàn cảnh có lấy toàn bộ được camera không? Hay phải ép về một cái khung?"** → [đọc mã] camera toàn cảnh được
+lấy TRỌN: khổ video = đúng khổ hình camera trả về (`recorder.ts` lấy `width × height` từ camera, `StampCanvas` vẽ nguyên khung), không
+cắt, không ép tỷ lệ; camera 4:3 thì tệp là 4:3. Hai điều kèm theo: (1) mình XIN camera chế độ 1280×720 — webcam có cảm biến 4:3 khi chạy
+chế độ 16:9 thì chính webcam tự bỏ bớt mép trên dưới, đó là chế độ của camera, không phải mình cắt; (2) ô cận cảnh ĐÈ lên một góc của
+cảnh toàn cảnh (phần dưới ô không thấy) → vì vậy cho dời / đổi cỡ. Chỉ camera CẬN mới bị lấy theo khung của ô.
+
+**Dữ liệu thử để lại local:** 2 clip quay tay "QUAYTAY1404…" / "QUAYTAY1406…" trong sổ video local + bucket thử.
+
+**Khi anh bảo commit:** tệp chỉ của lát này — 4 tệp mới (`pip-layout.ts`, `closeup-source.ts`, `closeup-overlay.tsx`,
+`pip-layout.test.ts`) + `camera.ts`, `frame-pump.ts`, `stamp-canvas.ts`, `camera-stage.tsx`. Các tệp LẪN với M1: `clip-pipeline.ts`,
+`recorder.ts`, `use-pack-recorder.ts`, `control-panel.tsx`, `record-screen.tsx` → gọn nhất là commit M1 và lát này cùng một lượt.
+
+### 22.9 Anh hỏi 19/11: "Dùng 2 camera thì dung lượng lưu sẽ nhiều hơn? Và gói bây giờ khả năng là lỗ" — trả lời bằng số đã có (chưa đo thêm)
+
+- **Dung lượng KHÔNG gấp đôi**: bản đã dựng vẫn ra MỘT tệp, cùng khổ hình, cùng bitrate đặt 800k. Cỡ tệp đi theo bitrate, không theo số
+  camera → vẫn quanh 6–7,7 MB / phút (dải đã đo 16–18/11 với một camera; con số cao là lúc hình nhiều chi tiết, bộ mã hóa vượt bitrate).
+  Ô cận cảnh thêm chi tiết nên có thể nằm phía cao của dải — CHƯA đo với webcam thật. Cái mất là độ nét chia cho nhiều chi tiết hơn.
+- **Chỉ tăng ≈ 2 lần nếu sau này nâng 1080p / bitrate** để chữ trên tem đọc được (câu D-3, chờ số đo).
+- **Gói 1.500 đ / giờ không lỗ trên hạ tầng** (số mục 16): giá vốn ≈ 125–150 đ / giờ khi giữ ≈ 25 ngày, ≈ 430 đ nếu giữ đủ trần 90 ngày.
+  Kể cả tệp nặng gấp đôi: ≈ 250–300 đ, xấu nhất ≈ 860 đ / giờ — vẫn dưới 1.500 đ (lãi gộp hạ tầng từ ≈ 90 % xuống ≈ 80 %, xấu nhất ≈ 43 %).
+- **Chỗ lỗ thật nếu có là luật xóa, không phải camera thứ hai**: luật tự xóa đang CHẠY BÓNG (mục 19.4, theo ghi chú 18/11 — hôm nay chưa
+  xem lại prod), chưa xóa thật → mỗi giờ quay tốn ≈ 140 đ MỖI THÁNG cho tới khi bị xóa; ≈ 9–14 tháng là tiền lưu bằng giá bán.
+- Việc kèm theo khi anh thử webcam thật: so MB / phút của clip hai camera với clip một camera (cùng máy, cùng cảnh).
+
+### 22.10 COMMIT + PUSH 19/11/2026 chiều (anh: "Commit và push trước để anh test thêm")
+
+Một commit gồm cả lát M1 (mục 21) và camera cận cảnh (mục 22.8) vì 5 tệp lẫn nhau. Chỉ mã web; không backend, không migration. Tính năng
+vẫn chỉ mở cho `admin@hubsell.vn` → khách khác không chạm tới. Trước khi commit: test 38 / 38, `tsc` + `eslint` sạch, `next build` qua.
+⚠️ M1 lên prod khi mục 21.4 điểm 1–2 (webcam thật + rút mạng thật) CHƯA làm và câu K-1 chưa có trả lời — anh thử thẳng trên prod; mọi
+dòng "CHƯA commit / CHƯA push" ở mục 21 và 22.8 là trạng thái TRƯỚC lượt này.
+
+---
+
+## 23. Việc còn lại của phần camera — anh nêu 19/11/2026 (DANH SÁCH, chưa làm, chưa xếp thứ tự)
+
+Anh: "Mình còn nhiều việc cho phần camera này lắm. Phần cho nhân viên, hàng đợi, Nhiều camera trên 1 máy (phần này chắc chỉ dùng được 1
+camera vì cổng chia hiện không dùng được, hoặc phải test dùng nhiều cổng chia, mỗi cổng chia 1 cam toàn cảnh 1 cam cận cảnh), rồi HQ để
+biết R2 mình full hay không còn kịp gia hạn nữa."
+
+| # | Việc | Đang ở đâu | Chờ gì |
+|---|---|---|---|
+| 1 | **Quay cho nhân viên** (app + web) | thiết kế xong mục 17.2 (lát N1–N5), chưa code | anh chốt C1–C7 |
+| 2 | **Hàng đợi** (hàng chờ bền M1) | ĐÃ lên prod 19/11 (22.10) | anh thử webcam thật + rút mạng thật; trả lời K-1…K-7; lát kế M1b (cứu clip đang quay lúc trang sập), M2 (máy chủ gộp lô) |
+| 3 | **Nhiều camera trên một máy** (màn Nhiều bàn, M3) | đo M0 xong (18.7–18.9), chưa dựng | xem ghi chú dưới |
+| 4 | **HQ theo dõi R2** | chưa có gì | xem ghi chú dưới |
+
+**Ghi chú việc 3 — ổ chia USB [C = đã đo 18/11, S = suy đoán]:** hai webcam chung MỘT ổ chia rời của anh (067B:2586) thì chỉ một con
+chạy, ở mọi cỡ hình, cả ngoài Chrome [C]; cắm thẳng máy thì 3 nguồn hình chạy cùng lúc 30 phút không rớt [C]. → Cách "mỗi ổ chia một cam
+toàn cảnh + một cam cận cảnh" chính là ca ĐÃ hỏng (hai cam chung một ổ chia), trừ khi ổ chia khác loại. Băng thông USB tính theo bộ điều
+khiển trên máy, không theo số cổng [S]. Các cách phải ĐO trước khi dựng màn Nhiều bàn: (a) mỗi webcam một cổng trên thùng máy (đã chạy
+với 3 nguồn); (b) ổ chia USB 3.0 có nguồn riêng [S, chưa thử]; (c) thêm card USB gắn trong máy để có thêm bộ điều khiển [S, chưa thử];
+(d) camera cận mở khổ nhỏ hơn để nhường băng thông [S]. Mỗi bàn có cận cảnh = 2 webcam → một máy 3 bàn cần 6 đường hình.
+
+**Ghi chú việc 4 — R2 không "đầy":** R2 không có trần dung lượng; dùng bao nhiêu tính tiền bấy nhiêu, trừ vào thẻ của tài khoản
+Cloudflare (10 GB đầu mỗi tháng miễn phí). Thứ phải canh không phải "còn chỗ không" mà là: (1) đang lưu bao nhiêu GB → tháng này tốn
+bao nhiêu tiền, so với tiền bán giờ; (2) thẻ thanh toán Cloudflare còn trừ được không (thẻ hỏng thì Cloudflare khóa dịch vụ — em chưa đọc
+điều khoản khóa sau bao lâu); (3) luật tự xóa có đang xóa thật không (đang chạy bóng). Đề xuất sơ bộ, chưa thiết kế: một thẻ ở HQ Sức
+khỏe gồm GB đang lưu + số tệp + ước tiền tháng + GB tăng mỗi ngày + GB luật xóa "lẽ ra đã xóa"; nguồn số = sổ video của mình
+(`pack_usage_daily`, không gọi thêm Cloudflare), đối chiếu định kỳ với số Cloudflare báo.

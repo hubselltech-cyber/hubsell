@@ -2,29 +2,29 @@
 // LƯỢT QUAY: danh sách clip của lượt + HÀNG CHỜ TẢI LÊN kho (R2).
 //
 // Sống ở cấp module, không theo màn hình: người đóng hàng rời màn quay sang trang khác thì clip đang chờ
-// vẫn tải tiếp, quay lại màn quay vẫn thấy lượt của mình. (Tải lại / đóng tab thì mất — màn quay hỏi trước.)
+// vẫn tải tiếp, quay lại màn quay vẫn thấy lượt của mình.
+//
+// HÀNG CHỜ BỀN (lát M1, 18/11/2026 — docs/VIDEO-DONG-HANG-THIET-KE.md mục 18.4 + 21):
+//   · clip ghi thẳng xuống ổ riêng của trang trong lúc quay (clip-store*.ts), sổ hàng chờ ở IndexedDB →
+//     tải lại trang, Chrome sập, máy khởi động lại: mở lại màn Video là các clip chưa gửi tự gửi tiếp;
+//   · gửi hỏng thì thử lại KHÔNG giới hạn, nghỉ tăng dần có lệch ngẫu nhiên; mất mạng thì đứng chờ, có mạng
+//     lại là chạy ngay (upload-queue.ts, upload-backoff.ts);
+//   · lên kho xong là XÓA tệp trên ổ. Không có nút xem / giữ video trên máy — đây không phải "lưu local".
 //
 // Tải lên TUẦN TỰ và KHÔNG khóa việc quay (bài học Kiểm kê 09/11: không khóa ô quét khi đang xử lý).
-// Trình duyệt tải THẲNG lên kho bằng đường dẫn ký sẵn; máy chủ Hubsell không chạm byte video nào:
-//   1. POST /api/pack-videos   → dòng sổ PENDING + đường dẫn ký sẵn (ký cả cỡ và kiểu tệp)
-//   2. PUT thẳng lên kho        (một lượt, hoặc theo mảnh với tệp lớn)
-//   3. POST …/complete          → máy chủ tự hỏi kho cỡ thật rồi mới ghi STORED
-// `clientId` giữ nguyên qua mọi lần thử lại nên mạng chập chờn không sinh dòng trùng (rào D1).
+// Đường gửi (xin vé → PUT thẳng lên kho → chốt): upload-transport.ts.
 // ============================================================
 
-import {
-  ApiError,
-  beginPackVideoUpload,
-  completePackVideoUpload,
-  matchPackVideoTem,
-  signPackVideoParts,
-  type PackVideoTemMatch,
-  type PackVideoUploadPlan,
-} from "@/lib/api";
+import { getStoredUser, matchPackVideoTem, type PackVideoTemMatch } from "@/lib/api";
 
+import { ClipFileBroken, type StoredClipMeta } from "./clip-store";
+import { openBrowserClipStore, withLock, type BrowserClipStore } from "./clip-store-opfs";
 import { addJournal } from "./journal";
-import { playNotice } from "./sound";
-import type { ClipKind, ClipOutcome, FinishedClip } from "./types";
+import { playAlarm, playNotice } from "./sound";
+import type { ClipKind, ClipOutcome, ClipSinkLike } from "./types";
+import { UploadQueue, type UploadJobEvent, type UploadQueueState } from "./upload-queue";
+import { RecordRateMeter, UploadSpeedMeter, type DiskState, type QueueSnapshot } from "./upload-speed";
+import { classifyUploadError, uploadClip } from "./upload-transport";
 
 export type SessionClipStatus = "recording" | "saving" | "queued" | "uploading" | "stored" | "failed";
 
@@ -49,32 +49,32 @@ export interface SessionClip {
   /** 0–1, chỉ có nghĩa khi đang tải lên. */
   progress: number;
   error: string | null;
+  /** true = clip quay từ lượt trước (trang đã tải lại / máy mở lại), lấy từ hàng chờ trên ổ. */
+  restored: boolean;
   /** Đơn khớp với tem: undefined = chưa hỏi / đang hỏi, null = không khớp đơn nào. */
   order: PackVideoTemMatch | null | undefined;
 }
 
 interface Job {
-  localId: string;
-  clientId: string;
-  clip: FinishedClip;
-  deviceName: string | null;
+  meta: StoredClipMeta;
+  /** Dòng sổ đã nằm trong IndexedDB (clip sống qua tải lại trang). */
+  persisted: boolean;
 }
 
-/** Số lần thử một clip trước khi để người dùng tự bấm "Thử lại", và khoảng nghỉ giữa các lần. */
-const UPLOAD_ATTEMPTS = 4;
-const UPLOAD_BACKOFF_MS = [2_000, 5_000, 15_000];
+/** Ghi thử chừng này để biết ổ còn nhận nổi không — ≈ 10 phút quay của một bàn. Số tự chọn. */
+const DISK_PROBE_BYTES = 64 * 1024 * 1024;
+/** Khoảng cách tối thiểu giữa hai lần ghi thử (mỗi lần ghi thật 64 MB xuống ổ). Số tự chọn. */
+const DISK_PROBE_EVERY_MS = 5 * 60_000;
+/** Trình duyệt báo còn dưới mức này thì cảnh báo sớm (chỉ là gợi ý — Chrome báo dư, mục 18.9). Số tự chọn. */
+const DISK_LOW_HINT_BYTES = 1024 * 1024 * 1024;
 
 let clips: SessionClip[] = [];
 /** Tem đã được trả lời "Vẫn là đóng hàng" trong lượt này — bỏ qua là không hiện lại (anh Trung: gạt hộp nhắc = thôi hẳn). */
 const returnPromptDismissed = new Set<string>();
 const jobs = new Map<string, Job>();
-const queue: string[] = [];
-let pumping = false;
 let deviceName: string | null = null;
 const listeners = new Set<() => void>();
 const storedListeners = new Set<() => void>();
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function newId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -116,6 +116,228 @@ export function setSessionDeviceName(label: string | null): void {
   deviceName = label;
 }
 
+// ---------- Kho clip chờ gửi + tình trạng hàng chờ ----------
+
+let storePromise: Promise<BrowserClipStore> | null = null;
+let disk: DiskState = "ok";
+let lastProbeAtMs = 0;
+let resumedFor: string | null = null;
+const speed = new UploadSpeedMeter();
+const recordRate = new RecordRateMeter();
+const sentSoFar = new Map<string, number>();
+let queueState: UploadQueueState = { pending: 0, failures: 0, lastError: null, nextRetryAtMs: null, waitingOnline: false };
+const queueListeners = new Set<() => void>();
+
+const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
+
+function buildSnapshot(): QueueSnapshot {
+  const waiting = clips.filter((c) => c.status === "queued" || c.status === "uploading");
+  return {
+    online: isOnline(),
+    waiting: waiting.length,
+    backlogBytes: waiting.reduce(
+      (sum, c) => sum + (c.sizeBytes ?? 0) * (1 - (c.status === "uploading" ? c.progress : 0)),
+      0
+    ),
+    failures: queueState.failures,
+    lastError: queueState.lastError,
+    nextRetryAtMs: queueState.nextRetryAtMs,
+    uploadBytesPerSec: speed.bytesPerSecond(Date.now()),
+    recordBytesPerSec: recordRate.bytesPerSecond(),
+    disk,
+  };
+}
+
+let snapshot: QueueSnapshot = buildSnapshot();
+
+function emitQueue(): void {
+  snapshot = buildSnapshot();
+  for (const fn of queueListeners) fn();
+}
+
+export function subscribeQueue(fn: () => void): () => void {
+  queueListeners.add(fn);
+  return () => queueListeners.delete(fn);
+}
+
+/** Tình trạng hàng chờ (mạng, số clip chờ, ổ đĩa) cho dải báo trên màn quay. Đối tượng mới mỗi lần đổi. */
+export function getQueueSnapshot(): QueueSnapshot {
+  return snapshot;
+}
+
+const SERVER_SNAPSHOT: QueueSnapshot = {
+  online: true,
+  waiting: 0,
+  backlogBytes: 0,
+  failures: 0,
+  lastError: null,
+  nextRetryAtMs: null,
+  uploadBytesPerSec: null,
+  recordBytesPerSec: null,
+  disk: "ok",
+};
+export function getServerQueueSnapshot(): QueueSnapshot {
+  return SERVER_SNAPSHOT;
+}
+
+function setDisk(next: DiskState): void {
+  if (disk === next) return;
+  disk = next;
+  emitQueue();
+}
+
+/** Một lần ghi video THẬT xuống ổ vừa hỏng (ổ đầy). Clip đang quay vẫn quay nốt — phần còn lại nằm trong bộ nhớ. */
+function onDiskSpill(err: unknown): void {
+  if (disk === "full") return;
+  const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  addJournal("error", `Ổ đĩa máy này không ghi được nữa (${why}) — video đang quay vẫn quay nốt, chưa mở được video mới`);
+  playAlarm();
+  setDisk("full");
+}
+
+function ensureStore(): Promise<BrowserClipStore> {
+  storePromise ??= openBrowserClipStore(onDiskSpill).then((opened) => {
+    if (opened.memoryReason) {
+      disk = "memory";
+      addJournal(
+        "warn",
+        `Trình duyệt không cho giữ video chờ gửi trên ổ đĩa (${opened.memoryReason}) — video chờ gửi nằm trong bộ nhớ, đừng tải lại trang khi chưa gửi xong`
+      );
+      emitQueue();
+    } else if (opened.persisted === false) {
+      addJournal("info", "Trình duyệt chưa hứa giữ video chờ gửi khi ổ máy chật — nên để mạng luôn thông để video lên ngay");
+    }
+    return opened;
+  });
+  return storePromise;
+}
+
+/** Bộ quay xin chỗ ghi cho MỘT clip sắp quay. */
+export async function openClipSink(): Promise<ClipSinkLike> {
+  return (await ensureStore()).store.openSink();
+}
+
+/** Bộ quay bỏ một clip hỏng giữa chừng → dọn các mảnh đã ghi. */
+export async function discardClipFile(fileKey: string): Promise<void> {
+  await (await ensureStore()).store.remove({ fileKey });
+}
+
+/**
+ * Lý do KHÔNG mở được video mới vì ổ đĩa, hoặc null. Chỉ chặn khi một lần ghi THẬT đã hỏng — hết chỗ thì quay
+ * cũng không giữ được. Mạng chậm / mất mạng KHÔNG chặn (cảnh báo, không khóa).
+ */
+export function diskBlocker(): string | null {
+  return disk === "full"
+    ? "Ổ đĩa máy này đã đầy — chưa mở được video mới. Chờ video đang chờ gửi lên xong, hoặc dọn bớt ổ đĩa."
+    : null;
+}
+
+/** Đo lại ổ bằng một lần ghi thử thật. `force` = bỏ qua khoảng nghỉ giữa hai lần ghi thử. */
+async function checkDisk(force: boolean): Promise<void> {
+  const opened = await ensureStore();
+  if (opened.memoryReason) return;
+  const now = Date.now();
+  if (!force && now - lastProbeAtMs < DISK_PROBE_EVERY_MS) return;
+  lastProbeAtMs = now;
+  const wasFull = disk === "full";
+  if (!(await opened.probe(DISK_PROBE_BYTES))) {
+    if (!wasFull) {
+      if (disk !== "low") addJournal("warn", "Ổ đĩa máy này sắp đầy — video chờ gửi có thể không còn chỗ giữ");
+      setDisk("low");
+    }
+    return;
+  }
+  const free = await opened.reportedFreeBytes();
+  const next: DiskState = free !== null && free < DISK_LOW_HINT_BYTES ? "low" : "ok";
+  if (wasFull) addJournal("info", "Ổ đĩa đã có chỗ lại — mở video mới được rồi");
+  setDisk(next);
+}
+
+const queue = new UploadQueue({
+  upload: uploadJob,
+  classify: (err) => classifyUploadError(err, isOnline()),
+  isOnline,
+  now: () => Date.now(),
+  random: () => Math.random(),
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  onJob: onJobEvent,
+  onQueue: (state) => {
+    queueState = state;
+    emitQueue();
+  },
+});
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    if (snapshot.waiting > 0) addJournal("info", "Có mạng lại — gửi tiếp video đang chờ");
+    emitQueue();
+    queue.kick();
+  });
+  window.addEventListener("offline", () => {
+    addJournal("warn", "Mất mạng — video vẫn được giữ trên máy này, có mạng lại là tự gửi");
+    emitQueue();
+  });
+}
+
+/** Nút "Thử ngay" trên dải báo: bỏ khoảng nghỉ đang chờ; ổ đang báo đầy thì đo lại ổ luôn. */
+export function retryQueueNow(): void {
+  if (disk === "full" || disk === "low") void checkDisk(true);
+  queue.kick();
+}
+
+/**
+ * Mở lại hàng chờ của tài khoản đang đăng nhập: các clip quay từ lượt trước mà chưa lên kho được đưa lại vào
+ * danh sách và gửi tiếp. Gọi khi màn Video mở; gọi nhiều lần không sao.
+ */
+export async function resumeUploadQueue(): Promise<void> {
+  const owner = getStoredUser()?.id ?? null;
+  if (!owner || resumedFor === owner) return;
+  resumedFor = owner;
+  const opened = await ensureStore();
+  if (opened.memoryReason) return;
+  const { mine, othersCount } = await opened.store.listMeta(owner);
+  const swept = await opened.sweepOrphans(() => opened.store.knownFileKeys()).catch(() => 0);
+  if (swept > 0) {
+    addJournal(
+      "warn",
+      `${swept} video đang quay dở lúc trang bị đóng lần trước không cứu được (tệp chưa hoàn chỉnh) — đã dọn`
+    );
+  }
+  if (othersCount > 0) {
+    addJournal("warn", `Máy này còn ${othersCount} video chờ gửi của tài khoản khác — đăng nhập lại tài khoản đó để gửi`);
+  }
+  const fresh = mine.filter((m) => !jobs.has(m.localId));
+  for (const meta of fresh) {
+    jobs.set(meta.localId, { meta, persisted: true });
+    clips = [
+      ...clips,
+      {
+        localId: meta.localId,
+        code: meta.code,
+        manual: meta.manual,
+        kind: meta.kind,
+        returnPrompt: false,
+        startedAtMs: Date.parse(meta.startedAtIso),
+        durationSec: meta.durationSec,
+        sizeBytes: meta.file.sizeBytes,
+        status: "queued",
+        progress: 0,
+        error: null,
+        restored: true,
+        order: meta.manual ? null : undefined,
+      },
+    ];
+  }
+  if (fresh.length) {
+    addJournal("info", `Còn ${fresh.length} video quay từ lượt trước chưa lên hệ thống — đang gửi tiếp`);
+    for (const fn of listeners) fn();
+    emitQueue();
+    for (const meta of fresh) queue.enqueue(meta.localId);
+  }
+  void checkDisk(false);
+}
+
 /** Một clip vừa bắt đầu quay. */
 export function sessionClipStarted(info: { code: string; manual: boolean; startedAtMs: number; kind: ClipKind }): void {
   // Clip trước đó (nếu còn "đang quay") vừa bị cắt → đang ghép tệp.
@@ -134,6 +356,7 @@ export function sessionClipStarted(info: { code: string; manual: boolean; starte
       status: "recording",
       progress: 0,
       error: null,
+      restored: false,
       order: info.manual ? null : undefined,
     },
     ...clips,
@@ -204,9 +427,14 @@ export function sessionClipDone(outcome: ClipOutcome): void {
   const code = outcome.ok ? outcome.clip.code : outcome.code;
   // Clip cũ nhất còn chưa có tệp của đúng mã này.
   const target = [...clips].reverse().find((c) => c.code === code && (c.status === "recording" || c.status === "saving"));
-  if (!target) return;
+  if (!target) {
+    // Không còn dòng nào nhận clip này (hiếm) → bỏ tệp để khỏi chiếm ổ.
+    if (outcome.ok) void discardClipFile(outcome.clip.file.fileKey);
+    return;
+  }
   if (droppedLeadIns.delete(target.localId)) {
     // Đoạn quay tay bị tem cắt ngang: gỡ khỏi lượt quay, không lưu, không tải lên (nên không trừ giờ).
+    if (outcome.ok) void discardClipFile(outcome.clip.file.fileKey);
     clips = clips.filter((c) => c.localId !== target.localId);
     for (const fn of listeners) fn();
     addJournal(
@@ -221,24 +449,50 @@ export function sessionClipDone(outcome: ClipOutcome): void {
     return;
   }
   const clip = outcome.clip;
-  jobs.set(target.localId, { localId: target.localId, clientId: newId(), clip, deviceName });
+  const meta: StoredClipMeta = {
+    localId: target.localId,
+    clientId: newId(),
+    ownerKey: getStoredUser()?.id ?? "",
+    code: clip.code,
+    manual: clip.manual,
+    kind: target.kind,
+    startedAtIso: clip.startedAt.toISOString(),
+    durationSec: clip.durationSec,
+    width: clip.width,
+    height: clip.height,
+    deviceName,
+    queuedAtMs: Date.now(),
+    file: clip.file,
+  };
+  const job: Job = { meta, persisted: false };
+  jobs.set(target.localId, job);
+  recordRate.addClip(clip.file.sizeBytes, clip.durationSec);
   update(target.localId, {
     status: "queued",
     durationSec: clip.durationSec,
-    sizeBytes: clip.buffer.byteLength,
+    sizeBytes: clip.file.sizeBytes,
     error: null,
   });
   addJournal("info", `Đã lưu clip ${kindTag(target.kind)}${code} (${formatSeconds(clip.durationSec)}) — chờ tải lên`);
-  queue.push(target.localId);
-  void pump();
+  // Ghi sổ TRƯỚC khi cho vào hàng gửi: gửi xong là xóa sổ, không được để lệnh ghi sổ tới sau lệnh xóa.
+  void (async () => {
+    const opened = await ensureStore();
+    job.persisted = meta.ownerKey ? await opened.store.saveMeta(meta) : false;
+    if (!job.persisted && !opened.memoryReason) {
+      addJournal("warn", `Clip ${code} đang giữ trong bộ nhớ (chưa ghi được xuống ổ) — đừng tải lại trang tới khi gửi xong`);
+    }
+    queue.enqueue(target.localId);
+    emitQueue();
+    void checkDisk(false);
+  })();
 }
 
 /** Nút "Thử lại" trên một clip tải lỗi. */
 export function retrySessionClip(localId: string): void {
-  if (!jobs.has(localId) || queue.includes(localId)) return;
+  if (!jobs.has(localId) || queue.has(localId)) return;
   update(localId, { status: "queued", error: null, progress: 0 });
-  queue.push(localId);
-  void pump();
+  queue.enqueue(localId);
+  queue.kick();
 }
 
 /** Tiền tố "KHUI " trong nhật ký cho clip khui hàng — để đọc nhật ký là biết clip nào thuộc loại nào. */
@@ -256,153 +510,94 @@ function formatSeconds(sec: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-async function pump(): Promise<void> {
-  if (pumping) return;
-  pumping = true;
-  try {
-    for (let localId = queue.shift(); localId; localId = queue.shift()) {
-      const job = jobs.get(localId);
-      if (job) await runJob(job);
-    }
-  } finally {
-    pumping = false;
+/** Gửi trọn một clip. Khóa theo clip: hai tab cùng mở không gửi trùng một clip. */
+async function uploadJob(localId: string): Promise<void> {
+  const job = jobs.get(localId);
+  if (!job) return;
+  const opened = await ensureStore();
+  await withLock(`up-${localId}`, async () => {
+    // Dòng sổ đã mất = tab khác vừa gửi xong clip này trong lúc mình chờ khóa.
+    if (job.persisted && !(await opened.store.hasMeta(localId))) return;
+    const { meta } = job;
+    sentSoFar.set(localId, 0);
+    await uploadClip({
+      clientId: meta.clientId,
+      code: meta.code,
+      kind: kindOf(localId),
+      startedAtIso: meta.startedAtIso,
+      durationSec: meta.durationSec,
+      sizeBytes: meta.file.sizeBytes,
+      width: meta.width,
+      height: meta.height,
+      deviceName: meta.deviceName,
+      blob: () => opened.store.blobOf(meta.file),
+      onProgress: (sent) => onUploadProgress(localId, sent, meta.file.sizeBytes),
+    });
+    // Xóa SỔ trước, TỆP sau: đứt giữa chừng thì còn lại một thư mục không có sổ = rác, lần sau tự dọn.
+    await opened.store.deleteMeta(localId);
+    await opened.store.remove(meta.file);
+  });
+}
+
+let lastProgressEmitMs = 0;
+function onUploadProgress(localId: string, sent: number, total: number): void {
+  const now = Date.now();
+  const before = sentSoFar.get(localId) ?? 0;
+  if (sent > before) {
+    speed.add(sent - before, now);
+    sentSoFar.set(localId, sent);
+  }
+  update(localId, { progress: total ? Math.min(1, sent / total) : 0 });
+  if (now - lastProgressEmitMs >= 1000) {
+    lastProgressEmitMs = now;
+    emitQueue();
   }
 }
 
-async function runJob(job: Job): Promise<void> {
-  const code = job.clip.code;
-  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt++) {
-    update(job.localId, { status: "uploading", progress: 0, error: null });
-    try {
-      await uploadOnce(job);
-      jobs.delete(job.localId); // nhả bộ nhớ của tệp
-      update(job.localId, { status: "stored", progress: 1, error: null });
-      addJournal("info", `Tải lên xong clip ${kindTag(kindOf(job.localId))}${code}`);
+function onJobEvent(localId: string, event: UploadJobEvent): void {
+  const job = jobs.get(localId);
+  const code = job?.meta.code ?? "";
+  switch (event.type) {
+    case "uploading":
+      update(localId, { status: "uploading", progress: 0, error: null });
+      break;
+    case "stored":
+      jobs.delete(localId);
+      sentSoFar.delete(localId);
+      update(localId, { status: "stored", progress: 1, error: null });
+      addJournal("info", `Tải lên xong clip ${kindTag(kindOf(localId))}${code}`);
       for (const fn of storedListeners) fn();
-      return;
-    } catch (err) {
-      const text = uploadErrorText(err);
-      const final = attempt >= UPLOAD_ATTEMPTS || !isRetryable(err);
-      if (final) {
-        update(job.localId, { status: "failed", error: text });
-        addJournal("error", `Tải lên clip ${code} lỗi: ${text}`);
-        return;
-      }
-      addJournal("warn", `Tải lên clip ${code} chưa được (lần ${attempt}): ${text} — sẽ thử lại`);
-      update(job.localId, { status: "queued", error: text });
-      await sleep(UPLOAD_BACKOFF_MS[Math.min(attempt - 1, UPLOAD_BACKOFF_MS.length - 1)]);
-    }
+      // Ổ vừa trống thêm → nếu đang báo đầy / sắp đầy thì đo lại ngay.
+      if (disk === "full" || disk === "low") void checkDisk(true);
+      break;
+    case "retry":
+      update(localId, { status: "queued", progress: 0, error: event.text });
+      addJournal(
+        "warn",
+        `Tải lên clip ${code} chưa được (lần ${event.attempt}): ${event.text} — tự thử lại sau ${Math.ceil(event.waitMs / 1000)} giây`
+      );
+      break;
+    case "failed":
+      update(localId, { status: "failed", error: event.text });
+      addJournal("error", `Tải lên clip ${code} dừng: ${event.text}`);
+      void dropIfBroken(localId);
+      break;
   }
+  emitQueue();
 }
 
-async function uploadOnce(job: Job): Promise<void> {
-  const { clip } = job;
-  const sizeBytes = clip.buffer.byteLength;
-  const begun = await beginPackVideoUpload({
-    clientId: job.clientId,
-    trackingCode: clip.code,
-    kind: kindOf(job.localId),
-    recordedAt: clip.startedAt.toISOString(),
-    durationSec: Math.max(1, Math.round(clip.durationSec)),
-    sizeBytes,
-    width: clip.width,
-    height: clip.height,
-    deviceName: job.deviceName,
-  });
-  const plan = begun.upload;
-  if (plan) await sendToStorage(job, begun.video.id, plan);
-  await completePackVideoUpload(begun.video.id);
-}
-
-async function sendToStorage(job: Job, videoId: string, plan: PackVideoUploadPlan): Promise<void> {
-  const buffer = job.clip.buffer;
-  const total = buffer.byteLength;
-  if (plan.mode === "single") {
-    await putToStorage(plan.url, plan.headers, new Blob([buffer]), (sent) =>
-      update(job.localId, { progress: total ? sent / total : 0 })
-    );
-    return;
+/** Tệp chờ gửi đã mất khỏi ổ (người dùng xóa dữ liệu trình duyệt…) → không còn gì để gửi, bỏ dòng sổ cho khỏi báo lỗi mãi. */
+async function dropIfBroken(localId: string): Promise<void> {
+  const job = jobs.get(localId);
+  if (!job) return;
+  const opened = await ensureStore();
+  try {
+    await opened.store.blobOf(job.meta.file);
+  } catch (err) {
+    if (!(err instanceof ClipFileBroken)) return;
+    jobs.delete(localId);
+    playNotice();
+    await opened.store.deleteMeta(localId);
+    await opened.store.remove(job.meta.file);
   }
-  const held = new Set(plan.uploadedParts ?? []);
-  const urlOf = new Map(plan.parts.map((p) => [p.partNumber, p.url]));
-  const count = Math.ceil(total / plan.partSize);
-  let sentBefore = 0;
-  for (let n = 1; n <= count; n++) {
-    const start = (n - 1) * plan.partSize;
-    const end = Math.min(total, start + plan.partSize);
-    if (!held.has(n)) {
-      const body = new Blob([buffer.slice(start, end)]);
-      const base = sentBefore;
-      const progress = (sent: number) => update(job.localId, { progress: (base + sent) / total });
-      let url = urlOf.get(n) ?? (await signPackVideoParts(videoId, [n])).parts[0]?.url;
-      if (!url) throw new Error("Máy chủ không cấp đường dẫn cho một mảnh của tệp");
-      try {
-        await putToStorage(url, {}, body, progress);
-      } catch (err) {
-        // Đường dẫn của mảnh hết hạn (403) → xin ký lại đúng một lần rồi gửi lại.
-        if (!(err instanceof StorageError) || err.status !== 403) throw err;
-        url = (await signPackVideoParts(videoId, [n])).parts[0]?.url;
-        if (!url) throw err;
-        await putToStorage(url, {}, body, progress);
-      }
-    }
-    sentBefore = end;
-    update(job.localId, { progress: sentBefore / total });
-  }
-}
-
-class StorageError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
-
-/** PUT thẳng lên kho bằng XMLHttpRequest để có tiến độ tải lên (fetch không báo tiến độ gửi). */
-function putToStorage(
-  url: string,
-  headers: Record<string, string>,
-  body: Blob,
-  onProgress: (sentBytes: number) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    for (const [name, value] of Object.entries(headers)) {
-      // Trình duyệt tự đặt Content-Length (đúng cỡ đã ký); đặt tay là bị chặn.
-      if (name.toLowerCase() !== "content-length") xhr.setRequestHeader(name, value);
-    }
-    xhr.upload.onprogress = (event) => onProgress(event.loaded);
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new StorageError(xhr.status, `Kho từ chối tệp (mã ${xhr.status})`));
-    };
-    // Không có mã trạng thái = trình duyệt chặn trước khi tới kho (CORS) hoặc mất mạng.
-    xhr.onerror = () => reject(new StorageError(0, "không tới được kho"));
-    xhr.ontimeout = () => reject(new StorageError(0, "quá thời gian chờ kho"));
-    xhr.send(body);
-  });
-}
-
-function isRetryable(err: unknown): boolean {
-  if (err instanceof StorageError) return err.status === 0 || err.status >= 500 || err.status === 403;
-  if (err instanceof ApiError) {
-    // Lỗi mạng tới máy chủ, kho không phản hồi, lượt tải theo mảnh hết hạn → thử lại được.
-    if (err.status === 0 || err.status >= 500) return true;
-    return err.code === "UPLOAD_EXPIRED" || err.code === "NOT_UPLOADED" || err.code === "PARTS_MISSING" || err.code === "SIZE_MISMATCH";
-  }
-  return false;
-}
-
-/** Câu lỗi tải lên cho người đóng hàng. */
-function uploadErrorText(err: unknown): string {
-  if (err instanceof StorageError && err.status === 0) {
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return "Mất mạng";
-    return "Kho chưa cho trình duyệt tải lên — cần bật CORS cho bucket (hoặc mạng chập chờn)";
-  }
-  if (err instanceof ApiError && err.code === "FEATURE_LOCKED") return "Tài khoản chưa được mở Video đóng hàng";
-  if (err instanceof ApiError && err.code === "OUT_OF_HOURS") return "Đã hết giờ quay — mua thêm giờ rồi bấm Thử lại";
-  return err instanceof Error ? err.message : String(err);
 }

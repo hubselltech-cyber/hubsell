@@ -3,22 +3,28 @@
 //
 // VÌ SAO không dùng trình ghi sẵn của Chrome (MediaRecorder): đo 16/11/2026 nó ra MP4 PHÂN MẢNH
 // (`ftyp moov moof mdat…`), không có số khung, khung khóa chỉ ở giây 0 và 3,5 — nhiều trình phát không
-// tua được. Đường này ra MP4 thường, `moov` đầu tệp, khung khóa đúng mỗi giây, 0 khung rớt.
+// tua được. Đường này ra MP4 thường (không phân mảnh), khung khóa đúng mỗi giây, 0 khung rớt.
 //
 // MỘT bộ mã hóa chạy xuyên suốt, nhiều clip nối đuôi nhau. Cắt clip = ép khung kế tiếp thành khung khóa
 // rồi chuyển các gói H.264 từ khung khóa đó sang tệp MP4 mới → không dừng, không cấu hình lại, không mất
 // khung nào giữa hai clip. Đo với tem thật: 13–25 mili giây từ lúc quyết định cắt tới khung đầu clip mới
 // (trên điện thoại Note8 là 147–230 mili giây).
 //
-// Mỗi clip nằm trong RAM tới khi kết thúc (`fastStart: "in-memory"`) rồi mới thành tệp — ≈ 6 MB mỗi phút.
+// Lát M1 (18/11/2026): clip GHI THẲNG XUỐNG Ổ trong lúc quay (StreamTarget → kho clip chờ gửi), `moov` ở CUỐI
+// tệp (`fastStart: false`) → RAM không phình theo độ dài clip (đo M0: phẳng với 3 bàn × 30 phút).
+//   ⛔ KHÔNG dùng `fastStart: "reserve"`: độn 4,75 MB vào MỖI clip (đo M0, mục 18.7).
+//   ⛔ KHÔNG khai `frameRate` cho rãnh video: mediabunny bắt mốc giờ về lưới 1/30 giây → hai khung trùng giờ.
 // ============================================================
 
 import type * as Mediabunny from "mediabunny";
 
 import { KEY_FRAME_INTERVAL_US, MAX_ENCODE_QUEUE } from "./config";
 import { startPump, type FramePump, type PumpMode } from "./frame-pump";
-import { stampCodeLines, type StampCanvas } from "./stamp-canvas";
-import type { ClipOutcome, RecorderLog } from "./types";
+import { stampCodeLines, type PipFrame, type StampCanvas } from "./stamp-canvas";
+import type { ClipOutcome, ClipSinkLike, RecorderLog } from "./types";
+
+/** Bộ ghép MP4 gom dữ liệu thành khúc cỡ này rồi mới ghi xuống ổ (≈ 8 giây quay / khúc; đo M0: 4–5 ms / lần ghi). */
+const WRITE_CHUNK_BYTES = 1024 * 1024;
 
 type Mb = typeof Mediabunny;
 
@@ -44,6 +50,8 @@ interface Clip {
   keyNotHonoured: boolean;
   output: Mediabunny.Output | null;
   source: Mediabunny.EncodedVideoPacketSource | null;
+  /** Chỗ ghi tệp của clip trong kho clip chờ gửi. */
+  sink: ClipSinkLike | null;
   chain: Promise<void>;
   error: string | null;
   finishing: boolean;
@@ -112,8 +120,17 @@ export class ClipPipeline {
       bitrate: number;
       pumpMode: PumpMode;
       stamp: StampCanvas;
+      /**
+       * Ô cận cảnh cho khung hình đang vẽ (null = không ghép). Chỉ là NGUỒN HÌNH: không quyết định mở / cắt / dừng
+       * clip (anh Trung 19/11/2026) — mọi quyết định đó vẫn đi qua beginClip / endClip như trước.
+       */
+      pip?: () => PipFrame | null;
       tap: FrameTap | null;
       log: RecorderLog;
+      /** Xin chỗ ghi cho một clip (kho clip chờ gửi — ghi thẳng xuống ổ). */
+      openSink: () => Promise<ClipSinkLike>;
+      /** Bỏ các mảnh đã ghi của một clip hỏng. */
+      discardFile: (fileKey: string) => Promise<void>;
     }
   ) {
     this.frameDurUs = Math.round(1_000_000 / opts.fps);
@@ -187,6 +204,7 @@ export class ClipPipeline {
       keyNotHonoured: false,
       output: null,
       source: null,
+      sink: null,
       chain: Promise.resolve(),
       error: null,
       finishing: false,
@@ -233,7 +251,7 @@ export class ClipPipeline {
     if (this.writeClip === clip) {
       this.writeClip = null;
       this.finishClip(clip);
-    } else if (!clip.output && !clip.finishing) {
+    } else if (!clip.source && !clip.finishing) {
       this.boundaries = this.boundaries.filter((b) => b !== clip);
       clip.finishing = true;
       clip.resolve({ ok: false, code: clip.code, error: this.error ?? "Clip không có khung hình nào" });
@@ -297,7 +315,7 @@ export class ClipPipeline {
     if (keyFrame) this.lastKeyTsUs = ts;
 
     // Chữ đi theo CLIP đang nhận khung hình: khung đầu của clip mới đã mang mã của tem mới.
-    this.opts.stamp.draw(source, undefined, this.feedClip?.labelLines);
+    this.opts.stamp.draw(source, undefined, this.feedClip?.labelLines, this.opts.pip?.() ?? null);
     const frame = new VideoFrame(this.opts.stamp.canvas, { timestamp: ts, duration: this.frameDurUs, alpha: "discard" });
     try {
       encoder.encode(frame, { keyFrame });
@@ -358,14 +376,23 @@ export class ClipPipeline {
     const mb = this.mb;
     if (!mb) return;
     clip.t0Us = t0Us;
-    clip.source = new mb.EncodedVideoPacketSource("avc");
-    clip.output = new mb.Output({
-      // "in-memory": giữ dữ liệu trong RAM tới lúc kết thúc rồi viết moov TRƯỚC mdat → MP4 thường, tua được.
-      format: new mb.Mp4OutputFormat({ fastStart: "in-memory" }),
-      target: new mb.BufferTarget(),
-    });
-    clip.output.addVideoTrack(clip.source);
-    clip.chain = clip.output.start().catch((err: unknown) => {
+    const source = new mb.EncodedVideoPacketSource("avc");
+    clip.source = source;
+    // Các gói đầu của clip xếp hàng sau chuỗi này (onChunk nối vào clip.chain) nên không gói nào tới trước khi tệp mở.
+    clip.chain = (async () => {
+      const sink = await this.opts.openSink();
+      clip.sink = sink;
+      clip.output = new mb.Output({
+        // fastStart false: ghi dần xuống ổ, `moov` viết ở CUỐI tệp lúc kết thúc (chỉ thêm ≈ 6 KB; tua vẫn được).
+        format: new mb.Mp4OutputFormat({ fastStart: false }),
+        target: new mb.StreamTarget(sink.stream() as WritableStream<Mediabunny.StreamTargetChunk>, {
+          chunked: true,
+          chunkSize: WRITE_CHUNK_BYTES,
+        }),
+      });
+      clip.output.addVideoTrack(source); // ⛔ không khai frameRate (xem đầu tệp)
+      await clip.output.start();
+    })().catch((err: unknown) => {
       clip.error = `Không mở được tệp MP4: ${errText(err)}`;
     });
   }
@@ -383,8 +410,9 @@ export class ClipPipeline {
           throw new Error("Clip không có khung hình nào");
         }
         await output.finalize();
-        const buffer = (output.target as Mediabunny.BufferTarget).buffer;
-        if (!buffer) throw new Error("Ghép xong nhưng không có dữ liệu tệp");
+        const file = clip.sink?.finish();
+        clip.sink = null; // từ đây tệp thuộc về hàng chờ gửi
+        if (!file || !file.sizeBytes) throw new Error("Ghép xong nhưng không có dữ liệu tệp");
         const mediaSeconds = (clip.lastTsUs - clip.t0Us + this.frameDurUs) / 1e6;
         return {
           ok: true,
@@ -396,13 +424,19 @@ export class ClipPipeline {
             width,
             height,
             frames: clip.chunks,
-            buffer,
+            file,
           },
         };
       })
       .then(
         (outcome) => clip.resolve(outcome),
-        (err: unknown) => clip.resolve({ ok: false, code: clip.code, error: errText(err) })
+        (err: unknown) => {
+          // Clip hỏng: dọn các mảnh đã ghi xuống ổ để không thành rác.
+          const sink = clip.sink;
+          clip.sink = null;
+          if (sink) void this.opts.discardFile(sink.finish().fileKey).catch(() => {});
+          clip.resolve({ ok: false, code: clip.code, error: errText(err) });
+        }
       );
   }
 
