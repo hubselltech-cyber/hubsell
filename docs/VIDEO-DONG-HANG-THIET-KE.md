@@ -1515,6 +1515,10 @@ vẫn chỉ mở cho `admin@hubsell.vn` → khách khác không chạm tới. Tr
 ⚠️ M1 lên prod khi mục 21.4 điểm 1–2 (webcam thật + rút mạng thật) CHƯA làm và câu K-1 chưa có trả lời — anh thử thẳng trên prod; mọi
 dòng "CHƯA commit / CHƯA push" ở mục 21 và 22.8 là trạng thái TRƯỚC lượt này.
 
+**Sau khi push:** commit `fbf46c98`, đẩy ~14:28. 14:31:52 gói mã công khai của `app.hubsell.vn/orders/videos/record` đã chứa chuỗi của bản
+mới (`hubsell.packVideo.closeup`, tệp `/_next/static/chunks/2nzs_klyxf049.js`) — soi tệp tĩnh, không đăng nhập. CHƯA nhìn màn hình trên
+prod (em không đăng nhập prod), chưa xem Render. Hai máy chủ local (3010 / 4010) em đã dừng.
+
 ---
 
 ## 23. Việc còn lại của phần camera — anh nêu 19/11/2026 (DANH SÁCH, chưa làm, chưa xếp thứ tự)
