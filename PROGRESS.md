@@ -5,6 +5,23 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 đêm khuya — Kho chuẩn quốc tế: CODE lát 2 + 3 + 4 + 5 trên local (anh: "Làm hết luôn dứt điểm phần kho") — CHƯA commit, CHƯA đụng prod
+
+- **Trước đó anh hỏi:** "Chốt lại là tồn 29 hay 30" → trên kệ 30, bán được 29 (1 đang giữ cho đơn); "Như vậy là chuẩn quốc tế chưa" → chưa, lát 1 mới là nền. Anh bảo làm hết.
+- **Ghi ở:** `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 15 (lát 2 + 3), 16 (lát 4), 17 (lát 5), 18 (lát 6 không làm), 19 (các bước lên prod, chờ anh).
+- **Lát 2 — hủy sau giao + nhận hoàn:** một bộ hàm có khóa dòng đơn (`restoreStockTx`, `restoreReturnedStockTx`) thay ba đường cũ; công tắc theo shop `restockOnReturn` (mặc định cộng khi sàn báo hủy = như cũ; chủ shop tự đổi sang "khi kho nhận kiện" ở trang Đối soát đơn hoàn).
+- **Lát 3 — hiển thị + cửa ghi theo "hàng trong kho":** công tắc theo shop `stockModel` (mặc định LEGACY = mọi màn như cũ; ON_HAND chỉ đổi bằng SQL). Shop ON_HAND: Tồn kho gồm cả hàng đang giữ, cột Đang giữ, sửa ô / Excel đặt số trong kho (thấp hơn phần đang giữ thì cảnh báo có nút Vẫn lưu), Kiểm kê ghi phần chênh, Nhật ký ba ô số, Thống kê + Giá trị tồn trên hàng trong kho; mobile màn Kho. Có thể bán và số đẩy sàn không đổi ở cả hai cách.
+- **Lát 4 — lý do theo danh sách + báo cáo:** chip lý do ở hộp Nhập / Xuất, phiếu nhiều mã, mobile (không bắt buộc; app mobile cũ gửi câu chip thì máy chủ tự suy mã); hộp "Hàng hỏng, mất & chênh kiểm kê" ở tab Nhật ký kho (30 / 90 / 365 ngày, tách giảm / tăng, giá trị theo giá vốn hiện tại, 20 mã giảm nhiều nhất). Không dùng chữ "Hao hụt".
+- **Lát 5 — Kiểm kê theo phiên:** trang riêng `/products/stocktake/sessions` (trang Kiểm kê nhanh giữ nguyên, thêm một nút vào): nhiều người đếm chung một phiên (quét cộng dồn ở máy chủ), gửi duyệt, chủ shop duyệt mới ghi phần chênh vào kho, đếm mù, biên bản in A4. Hai bảng mới `stocktake_sessions`, `stocktake_lines`.
+- **Lát 6 ("Đang về" từ nhà cung cấp): không làm** — cần phiếu đặt hàng NCC, là phần mới; đề xuất tách việc riêng.
+- **Kiểm:** backend `tsc` sạch; test mới chạy app Express thật trên DB local: `stock-returns` 15, `stock-on-hand` 16, `stock-reasons` 7, `stocktake-sessions` 10 ca, đều qua; cả bộ backend 2.848 qua, 23 đỏ — đúng 23 ca đỏ có sẵn từ trước (đã so tên từng ca với bản gốc: sổ cái bẩn của đơn thử `DEMOPL-*`, `channel-delete-db`, `retention-db`); web `tsc` + eslint sạch trên các thư mục đã sửa; mobile `tsc` sạch. `npm run build` chưa chạy lại (máy chủ local đang giữ tệp Prisma).
+- **Soi màn local** (shop dev ở ON_HAND, mã rộng nhất 60 ký tự / tồn 11.020): Tổng kho 1280 → 1700 không tràn; Nhật ký, Kiểm kê, Thống kê, Đối soát, phiên kiểm kê ở 1280 + 1440, sáng + tối. Đã chạy tay trọn luồng phiên (đếm → quét → gửi duyệt → mở lại → duyệt → bản in) và xuất kho lý do Hỏng → hiện đúng trong báo cáo.
+- **Chưa kiểm:** prod (chưa đụng); EXPLAIN câu báo cáo + câu "chưa về kho" trên dữ liệu lớn; mobile mới kiểm kiểu, chưa chạy máy; hai máy thật cùng đếm một phiên, máy quét thật; đơn thật đi hết vòng hủy sau giao → nhận kiện ở chế độ mới.
+- **Cố ý chưa làm (docs 15.3, 17):** rào xuất tay theo Có thể bán (giữ rào cứng theo sổ); hộp mời 5 shop bật chế độ chuẩn; nút "kiện không về" cả lô; quyền duyệt phiên cho nhân viên; màn phiên trên mobile; bảng Nhật ký vẫn cuộn ngang ở ≤ 1440 như trước (nay hẹp hơn 100 px).
+- **Chờ anh (docs mục 19):** (1) cho dựng tay hai chỉ mục trên prod trước khi push (`Order_return_awaiting_idx`, `InventoryLog_manual_idx`); (2) commit + push; (3) bật ON_HAND cho shop nào — em đề nghị admin@hubsell.vn trước, shop khách đợi chuỗi đối chiếu 7/7 (sớm nhất 25/11); (4) mobile: ra bản / OTA trước khi bật ON_HAND cho shop có nhân viên dùng app.
+- **Local đang để sẵn cho anh xem:** `http://localhost:3010` (backend cổng 4010), tài khoản dev admin@hubsell.vn ở ON_HAND, đơn thử `KCQT-*`, một phiên kiểm kê đã duyệt. Xem xong: `npx tsx scripts/_tmp-kcqt-seed.ts cleanup` rồi xóa `backend/scripts/_tmp-kcqt-seed.ts` (tệp tạm, không commit).
+
+---
 ## Phiên 19/11 ~21:15 — Kho chuẩn quốc tế: thiết kế lại lát 1 ĐÃ LÊN PROD (anh: "Em làm nốt đi rồi push. Mình sẽ check thật trên tài khoản admin@hubsell.vn luôn")
 
 - **Commit + push:** `fed244e2` (mã) + `ecf47893` (tài liệu), `7ba02958..ecf47893`. Chi tiết ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 14.12.

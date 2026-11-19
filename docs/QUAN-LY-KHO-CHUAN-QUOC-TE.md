@@ -919,6 +919,91 @@ Lần deploy thứ hai (commit `d9f34702`, chỉ có migration dọn): 21:32:05 
 - Sau khi gỡ dấu sót, thống kê bảng còn cũ: máy vẫn ước tập đang giữ 6.984 dòng (thật 181) cho tới lượt autoanalyze kế. Câu vẫn đi đúng chỉ mục; em chưa xem lại sau autoanalyze.
 - Chưa thấy trên prod: một đơn thật đi từ Chờ xử lý sang Đang giao qua quét lô / làn đọc con trỏ / đổi tay với bản mới (mới 5 phút sau deploy). Lần đối chiếu 20/11 sẽ cho biết.
 
+## 15. Lát 2 + 3 — ĐÃ CODE trên local 19/11/2026 đêm (anh: "Làm hết luôn dứt điểm phần kho") — CHƯA commit, CHƯA đụng prod
+
+Hai lát lên CÙNG một lượt mã, nhưng bật theo HAI công tắc riêng của từng shop, cả hai mặc định là hành vi cũ. Ngày lên bản không shop nào đổi số, không màn nào đổi.
+
+| Công tắc (`shop_sync_settings`) | Giá trị | Ai đổi |
+|---|---|---|
+| `stockModel` | `LEGACY` (mặc định) · `ON_HAND` | chỉ đổi bằng SQL, shop không tự đổi được. Đây là công tắc của lát 3 |
+| `restockOnReturn` | `ON_CANCEL` (mặc định) · `ON_RECEIVE` | chủ shop tự đổi ở trang Đối soát đơn hoàn. Đây là công tắc của lát 2 |
+
+### 15.1. Lát 2 — hủy sau giao + nhận hàng hoàn
+
+- **Một bộ hàm có khóa** (`integrations/order-stock.ts`): `restoreStockTx` (hủy: nhả giữ nếu hàng chưa rời kho; đã rời kho thì theo công tắc), `restoreReturnedStockTx` (kho bấm nhận kiện). Ba đường cũ (hủy tay, nhận hoàn từng đơn, nhận hoàn cả lô ở `routes/orders.ts`) đều gọi vào đây; hàm riêng `restoreReturnStockTx` đã bỏ. Cả hai khóa dòng đơn trước khi đọc `stockRestoredAt` → hết cảnh hủy tay chạy đua với webhook cộng hai lần.
+- **`ON_RECEIVE`:** đơn đã rời kho mà hủy thì KHÔNG cộng; đơn chuyển "Chờ hàng về". Kho bấm Nhập kho mới cộng, theo số lượng từng dòng thực nhận. Hỏng / mất không cộng.
+- **`ON_CANCEL`:** như cũ. Tổng kho của shop ON_HAND hiện một dòng "Tồn kho đang tính cả N sản phẩm của M đơn hủy sau khi giao mà kho chưa nhận kiện" (đọc qua chỉ mục mới `Order_return_awaiting_idx`).
+- **Màn:** nút "Cộng tồn khi …" ở thanh công cụ trang Đối soát đơn hoàn (`components/warehouse/restock-mode-control.tsx`), chỉ chủ shop thấy, hộp nói rõ được gì mất gì. Đổi chỉ áp cho đơn hủy từ lúc đổi. Trang Đơn hàng đổi câu chữ ở hộp hủy đơn và hộp duyệt yêu cầu hủy.
+- **Nhận hàng ở kho** (`routes/warehouse.ts`) và đổi trạng thái tay giờ gọi `shipStockTx(…, "MANUAL")` trong cùng giao dịch.
+
+### 15.2. Lát 3 — hiển thị + cửa ghi theo "hàng trong kho"
+
+Máy chủ gắn `stockModel` vào từng sản phẩm của danh sách; mọi màn đọc qua `frontend/src/lib/stock-model.ts` (`isOnHand`, `stockShown`, `heldShown`). Shop `ON_HAND` thấy:
+
+- **Tổng kho:** Tồn kho = sổ + đang giữ cho đơn đã chốt + ô không bán; cột "Đang giữ" (đã chốt + chưa thanh toán) đứng trước "Có thể bán"; Có thể bán và số đẩy sàn KHÔNG đổi. Dải giải thích một lần (bấm Đã hiểu là thôi). Lọc Hết hàng theo khả dụng. Giá trị tồn tính trên hàng trong kho.
+- **Sửa ô Tồn kho, Excel:** số gõ là hàng trong kho (`setOnHandAbsolute`). Gõ thấp hơn phần đang giữ → máy chủ trả 409 `BELOW_HELD` kèm số thiếu, màn hỏi lại, có nút "Vẫn lưu". Excel: ô Tồn kho trống thì không đụng tồn (trước đây đè về 0 — sửa cho cả shop cũ); tệp xuất từ bản cũ (có cột "Chờ giao") được đọc theo nghĩa cũ và báo rõ.
+- **Kiểm kê nhanh:** số sổ là hàng trong kho, chốt ghi PHẦN CHÊNH so với số sổ lúc đếm; huy hiệu biến động + nút đếm lại.
+- **Nhật ký kho:** ba ô Đang giữ · Có thể bán · Tồn kho, mỗi ô phần đổi + số sau. `InventoryLog` thêm `kind`, `heldChange`, `heldAfter`, `onHandAfter`. Dòng "Xuất cho đơn" / "Thôi giữ" (đổi 0 trên sổ) chỉ shop ON_HAND thấy.
+- **Thống kê, hộp Nhập / Xuất, phiếu nhiều mã, lịch sử một mã, vị trí:** câu chữ + số theo hàng trong kho.
+- **Mobile** (`screens/StockPage.tsx`): số "Tồn" và "giữ" theo cách của shop; câu chặn xuất nói rõ "xuất được tối đa N (giữ M cho đơn)". Máy chủ cũ / shop cũ thì app hiện y như trước.
+
+### 15.3. Lệch thiết kế, có lý do
+
+| Thiết kế (mục 5) | Đã làm | Vì sao |
+|---|---|---|
+| Rào xuất tay theo "Có thể bán", vượt thì cảnh báo có nút bỏ qua | GIỮ rào cứng theo sổ tồn bán | Xuất quá phần chưa có đơn giữ là lấy hàng của đơn đã chốt; đổi rào là đổi hành vi cho mọi shop, không nằm trong công tắc. Câu báo lỗi của shop ON_HAND đã nói rõ ba số |
+| Hộp mời 5 shop đã quét nhận hoàn bật chế độ chuẩn | CHƯA làm | Nút tự đổi đã có ở trang Đối soát; mời ai là việc bật cho khách, chờ anh |
+| Nút "kiện không về" cho cả lô quá N ngày | CHƯA làm | N chưa có căn cứ (mục 5.2.1). Từng đơn vẫn đóng được bằng luồng hỏng / mất sẵn có |
+| Bảng Nhật ký không rộng thêm | Bảng vốn đã cuộn ngang ở ≤ 1440 (10 cột). Ba ô số thêm 92 px, em thu cột Lý do (2 dòng, 15rem) nên bảng HẸP hơn bản cũ 100 px, nhưng vẫn cuộn | Muốn hết cuộn phải gộp cột, là việc thiết kế lại bảng |
+
+### 15.4. Đã kiểm / chưa kiểm
+
+- Test mới chạy app Express thật trên DB local: `stock-returns.test.ts` 15 ca, `stock-on-hand.test.ts` 16 ca; cùng `stock-committed.test.ts` 21 ca. Cả bộ backend sau khi xong lát 5: 2.848 qua, 23 đỏ — đúng 23 ca đỏ có sẵn từ trước (so tên từng ca với bản gốc).
+- Soi màn trên local, shop dev ở ON_HAND, có mã rộng nhất (mã 60 ký tự, tồn 11.020, giá trị trên 1 tỷ): Tổng kho 1280 / 1366 / 1440 / 1536 / 1700 không tràn; Nhật ký, Kiểm kê, Thống kê, Đối soát đơn hoàn ở 1280 + 1440, sáng + tối. Sửa trong lúc soi: ô Tồn kho tràn 7 px ở 1280; chữ dải thông báo mất trong giao diện tối; mã SKU dài đẩy bảng Kiểm kê cuộn ngang; nhãn nút "Cộng tồn…" làm thanh công cụ Đối soát rớt dòng ở 1280.
+- **Chưa kiểm:** prod (chưa đụng); một đơn thật đi hết vòng hủy sau giao → nhận kiện ở chế độ `ON_RECEIVE`; mobile chỉ kiểm kiểu, chưa chạy trên máy; Excel với tệp thật của khách; trang giới thiệu và hướng dẫn (`guide-tours.ts` không có câu nào sai nghĩa, landing chưa rà).
+
+## 16. Lát 4 — lý do theo danh sách + báo cáo "Hàng hỏng, mất & chênh kiểm kê" — ĐÃ CODE trên local 19/11/2026 đêm, CHƯA commit
+
+- **Danh sách** (`backend/src/lib/stock-reason.ts`, bản sao ở `frontend/src/lib/` và `hubsell-mobile/src/lib/`): Nhập = Nhập hàng · Hàng hoàn nhập lại · Sửa sai số; Xuất = Bán ngoài sàn · Hỏng · Mất / thất lạc · Tặng / dùng nội bộ · Sửa sai số. Dựng theo Shopify (mục 1.5), chưa hỏi khách.
+- **Không bắt buộc.** `/adjust` và `/adjust-bulk` nhận thêm `reasonCode`; mã ghi vào `InventoryLog.kind`, câu Lý do = tên lý do, ghi chú nối sau. Không gửi mã thì ghi y như trước. Mã sai chiều bị từ chối, không ghi gì.
+- **App mobile bản cũ** gửi nguyên câu chip ("Hàng hỏng", "Bán ngoài sàn"…) không có mã → máy chủ tự suy ra mã, giữ nguyên câu. Khách chưa cập nhật app vẫn vào đúng nhóm của báo cáo.
+- **Màn:** hàng chip "Lý do" ở hộp Nhập / Xuất và trang phiếu nhiều mã (nhập chọn sẵn "Nhập hàng", xuất để trống); ô chữ cũ thành "Ghi chú". Mobile: chip theo danh sách chuẩn, thêm "Mất / thất lạc", bỏ "Kiểm lại thấy dư / thiếu" (thành "Sửa sai số").
+- **Báo cáo** `GET /api/inventory/loss-report` + hộp ở tab Nhật ký kho (nút "Hỏng, mất & kiểm kê"): kỳ 30 / 90 / 365 ngày; mỗi nhóm tách giảm và tăng; giá trị = số lượng × giá vốn HIỆN TẠI, chỉ người thấy tài chính; 20 mã giảm ròng nhiều nhất. Nhóm: Hỏng · Mất · Tặng / nội bộ · Chênh kiểm kê · Sửa số trên bảng / Excel · Sửa sai số · Điều chỉnh chưa phân loại (dòng ghi trước ngày có danh sách) · Xuất không ghi lý do. Không gồm đơn sàn, Bán ngoài sàn, Nhập hàng. Không dùng chữ "Hao hụt" (anh 13/11).
+- **Quy mô:** `InventoryLog` không có cột chủ shop. Câu báo cáo đi từ SKU của shop, mỗi SKU dò chỉ mục bán phần mới `InventoryLog_manual_idx ("productId","createdAt") WHERE "orderId" IS NULL` — dòng của đơn sàn không nằm trong chỉ mục. Trên DB local bảng nhỏ nên máy chọn quét cả bảng; ép tắt quét bảng thì câu đi đúng chỉ mục. **Chưa EXPLAIN trên prod.**
+- **Test:** `stock-reasons.test.ts` 7 ca (không mã = như cũ; có mã; suy mã từ chip mobile cũ; mã sai chiều; phiếu nhiều mã; báo cáo đúng nhóm, không lẫn shop khác / đơn sàn; khoảng ngày sai).
+- **Áp cho MỌI shop** (không theo công tắc): thêm một hàng chip và một nút, không đổi số nào.
+
+## 17. Lát 5 — Kiểm kê theo phiên — ĐÃ CODE trên local 19/11/2026 đêm, CHƯA commit
+
+Trang Kiểm kê nhanh giữ nguyên. Phiên là cách THÊM, vào bằng nút "Kiểm kê theo phiên" ở góc trang Kiểm kê.
+
+- **Bảng mới** (migration `20261120110000_stocktake_sessions`, hai bảng rỗng, RLS bật): `stocktake_sessions` (COUNTING → PENDING → APPROVED | CANCELLED; chụp `stockModel` lúc mở), `stocktake_lines` (số đếm, số sổ lúc đếm, ai đếm; lúc duyệt thêm phần chênh đã áp).
+- **Route** `/api/stocktakes` (`routes/stocktakes.ts`), cùng quyền với các route kho: mở phiên, danh sách, chi tiết, ghi số đếm, gửi duyệt, mở lại, hủy, duyệt.
+- **Nhiều người đếm:** số đếm nằm ở máy chủ. Quét là "cộng thêm" ngay trong câu lệnh (`ON CONFLICT … counted + n`) → hai máy quét cùng một mã không mất lượt (test bắn 10 lượt song song). Trang tự đọc lại 15 giây một lần.
+- **Duyệt:** chỉ chủ shop. Ghi PHẦN CHÊNH = số đếm − số sổ lúc đếm, cho MỌI shop (khác trang nhanh của shop cũ vốn ghi đè): phiên có thể treo nhiều giờ trước khi duyệt, ghi đè sẽ cộng ngược hàng đã bán trong lúc chờ. Chạy theo lô 50 dòng mỗi giao dịch, dòng nào áp xong đánh dấu trong cùng giao dịch → đứt giữa chừng bấm duyệt lại chạy tiếp; hai người bấm cùng lúc thì `FOR UPDATE SKIP LOCKED` chia dòng, không dòng nào áp hai lần. Hủy / mở lại khóa dòng phiên trước nên không chen được vào giữa lúc duyệt.
+- **Đếm mù:** người không phải chủ shop không nhận số sổ / phần lệch khi phiên đang đếm (API không trả, màn ẩn hai cột). Phiếu của vị trí vẫn đọc từ route cũ có trả số sổ nên đây là che để đếm khách quan, không phải rào bảo mật.
+- **Biên bản in** `/print/stocktake/<id>`: A4, in bằng trình duyệt, theo mẫu 05-VT lược bớt, không có cột tiền.
+- **Giới hạn:** 2.000 mã / phiên, 200 mã / lượt gửi, 20 phiên đang mở / shop.
+- **Test:** `stocktake-sessions.test.ts` 10 ca (cộng dồn song song; đếm mù; nhân viên không duyệt được; chênh so sổ lúc đếm ở shop cũ và shop ON_HAND; theo vị trí; hai lượt duyệt cùng lúc; mở lại / hủy; mã bị xóa sau lúc đếm).
+- **Đã chạy trên local:** mở phiên → gõ số → quét hai lần → gửi duyệt → mở lại → sửa → gửi → duyệt → xem bản in; sáng + tối, 1280 + 1440.
+- **Chưa làm / chưa kiểm:** quyền duyệt cho nhân viên (hiện chỉ chủ shop); mobile chưa có màn phiên; hai máy thật cùng đếm; máy quét thật; đường "xóa cả Tổng kho" và xóa tài khoản chưa biết hai bảng mới (không có khóa ngoại tới chủ shop, giống `stock_vouchers`).
+
+## 18. Lát 6 ("Đang về" từ nhà cung cấp) — KHÔNG làm trong đợt này
+
+Cần phiếu đặt hàng nhà cung cấp, là một phần mới (đặt → nhận một phần → nhận đủ), không phải một lát của kho hiện có. Mục 5.4 đã ghi "không làm trong đợt này". Em đề xuất tách thành việc riêng khi anh cần.
+
+## 19. Đưa lát 2 → 5 lên prod — CHỜ ANH, em chưa làm bước nào
+
+1. **Trước khi push, chạy tay ở Supabase SQL Editor, ngoài giờ cao điểm** (bảng `Order` và `InventoryLog` lớn, `CREATE INDEX` thường sẽ chặn ghi):
+   - `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_return_awaiting_idx" ON "Order" ("channelId") WHERE "returnStatus" = 'AWAITING';`
+   - `CREATE INDEX CONCURRENTLY IF NOT EXISTS "InventoryLog_manual_idx" ON "InventoryLog" ("productId", "createdAt") WHERE "orderId" IS NULL;`
+   - kiểm `indisvalid = true` cho cả hai.
+2. **Commit + push.** Migration `20261120100000_stock_on_hand_model` thêm 2 cột cài đặt + 4 cột `InventoryLog` (chỉ đổi metadata, có `lock_timeout` + thử lại); `20261120110000_stocktake_sessions` tạo hai bảng rỗng.
+3. **Sau push:** EXPLAIN câu báo cáo lát 4 và câu "chưa về kho" trên prod; xem log worker không có dòng lỗi mới.
+4. **Mobile:** màn kho đã sửa trên master (1.5.0). Shop bật `ON_HAND` mà nhân viên còn dùng app cũ sẽ thấy số "Tồn" theo cách cũ trên app, khác web → phải ra bản app / OTA TRƯỚC khi bật cho shop đó. OTA cho khách 1.4.3 phải dựng từ nhánh `ota/1.4.3-ten-khong-cat`, em chưa đụng.
+5. **Bật `ON_HAND`:** từng shop bằng SQL (`UPDATE shop_sync_settings SET "stockModel" = 'ON_HAND' WHERE "userId" = …`, shop chưa có dòng cài đặt thì `INSERT`). Thứ tự ở mục 8: shop công ty → 2–3 shop tình nguyện → toàn bộ. Em đề nghị shop công ty (admin@hubsell.vn) trước, shop khách đợi chuỗi đối chiếu đủ 7/7 (sớm nhất 25/11) vì Tồn kho của shop ON_HAND cộng thẳng bộ đếm "đang giữ" vào.
+6. **Tắt lại:** đặt `stockModel` về `LEGACY` là màn về như cũ ngay; sổ tồn bán không bị cách hiển thị đụng tới nên không phải chuyển dữ liệu. Riêng Kiểm kê / sửa ô / Excel đã ghi trong lúc ON_HAND thì đã là bút toán thật.
+
 ## 12. Nguồn
 
 Shopify: help.shopify.com/en/manual/products/inventory/fundamentals/inventory-states · …/inventory/managing-inventory-quantities/adjustment-history · …/inventory-and-locations/adjusting-inventory/adjusting-inventory-quantities · …/inventory-and-locations/inventory-counts/performing-and-reviewing-counts · …/fulfillment/managing-orders/canceling-orders · shopify.dev/docs/apps/build/orders-fulfillment/inventory-management-apps/manage-quantities-states
