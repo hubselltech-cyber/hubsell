@@ -1685,3 +1685,246 @@ nguyên mã hiện tại (khóa mở clip mới khi một lần ghi thật hỏn
 
 **Dừng ở đây 19/11 chiều (anh: "Làm tới đây thôi tối làm tiếp").** Prod = `7ec8657d`. Việc chờ: anh thử 4 ca thật trên prod (rút mạng
 10 phút, tắt hẳn Chrome giữa clip, clip 15 phút, một buổi đóng hàng vài chục đơn) + thử camera cận cảnh với webcam thật và tem giấy.
+
+---
+
+## 25. Lùi mốc cắt clip về TRƯỚC lúc quét vài giây — KHẢO SÁT + ĐỀ XUẤT (20/11/2026, anh CHƯA duyệt, chưa code, chưa đo)
+
+**Anh nêu 20/11:** quét tem 1 → quay → quét tem 2 → cắt. Anh muốn video 1 dừng trước lúc quét tem 2 vài giây, vài giây đó chuyển sang
+đầu video 2 — để video 2 mở ra thấy cảnh đưa tem lên rồi hai dòng mã mới hiện, thay vì có sẵn hai dòng mã từ giây 0.
+
+### 25.1 Vì sao không lùi mốc cắt "cho không" được [đọc mã 20/11]
+
+`clip-pipeline.ts` hiện: khung camera → vẽ lên canvas (ngày giờ + hai dòng mã CỦA CLIP ĐANG QUAY) → mã hóa H.264 → ghi thẳng xuống ổ.
+Lúc tem 2 được nhận thì vài giây ngay trước đó (a) đã mang CHỮ CỦA TEM 1 in chết trong hình, (b) đã mã hóa, phần lớn đã nằm trong tệp
+clip 1. Chuyển nguyên các gói đó sang clip 2 thì video 2 mở đầu bằng mã vận đơn của đơn 1 → tệ hơn hiện tại, loại.
+
+### 25.2 Các cách
+
+| | Cách | Kết quả trên video 2 | Giá phải trả |
+|---|---|---|---|
+| **A** | **Đường quay chạy trễ N giây**: giữ N giây khung GỐC (chưa in chữ) trong bộ nhớ rồi mới in chữ + mã hóa. Tem 2 được nhận lúc T thì các khung từ T−N còn chưa in chữ → gán cho clip 2, chỉ in ngày giờ tới T, từ T in thêm hai dòng mã. Clip 1 kết thúc ở T−N. Vẫn MỘT bộ mã hóa, không mã hóa lại, không trùng giây nào. | Đúng ý anh: thấy đưa tem lên → mã hiện | RAM giữ khung gốc: 1280×720 ≈ 1,4 MB / khung → N = 2 giây ≈ 83 MB, 3 giây ≈ 124 MB mỗi bàn [tính, chưa đo]; ngày giờ phải in theo giờ CHỤP khung (không phải giờ vẽ); ô cận cảnh cũng phải trễ cùng nhịp; nút Dừng phải xả nốt N giây; trang sập mất thêm N giây cuối (hiện đã mất tới ≈ 8 giây khúc đang ghi) |
+| B | Hai bộ mã hóa (một bản "sạch" không in mã giữ vòng N giây, một bản có mã) rồi nối gói | Như A | Mã hóa gấp đôi suốt buổi; nối gói của hai bộ mã hóa vào một rãnh MP4 không chắc phát được ở mọi trình phát → em KHÔNG đề nghị |
+| C | Giữ mốc cắt như hiện tại, chỉ CHO HAI DÒNG MÃ HIỆN TRỄ 1–2 giây ở đầu clip mới | Mã không còn có sẵn từ giây 0, nhưng KHÔNG có cảnh đưa tem lên (tem đã ở trước camera lúc clip mở) | Gần như không: vài dòng ở `clip-pipeline.ts` + màn xem trực tiếp; làm được cả trên app |
+
+### 25.3 Đề nghị của em
+
+- Web (webcam): **cách A, N = 2 giây** (số em tự chọn: bộ đọc mã cần 2 lần đọc liên tiếp cách nhau 200 ms nên tem vào hình trước lúc
+  nhận ≈ 0,5–1 giây; 2 giây đủ thấy động tác đưa tem lên). CHUYỂN chứ không CHÉP → tổng số giây trừ giờ của khách không đổi.
+- Làm theo nhịp "đo trước": một lát đo trên trang thử trước khi đụng đường quay thật — (1) giữ 60–90 khung gốc có làm camera rớt khung
+  không (giữ thẳng khung camera nhiều khả năng làm cạn bể đệm của Chrome → phải chép ra; chưa đo), (2) RAM + CPU trên máy không card
+  rời (câu K-5 còn nợ), (3) đường lùi `rvfc`, (4) ô cận cảnh trễ cùng nhịp.
+- App điện thoại: cách A KHÔNG làm được với đường quay hiện tại (Android ghi bằng bộ ghi sẵn của CameraX, cắt = dừng + mở tệp mới, không
+  với lại được khung đã qua; iPhone phải viết thêm bộ đệm khung trong bản vá Swift). Nếu cần đồng bộ hình thức thì app dùng cách C.
+
+### 25.4 Điểm cần anh quyết
+
+1. Web làm A (đo trước) hay chỉ C cho nhanh.
+2. N = 2 hay 3 giây.
+3. ⚠️ Chuyển N giây cuối của video 1 sang video 2 nghĩa là video 1 MẤT N giây cuối. Nếu người đóng hàng vừa đặt kiện 1 xuống là quét
+   tem 2 ngay thì cảnh "kiện 1 đã dán kín" có thể rơi sang đầu video 2. Chưa xem clip thật để biết 2 giây cuối đang là cảnh gì — nên
+   soi vài clip prod trước khi chốt N. (Cách "chép" — giữ cả hai — cần mã hóa hai lần đoạn đó và trừ giờ khách hai lần, em không đề nghị.)
+4. Tem ĐẦU TIÊN sau khi bấm Bắt đầu: đoạn quay tay trước tem đang bị bỏ (luật 18/11) → với A thì N giây cuối của đoạn đó thành đầu clip
+   tem 1; em coi là đúng ý, nêu để anh biết.
+
+### 25.5 Anh nêu thêm 20/11: ghép sẵn một đoạn ĐẾM NGƯỢC 2-1 vào đầu mỗi video (chấp nhận khách mất 2–3 giây) — em trả lời, anh CHƯA chốt
+
+- **D1 — ghép TỆP video có sẵn:** không nối thẳng được. Mỗi máy mã hóa H.264 một kiểu (web 1280×720, iPhone 768×1024, có / không ô cận
+  cảnh, mức High / Main / Baseline tùy máy) → nối gói của tệp khác vào rãnh video là đúng cái rủi ro của cách B.
+- **D2 — vẽ đếm ngược rồi đưa qua CHÍNH bộ mã hóa đang chạy, ngay trước khung thật đầu tiên của clip:** làm được trên web, không cần
+  giữ khung gốc như cách A [suy từ mã, chưa thử]. Giá: mỗi video dài thêm 2–3 giây hình KHÔNG phải camera quay → (1) video thành "có
+  dựng" trong khi TikTok đòi liên tục, không chỉnh sửa (chưa có câu chữ sàn nào về thẻ mở đầu — là rủi ro, không phải điều cấm đã đọc);
+  (2) đồng hồ in trong hình đứng / mất ở đoạn đó; (3) 2–3 giây × 1.000 đơn / ngày = 33–50 phút / ngày ≈ 17–25 giờ / tháng trừ vào giờ
+  của khách [tính]; (4) ăn vào mốc 1 phút tải thẳng của Shopee; (5) app: Android không chèn được khung giả vào bộ ghi sẵn của CameraX.
+- **D3 — ĐẾM NGƯỢC IN ĐÈ LÊN HÌNH THẬT (em đề nghị thay D2):** 2 giây đầu của clip mới là hình camera thật, chỗ hai dòng mã hiện số
+  "2" → "1", hết đếm thì hai dòng mã hiện ra. = cách C có thêm hình đếm ngược. Không thêm giây nào, không có khung giả, video vẫn liền;
+  web sửa nhỏ ở `stamp-canvas` / `clip-pipeline` + màn xem trực tiếp; iPhone đi được bằng đường truyền chữ đang dùng cho hai dòng mã
+  (chưa thử); Android chưa có đường in chữ. Vẫn KHÔNG có cảnh đưa tem lên — cảnh đó chỉ cách A cho được.
+- Nếu anh vẫn chọn D2: em đề nghị KHÔNG trừ giờ đoạn đếm ngược và giữ đồng hồ chạy trong đoạn đó.
+
+### 25.6 ★ ANH CHỐT 20/11: cách C, trễ 1 GIÂY — ĐÃ DỰNG TRÊN LOCAL (chỉ web; CHƯA commit, CHƯA push)
+
+Anh: "anh nghĩ cách C của em cũng hợp lý. để 1 giây trễ. 1 giây là khoảng nhỏ cảnh đưa lên hạ xuống cũng mất tầm 1 giây." → ⛔ đừng đề
+xuất lại cách A / đếm ngược trừ khi anh mở lại.
+
+- **Luật:** mốc cắt clip KHÔNG đổi. Ngày giờ in từ khung đầu. Hai dòng "Mã vận đơn" / "Mã đơn hàng" chỉ in từ khi clip đã chạy đủ
+  1 giây (hằng `CODE_LINES_DELAY_MS = 1000` ở `config.ts`). Clip quay tay vốn không có dòng mã → không đổi. Thời lượng clip, số giây
+  trừ giờ, tệp MP4: không đổi.
+- **Tệp:** `config.ts` (hằng) · `stamp-canvas.ts` (`codeLinesDue`, dùng chung) · `clip-pipeline.ts` (tính theo MỐC GIỜ CỦA KHUNG HÌNH
+  so với khung đầu clip → đúng từng khung trong tệp) · `camera-stage.tsx` (màn xem trực tiếp ẩn hai dòng mã tới `startedAtMs` + 1 giây;
+  đổi clip là ẩn ngay, không nháy mã mới) · test `stamp-canvas.test.ts` + `clip-pipeline-code-delay.test.ts` (mới).
+- **Đã kiểm:** `tsc` sạch; eslint sạch ở hai thư mục đụng tới; 54 / 54 ca test của `pack-video-recorder`. Bài test mới chạy ĐƯỜNG QUAY
+  THẬT (`ClipPipeline`) với bộ mã hóa + camera giả ở 10 khung / giây: clip đầu và clip ngay sau một lần cắt đều không có dòng mã ở các
+  khung 0–900 mili giây, có từ khung 1.000; mã đơn hàng về sớm trong giây đầu cũng chờ; không khung nào của clip sau mang mã của tem trước.
+- **CHƯA kiểm:** chưa nhìn trên trình duyệt (webcam thật lẫn camera giả — lượt gài camera giả vào trang local bị công cụ từ chối), chưa
+  mở tệp MP4 thật soi khung hình; màn xem trực tiếp tính theo đồng hồ máy còn tệp tính theo mốc khung hình → có thể lệch nhau vài chục
+  mili giây (chưa đo).
+- **App điện thoại CHƯA làm:** iPhone (nhánh thử) JS đang ghi chữ ngay lúc mở clip — muốn giống web thì hẹn 1 giây rồi mới ghi; Android
+  chưa có đường in chữ. Chờ anh bảo.
+
+### 25.7 Anh thử Chrome 20/11: "tương đối hợp lý. Nhưng nếu dơ nhanh thì mất đoạn video đưa lên ở video sau thật, vì nó nằm ở video đầu"
+
+Đúng giới hạn đã ghi của cách C (25.2): C chỉ dời lúc HIỆN CHỮ, không dời khung hình. Cảnh đưa tem lên xảy ra TRƯỚC lúc máy nhận tem
+nên nằm ở cuối video trước, lại mang mã của tem trước in chết trong hình → không bê sang được.
+
+**Em đề nghị (anh CHƯA duyệt, chưa code): cách A với N = 1 giây, GHÉP với cái vừa dựng.** Đường quay chạy trễ 1 giây (giữ 1 giây khung
+gốc chưa in chữ). Tem 2 được nhận lúc T → video 2 bắt đầu từ T − 1 giây (cảnh đưa tem lên), hai dòng mã hiện đúng lúc T = giây thứ 1
+của video 2 — khớp luật "trễ 1 giây" đang chạy, chỉ khác là giây đầu nay là cảnh ĐƯA TEM LÊN thay vì cảnh sau khi quét.
+
+- Giá [tính, chưa đo]: ≈ 41 MB RAM / bàn (30 khung × 1,38 MB; 25.2 tính cho 2–3 giây); video trước ngắn đi 1 giây cuối (chuyển sang
+  video sau, tổng giờ trừ của khách không đổi); nút Dừng phải xả nốt 1 giây; trang sập mất thêm 1 giây cuối; ngày giờ in theo giờ CHỤP.
+- Phải đo trước trên webcam thật của anh (em không gài được camera giả): giữ 30 khung gốc có làm camera rớt khung không, RAM / CPU,
+  đường lùi `rvfc`, ô cận cảnh trễ cùng nhịp. Em dựng trang đo ở `tools/thu-webcam`, anh mở bằng Chrome.
+- App điện thoại: vẫn chỉ làm được cách C (25.3).
+
+### 25.8 ĐÃ PUSH cách C 20/11 — commit `e749f7ce` (anh: "Tạm thời push cách C giải quyết chút nhỏ đã")
+
+`91ace667..e749f7ce` lên master: 6 tệp frontend ở 25.6 (4 tệp mã + 2 tệp test). Anh đã thử trên Chrome local trước khi bảo push
+("tương đối hợp lý"). CHƯA soi gói mã trên `app.hubsell.vn` sau khi Vercel dựng; chưa mở tệp MP4 thật. Đường quay trễ 1 giây (25.7):
+anh CHƯA duyệt — "tạm thời" dừng ở cách C, đừng tự làm. Anh nhận xét thêm: "bảo sao mà các bên họ phải dùng máy bắn bắt đầu và kết
+thúc" (có tín hiệu kết thúc riêng thì cảnh đưa tem kế không rơi vào video trước) — chỉ là nhận xét, luồng tự cắt theo tem kế GIỮ NGUYÊN.
+
+### 25.9 Cách C trên APP ĐIỆN THOẠI (iPhone) — 20/11, anh: "Test cách C cho điện thoại đi em"
+
+- **Nơi làm:** nhánh thử `thu/video-dong-goi-lat-0` (worktree `D:\HubsellVideo`), commit TẠI MÁY `09b7b1be`, KHÔNG đẩy.
+- **Đổi gì:** `src/lib/pack-video-overlay.ts` thêm `CODE_LINES_DELAY_MS = 1000`; `src/app/video-test.tsx`: lúc mở clip chỉ GỠ chữ của tem
+  trước, bộ ghi chạy rồi mới hẹn 1 giây in mã của tem này; mã đơn hàng máy chủ trả sớm trong giây đầu thì giữ lại tới mốc; clip đổi /
+  dừng trong lúc chờ thì bỏ lượt hẹn. Mốc cắt, thời lượng clip, đường tải lên: không đổi. Màn xem trước iPhone vẽ lại đúng các dòng
+  đang in nên cũng trễ 1 giây.
+- **Khác bản web:** web tính theo mốc giờ của TỪNG KHUNG HÌNH (đúng từng khung); iPhone tính bằng đồng hồ JS kể từ lúc bộ ghi báo đã
+  chạy, phần Swift đọc chữ ở mỗi khung → mốc có thể lệch khoảng một hai trăm mili giây [ước lượng, chưa đo].
+- **Android:** chưa có đường in chữ lên video (bản vá Kotlin mới in ngày giờ) → cách C chưa có gì để trễ; không đổi.
+- **Đã kiểm:** `tsc` sạch, eslint sạch hai tệp. **CHƯA kiểm:** chưa chạy trên máy nào — phần này chỉ thử được trên iPhone thật.
+- **Bản dựng:** EAS `c15da7ed-0e8a-47b2-85e4-0364783d70dd` = **1.5.0 (39)**, profile `thuVideo`, commit `09b7b1be`. ⛔ **CHƯA NỘP TestFlight
+  — anh 20/11: "Để bản dựng xong rồi mới lên bản test mới"** → em GIỮ, không nộp khi anh chưa bảo. ⚠️ Bản khách 1.5.0 (38) đang
+  IN_REVIEW; Apple duyệt + phát hành xong thì số 1.5.0 đóng, bản thử 1.5.0 (39) không tải lên được nữa → phải nâng số (anh chốt số) và
+  dựng lại. ⚠️ Nộp App Store thật: đừng gắn build 39.
+- **★ ANH CHỐT 20/11: "Vậy chờ duyệt xong mới nộp bản test mới"** → ⛔ KHÔNG nộp bản 39 lên TestFlight. Khi Apple duyệt + phát hành
+  xong 1.5.0: nâng số phiên bản nhánh thử (anh chốt số; em đề nghị 1.5.1) → dựng lại profile `thuVideo` → nộp TestFlight. Em KHÔNG tự
+  theo dõi trạng thái duyệt; anh báo (hoặc hỏi) thì em đọc `asc-release.mjs status` rồi làm.
+- **★ ANH CHỐT SỐ 20/11: "Sau khi app duyệt xong bản 1.5.0 thì lấy 1.5.1 nhưng mình chỉ nộp TestFlight thôi"** → bản thử = **1.5.1**,
+  ⛔ CHỈ nộp TestFlight, KHÔNG tạo phiên bản 1.5.1 trên App Store, KHÔNG gửi duyệt, KHÔNG gắn bản thử vào phiên bản nào. Nhánh thử đã
+  nâng `app.json` lên 1.5.1 (commit tại máy, không đẩy) — CHƯA dựng. ⚠️ Nếu sau này bản KHÁCH cũng cần số 1.5.1 thì phải nhìn số bản
+  dựng để không gắn nhầm bản thử.
+
+### 25.10 Bản thử 1.5.1 (41): lối vào dời sang tab ĐƠN HÀNG + cách C + gộp master — 20/11 chiều
+
+Anh: "phần app mobile, chuyển phần Quay video đóng hàng ở tab Tổng quan sang tab 'Đơn hàng' (anh khoanh góc phải dòng tiêu đề). Tiếp đó
+làm phần trễ mã vận đơn xuất hiện muộn hơn trong video. Rồi build app và lên bản TestFlight mới." Em đọc `asc-release.mjs status` lúc
+~13:00: bản khách **1.5.0 = READY_FOR_SALE** (Apple đã duyệt + phát hành) → điều kiện ở 25.9 đã đủ.
+
+- **Gộp master vào nhánh thử** (commit tại máy `77ff8d7a`, không xung đột): bản khách 1.5.0 có Kho chuẩn quốc tế trên app, tên không
+  cắt, âm báo quét — không gộp thì cài bản thử là anh MẤT các phần đó trên máy (cùng một app Hubsell).
+- **Lối vào (commit tại máy `e2c42c8f` + `ffa02633`):** bỏ ô "Quay video đóng gói" ở Tổng quan (`OverviewPage.tsx` trả về ĐÚNG bản
+  master); thêm nút **"Quay video"** ở góc phải dòng tiêu đề tab Đơn hàng (`app/(admin)/orders.tsx`), mở `/video-test` như cũ. Vẫn chỉ
+  hiện khi `IS_VIDEO_TEST_BUILD` (bản dựng từ nhánh thử). Lối vào cho NHÂN VIÊN (mục 17.3, tab con trong Kho) KHÔNG làm ở lượt này.
+- **★ Anh: "Làm cho thẳng hàng thẳng lối vào em"** (bản đầu nút rộng theo chữ, lệch cột với nút Đóng gói) → hàng tiêu đề chia theo
+  ĐÚNG lưới 4 cột của hàng ô tìm + Đóng gói (khe 8 px, gốc 16 px rồi 3 : 1), nút = đúng MỘT ô; viền nằm ở lớp trong (ô chia cột mang
+  viền thì rộng hơn ô Đóng gói đúng bằng viền). Một ô ở màn 390 chỉ ~83 px, chữ "Quay video" ~64 px → KHÔNG có icon trên iPhone (icon
+  chỉ hiện khi ô ≥ 98 px, màn từ ~448); chữ không phóng theo cỡ chữ hệ thống, ô hẹp hơn chữ thì tự co (`adjustsFontSizeToFit`).
+  Nút viền trung tính, không xanh — để không tranh với nút Đóng gói.
+- **Số đo (giả lập web của nhánh thử, backend local 4010, tài khoản seed):** mép trái / phải của nút Quay video so với nút Đóng gói —
+  320: 238 / 304 = 238 / 304 · 375: 279,3 / 359 = 279,3 / 359 · 390: 290,5 / 374 = 290,5 / 374 · 430: 320,5 / 414 = 320,5 / 414; chip
+  Lazada lệch 0,5 px (có sẵn). Không cuộn ngang ở cả bốn cỡ. Đã nhìn nền tối ở 320. Bấm nút → sang `/video-test`.
+- **Cách soi nhánh thử trên web (ghi để lần sau khỏi mò):** web KHÔNG dựng được vì `video-test.tsx` nhập thư viện camera gốc → đặt
+  TẠM `src/app/video-test.web.tsx` (màn rỗng) + ép TẠM cờ `IS_VIDEO_TEST_BUILD` (trên web `expoConfig.android` không có nên cờ tắt) +
+  một cấu hình tạm trong `.claude/launch.json` chạy `npm run web` với `cwd` = worktree; thêm tệp `.web.tsx` thì phải KHỞI ĐỘNG LẠI
+  Metro. Nền tối trên web: thêm lớp `dark` vào thẻ `html` (tailwind `darkMode: "class"`). Xong phải gỡ cả ba thứ tạm — đã gỡ.
+- **Cách C (mã hiện trễ 1 giây):** mã đã có từ `09b7b1be` (25.9), lượt này chỉ đọc lại, KHÔNG đổi dòng nào.
+- **Đã kiểm:** `tsc` sạch; eslint cả `src` = 47 (đúng mức nền của master). **CHƯA kiểm:** chưa chạy trên iPhone thật — nút mới, cách C,
+  và các màn master vừa gộp đều chờ anh thử trên TestFlight; chữ tự co ở màn hẹp là hành vi của iOS, giả lập web không có.
+- **Bản dựng:** EAS `c3c265fb-ca13-4de4-9911-285d95fd51b1` = **1.5.1 (41)**, profile `thuVideo`, kênh `thu-video`, commit `ffa02633`
+  (bản `b6cc8836` gọi trước đó mang bố cục nút cũ → đã HỦY). Lượt nộp TestFlight hẹn sẵn trên Expo:
+  `4b7688b9-8336-4981-8f61-4fc1b9414260` (`eas submit -p ios --profile production --id …` từ repo chính; ✅ dựng xong 13:50, App Store Connect ghi build 41 VALID 13:52 — chưa nhìn trong app TestFlight; `eas` không có trong PATH,
+  gọi `npx eas-cli`). ⛔ CHỈ TestFlight: không tạo phiên bản 1.5.1 trên App Store, không gửi duyệt. ⚠️ đừng gắn build 41 khi nộp
+  App Store thật.
+
+### 25.11 App: HIỆN SỐ GIỜ QUAY + HẾT GIỜ THÌ KHÔNG MỞ CLIP MỚI — bản thử 1.5.1 (42), 20/11 chiều
+
+Anh: "Còn việc chặn thời gian trên app có chưa? ví dụ khách chưa mua thời gian quay và đã mua thời gian quay đã link với web chưa"
+→ em đọc mã rồi trả lời, anh: "Làm luôn".
+
+**Trước lượt này [đọc mã 20/11]:**
+- Giờ quay DÙNG CHUNG web + app: sổ giờ ở máy chủ theo chủ shop (`backend/src/services/pack-video/hours.ts`), không theo thiết bị.
+- Máy chủ CÓ chặn: `POST /api/pack-videos` trả `402 OUT_OF_HOURS` khi số dư ≤ 0, trừ clip bắt đầu quay lúc còn giờ
+  (`canOpenNewVideo`, `upload.ts`).
+- App CHƯA đọc `/hours`: không hiện số giờ, không chặn trước lúc quay → hết giờ vẫn quay được, clip quay xong mới bị từ chối
+  lúc tải lên và nằm lại trong máy ở trạng thái lỗi (không tự thử lại).
+
+**Đã làm (nhánh thử, commit TẠI MÁY `0784941b`, không đẩy):**
+- `src/lib/pack-video-hours.ts` (tệp thuần + `pack-video-hours.test.ts`, 8 ca): đọc ba số của `GET /api/pack-videos/hours`, câu
+  hiện CÙNG CHỮ với web (`Còn 19 giờ 50 phút` · `Đã hết giờ quay` · `Vượt gói 9 phút` · `Chưa mua giờ quay`), luật chặn
+  `outOfHours` = cùng luật `clipBlocker` của màn webcam: **chưa có số (đang tải / mất mạng) thì KHÔNG chặn** — máy chủ vẫn là rào
+  thật; số dư ≤ 0 thì không mở clip MỚI.
+- `src/app/video-test.tsx`:
+  - dòng "Giờ quay: …" trên bảng điều khiển (xanh, hết giờ thì đỏ + nút "Kiểm tra lại");
+  - hết giờ mà đưa tem vào / bấm QUAY THỬ → KHÔNG mở clip, băng đỏ "ĐÃ HẾT GIỜ QUAY — không mở video mới" + âm lỗi (một lần
+    cho mỗi tem);
+  - đang quay mà tem KẾ xuất hiện lúc đã hết giờ → đóng clip đang quay (nó vẫn lên hệ thống — đúng luật "quay nốt" anh chốt
+    14/11), không mở clip mới. Cùng cách với màn webcam (`recorder.ts` `onRead`).
+- `src/lib/pack-video-upload.ts`: lỗi `OUT_OF_HOURS` lúc tải lên có câu riêng của app ("Đã hết giờ quay — video này chưa lên
+  hệ thống"); tệp vẫn ở trên máy, có giờ lại thì bấm "Thử lại".
+- **Không có nút / đường dẫn / lời mời mua giờ trong app** — app iPhone không được dẫn khách ra ngoài để trả tiền; giờ mua trên web.
+
+**Bao nhiêu lượt gọi máy chủ (tính trước):** hỏi `/hours` khi mở màn quay, khi app trở lại màn hình, khi một clip bị từ chối; khi
+clip lên xong thì app TỰ TRỪ thời lượng clip đó (đúng số máy chủ ghi: `max(1, round(giây))`) và chỉ hỏi lại số thật nhiều nhất
+mỗi 120 giây; đang bị chặn mà khách vẫn đưa tem thì hỏi lại nhiều nhất mỗi 10 giây. Shop 1.000 đơn / ngày đóng 8 giờ → tối đa
+≈ 240 lượt / ngày / máy thay vì 1.000. Hai số 120 giây / 10 giây là số em TỰ CHỌN (web làm mới mỗi 30 giây).
+
+**Đã kiểm:** `tsc` sạch; eslint cả `src` = 47 (mức nền); 8 / 8 ca test (`backend/` → `npx tsx --test
+../../../HubsellVideo/hubsell-mobile/src/lib/pack-video-hours.test.ts`).
+**CHƯA kiểm:** chưa chạy trên máy nào — màn quay dùng camera gốc nên giả lập web không mở được; ca hết giờ thật chưa thử (tài
+khoản admin prod đang còn giờ → muốn thử phải có tài khoản hết giờ hoặc điều chỉnh sổ giờ, anh quyết).
+**Còn nợ của màn quay app (chưa làm):** hàng chờ tải lên còn nằm trong bộ nhớ (tắt app là mất lượt gửi, tệp vẫn trên máy); clip
+lỗi vì hết giờ không tự gửi lại khi có giờ (phải bấm "Thử lại"); Android chưa có đường in mã; lối vào cho nhân viên (17.3).
+
+**Bản dựng:** EAS `ae978be4-19a9-4f78-b94c-81b496255bc7` = **1.5.1 (42)**, profile `thuVideo`, commit `0784941b`; lượt nộp
+TestFlight hẹn sẵn `3cee0cad-76d0-4e0b-afd4-d7b7d6f5fa19`. Bản 41 (25.10) đã VALID 13:52 — bản 42 thay bản 41 trên máy anh.
+⛔ CHỈ TestFlight; ⚠️ đừng gắn build 41 / 42 khi nộp App Store thật.
+
+### 25.12 App: HÀNG CHỜ BỀN + nút TRỞ VỀ — bản thử 1.5.1 (43), 20/11 chiều
+
+Anh: "làm hàng chờ và cả phần 'trở về' nữa, vào quay video không trở về được chỉ có thoát app". (Bản 42 ở 25.11 đã VALID trên
+App Store Connect 14:22.)
+
+**Nút Trở về (`src/app/video-test.tsx`):** nút mũi tên + chữ "Trở về" ở đầu hàng công tắc Đóng hàng / Khui hàng hoàn (màn dưới
+360 px chỉ còn mũi tên) và ở màn "chưa có quyền camera". Đang quay mà bấm → ĐÓNG clip trước (clip vào hàng chờ, vẫn lên hệ
+thống) rồi mới rời màn. App thử Android mở thẳng màn quay (không có màn phía sau) thì không hiện nút. Đặt ở bảng dưới chứ không
+đè lên góc hình: góc trái trên của hình là chỗ ngày giờ + hai dòng mã.
+
+**Hàng chờ bền — trước lượt này:** hàng chờ tải lên chỉ nằm trong bộ nhớ → tắt app / máy hết pin giữa lúc chờ hay đang gửi là
+MẤT lượt gửi; tệp clip nằm lại ở thư mục tạm của camera (máy có thể dọn), không ai gửi.
+
+**Đã làm (commit TẠI MÁY `38369d6c`, không đẩy):**
+- `src/lib/pack-video-queue-record.ts` (tệp thuần + 8 ca test): mỗi clip chờ gửi có MỘT tệp sổ `<clientId>.json` nằm cạnh tệp
+  clip `<clientId>.mp4`. Không dùng một tệp danh sách chung (ghi đè dở là hỏng cả danh sách — bài học mục 21). Sổ chỉ lưu TÊN
+  tệp, không lưu đường dẫn đầy đủ: trên iPhone đường dẫn thư mục của app đổi sau mỗi lần cập nhật app. Tệp sổ hỏng / ghi dở thì
+  bỏ qua, KHÔNG xóa gì; tên tệp trỏ ra ngoài thư mục hàng chờ thì không nhận.
+- `src/lib/pack-video-upload.ts`:
+  - clip quay xong → ghi tệp sổ TRƯỚC, DỜI tệp clip vào `Documents/pack-video-queue/` SAU (ngược lại sẽ để lại tệp mồ côi);
+    không dời được (Android ghi ra thư mục ngoài) thì sổ ghi đường dẫn gốc; không ghi được sổ thì clip vẫn gửi trong phiên như
+    cũ — mọi bước có đường lùi về cách chạy của bản 42.
+  - `resumeUploads()`: đọc sổ trên máy, nạp lại clip của tài khoản đang đăng nhập, gửi tiếp bằng ĐÚNG `clientId` cũ → máy chủ
+    trả lại dòng cũ, không sinh video trùng (rào D1). Lên xong xóa cả tệp clip lẫn tệp sổ; tệp clip đã mất thì gỡ dòng sổ.
+  - Clip gắn TÀI KHOẢN đã quay (`setUploadOwner`): đổi tài khoản trên cùng máy thì clip nằm chờ, đăng nhập lại là gửi tiếp.
+  - Mất mạng (không tới được máy chủ / kho) → DỪNG lượt gửi, cả hàng chờ; mỗi 60 giây một clip đi dò, mạng về thì gửi cả hàng
+    (60 giây là số em TỰ CHỌN). Clip bị từ chối vì hết giờ / tài khoản chưa mở / chưa đăng nhập thì "giữ": không nằm trong nhịp
+    tự thử, chỉ gửi lại khi mở app, app trở lại màn hình, bấm "Gửi lại", hoặc số giờ trở lại dương.
+- `src/components/PackVideoQueueResume.tsx` + `src/app/_layout.tsx`: thẻ rỗng ở GỐC app (chỉ bản dựng từ nhánh thử) — biết ai
+  đăng nhập là gửi tiếp, app trở lại màn hình là gửi tiếp. Khách không phải mở lại màn quay (cùng ý K-6 của web).
+- Màn quay: dòng vàng "Chờ gửi lên hệ thống: N video" + nút "Gửi lại" khi còn clip chưa lên (kể cả clip của lần mở app trước).
+
+**Không trái chốt "bỏ lưu local":** tệp chỉ nằm trên máy tới khi lên hệ thống rồi tự xóa; không có nút xem / giữ / tải về trong
+app (cùng cách hiểu K-1 của web, anh đã nghe giải thích 19/11 — mục 24.8).
+
+**Đã kiểm:** `tsc` sạch; eslint cả `src` = 47 (mức nền); 16 / 16 ca test (hai tệp `pack-video-queue-record.test.ts`,
+`pack-video-hours.test.ts`); đã đọc mã gốc iOS của gói tệp: `move` tới một TỆP đích = `FileManager.moveItem` tới đúng đường dẫn
+đó (đổi tên trong cùng ổ, không chép).
+**CHƯA kiểm — phần đọc / ghi tệp chỉ chạy được trên máy thật:** dời tệp sau khi quay, tắt hẳn app giữa lúc gửi rồi mở lại,
+bật chế độ máy bay 10 phút rồi tắt, cập nhật app khi còn clip chờ, đổi tài khoản khi còn clip chờ, clip dài gửi theo mảnh bị
+ngắt giữa chừng. Clip ĐANG QUAY lúc app bị tắt vẫn mất (chưa có sổ cứu như M1b của web).
+
+**Bản dựng:** EAS `94dd58e4-20bc-4317-82e9-80c4103b38e2` = **1.5.1 (43)**, profile `thuVideo`, commit `38369d6c`; lượt nộp
+TestFlight hẹn sẵn `812ff6a6-d2d1-43e5-8609-88ce94ab48c8`. ⛔ CHỈ TestFlight; ⚠️ đừng gắn build 41 / 42 / 43 khi nộp App Store.
+
+✅ **Bản 43 VALID trên App Store Connect** — tải lên 14:36, đọc bằng `asc-release.mjs status` lúc 14:39 20/11; chưa nhìn trong app TestFlight trên máy.
