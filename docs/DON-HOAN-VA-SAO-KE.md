@@ -114,7 +114,7 @@ Làm mượt chạy trong từng tiến trình (web và worker mỗi bên một 
 | 3 | Chỉ mục `Order_return_lookup_pending_idx` rộng hơn câu tìm một chút | Gồm cả đơn đã ghi mốc kiện hoàn về mà chưa đóng mốc. Không ảnh hưởng kết quả |
 | 4 | Quét bù Shopee nhớ "đơn lỗi nghỉ 6 giờ" trong bộ nhớ tiến trình | Khởi động lại là mất, đơn đó được hỏi lại sớm hơn. Cùng cách với phần điền mã vận đơn trong cùng tệp |
 | 5 | Lazada chưa có đường dựng lại sao kê | Sao kê Lazada ghi kiểu cũ tự được đọc lại khi đơn xuất hiện trong lượt quét; đơn không xuất hiện nữa thì giữ nguyên |
-| 6 | Lượt đối soát TikTok mỗi giờ đọc lại toàn bộ bản kê 7 ngày | Bản kê đã chốt không đổi. Bỏ qua bản kê đã đọc sẽ cắt phần lớn lượt gọi tài chính và bớt việc sổ cái bị đánh dấu tính lại hàng giờ |
+| 6 | Lượt đối soát TikTok mỗi giờ đọc lại toàn bộ bản kê 7 ngày | Bản kê đã chốt không đổi. Bỏ qua bản kê đã đọc sẽ cắt phần lớn lượt gọi tài chính và bớt việc sổ cái bị đánh dấu tính lại hàng giờ. **20/11/2026: phần GHI đã sửa** — bản kê thật so trước khi ghi, số không đổi thì không upsert / không UPDATE `Order`, sổ cái hết bị đánh dấu oan (`docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md` mục 8.9; chưa lên prod). Phần ĐỌC lại bản kê + gọi sàn còn nguyên: là con trỏ luồng sao kê của Pha C tài chính (`CUNG-HOA-LOP-GOI-SAN.md` 5e), không làm lẻ |
 | 7 | Việc dài (dựng lại sao kê, nạp lịch sử) hỏng giữa chừng thì chạy lại từ đầu | Cần con trỏ tiến độ theo gian (xem `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md` mục 6.3) |
 | 8 | Cầu dao chung và làn ưu tiên cho TikTok | `services/api-budget.ts` đã có cho quảng cáo; chưa nối cho API đơn / tài chính TikTok |
 | 9 | 6 đơn mất dòng bán của gian Dao Em Liên 68 | Gian đã ngắt kết nối từ 01/10/2026; cờ dựng lại vẫn bật, nối lại là tự sửa |

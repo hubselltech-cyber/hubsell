@@ -56,6 +56,7 @@ import {
   mapTiktokBreakdownToSettlement,
   parseEstimatedSettlement,
   tiktokRevenueIdentityGap,
+  type TiktokOrderCols,
 } from "./settlements";
 
 // Làm mới token khi còn dưới 5 phút là hết hạn — chừa biên an toàn cho các call
@@ -784,6 +785,8 @@ export interface SyncSettlementsResult {
   transactions: number; // số dòng giao dịch đọc được
   /** Số LƯỢT ghi sao kê đơn (đơn có dòng ở hai lô ghi khác nhau đếm hai lần — chỉ để log/toast). */
   ordersUpdated: number;
+  /** Đơn có dòng trên bản kê nhưng số trùng dòng đang lưu → không ghi (20/11/2026). */
+  ordersUnchanged: number;
   /** Mã đơn trên bản kê chưa có trong Hubsell, đếm theo lô (mã gặp ở hai lô đếm hai lần). */
   ordersNotFound: number;
   unlinked: number; // dòng cấp shop không gắn đơn (phạt, ship mẫu, nạp ví ads…)
@@ -852,6 +855,7 @@ export async function syncTiktokSettlements(
     statements: 0,
     transactions: 0,
     ordersUpdated: 0,
+    ordersUnchanged: 0,
     ordersNotFound: 0,
     unlinked: 0,
     windows: windows.length,
@@ -973,6 +977,45 @@ export async function syncTiktokSettlements(
   return result;
 }
 
+/**
+ * Cột gộp trên Order mà bản kê THẬT ghi — đọc sẵn để so trước khi ghi. `satisfies`
+ * buộc đủ mọi cột của TiktokOrderCols: thêm cột mới mà quên ở đây là tsc báo đỏ
+ * (còn nếu vẫn lọt thì rowDiffers coi "thiếu khóa" = khác → ghi như cũ, không sai số).
+ */
+const SETTLED_ORDER_COLS = {
+  fixedFee: true,
+  paymentFee: true,
+  serviceFee: true,
+  affiliateFee: true,
+  adWalletTopup: true,
+  sellerVoucher: true,
+  platformSubsidy: true,
+  shippingFeeQuoted: true,
+  shippingFeeActual: true,
+  shipSubsidyPlatform: true,
+  shipSubsidyShop: true,
+  shippingFeeDiff: true,
+  taxWithheld: true,
+  refundedAmount: true,
+  actualPayout: true,
+} as const satisfies Record<keyof TiktokOrderCols, true>;
+
+const SETTLED_ORDER_SELECT = {
+  id: true,
+  shippingDisputeStatus: true,
+  isSettled: true,
+  settledAt: true,
+  ...SETTLED_ORDER_COLS,
+  tiktokSettlement: true,
+} as const satisfies Prisma.OrderSelect;
+
+type SettledOrderRow = Prisma.OrderGetPayload<{ select: typeof SETTLED_ORDER_SELECT }>;
+/** Dòng đang lưu của một đơn lúc lập kế hoạch ghi bản kê thật. */
+type StoredSettlement = {
+  order: Omit<SettledOrderRow, "tiktokSettlement">;
+  settlement: SettledOrderRow["tiktokSettlement"];
+};
+
 type SettlementAcc = { lines: TikTokTxBreakdown[]; time?: number; statementId?: string; statementIds: Set<string> };
 /** Một lô: mã đơn → mọi dòng của đơn đã gom từ các bản kê đang đọc. */
 type SettlementBatch = Map<string, SettlementAcc>;
@@ -996,18 +1039,17 @@ async function flushSettlementBatch(
   const pending: {
     orderCode: string;
     order: { id: string; shippingDisputeStatus: ShippingDisputeStatus };
+    stored: StoredSettlement;
     acc: SettlementAcc;
     plan: SettlementWritePlan;
   }[] = [];
   const wantedByStatement = new Map<string, Set<string>>(); // bản kê cũ → các mã đơn cần đọc lại
   for (const [orderCode, acc] of byOrder) {
+    // Cùng MỘT lượt đọc này vừa quyết định cách ghi (statementIds) vừa là "dòng
+    // đang lưu" để so trước khi ghi (20/11/2026) — không thêm câu đọc nào.
     const order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-      select: {
-        id: true,
-        shippingDisputeStatus: true,
-        tiktokSettlement: { select: { estimated: true, statementId: true, statementIds: true } },
-      },
+      select: SETTLED_ORDER_SELECT,
     });
     if (!order) {
       result.ordersNotFound++;
@@ -1023,7 +1065,8 @@ async function flushSettlementBatch(
         else wantedByStatement.set(id, new Set([orderCode]));
       }
     }
-    pending.push({ orderCode, order, acc, plan });
+    const { tiktokSettlement, ...orderCols } = order;
+    pending.push({ orderCode, order, stored: { order: orderCols, settlement: tiktokSettlement }, acc, plan });
   }
 
   // (b) Đọc lại các bản kê cũ MỘT lượt cho mọi đơn cần cộng (mỗi bản kê một lần).
@@ -1033,7 +1076,7 @@ async function flushSettlementBatch(
       : null;
 
   // (c) Ghi.
-  for (const { orderCode, order, acc, plan } of pending) {
+  for (const { orderCode, order, stored, acc, plan } of pending) {
     let lines = acc.lines;
     if (plan.action === "merge") {
       const prevLines: TikTokTxBreakdown[] = [];
@@ -1055,14 +1098,19 @@ async function flushSettlementBatch(
       lines = [...prevLines, ...lines];
       tally.merged++;
     }
-    const settledAt = acc.time ? new Date(acc.time * 1000) : new Date();
-    await writeTiktokSettlement(order, lines, {
-      estimated: false,
-      settledAt,
-      statementId: acc.statementId,
-      statementIds: plan.all,
-    });
-    result.ordersUpdated++;
+    // Sàn không trả mốc bản kê (hiếm): giữ mốc quyết toán ĐANG LƯU của bản kê thật
+    // thay vì "bây giờ" — không thì mỗi lượt giờ mốc lại trôi và đơn bị ghi lại mãi.
+    const keptSettledAt =
+      stored.settlement && !stored.settlement.estimated ? stored.settlement.settledAt : null;
+    const settledAt = acc.time ? new Date(acc.time * 1000) : keptSettledAt ?? new Date();
+    const writes = await writeTiktokSettlement(
+      order,
+      lines,
+      { estimated: false, settledAt, statementId: acc.statementId, statementIds: plan.all },
+      stored
+    );
+    if (writes > 0) result.ordersUpdated++;
+    else result.ordersUnchanged++;
   }
 }
 
@@ -1120,11 +1168,18 @@ async function fetchOrderLinesFromStatements(
  * mẫu số Kiểm toán phí sàn như Shopee).
  */
 /**
- * Trả về số đã ghi (0–2: bản kê chi tiết, cột gộp Order). Bản kê ƯỚC TÍNH
- * (unsettled, mỗi giờ mọi đơn chưa quyết toán 45 ngày) so với dòng đang lưu
- * trước khi ghi — số không đổi thì không UPSERT/UPDATE (lát B 12/10/2026; câu
- * upsert dài 2 KB, prod ~60 nghìn lượt/ngày ghi lại số cũ). Bản kê THẬT giữ
- * ghi như cũ (đặt isSettled/settledAt, một lần mỗi đơn).
+ * Trả về số đã ghi (0–2: bản kê chi tiết, cột gộp Order). SO VỚI DÒNG ĐANG LƯU
+ * TRƯỚC KHI GHI — số không đổi thì không UPSERT/UPDATE:
+ *   · Bản kê ƯỚC TÍNH (unsettled, mỗi giờ mọi đơn chưa quyết toán 45 ngày): tự
+ *     đọc dòng đang lưu (lát B 12/10/2026).
+ *   · Bản kê THẬT (20/11/2026): nơi gọi truyền `stored` — dòng nó vừa đọc để lập
+ *     kế hoạch ghi. Trước đó nhánh này ghi vô điều kiện với giả định "một lần mỗi
+ *     đơn", nhưng lượt đối soát giờ đọc lại bản kê 7 ngày nên mỗi đơn bị ghi lại
+ *     ~21 lần/ngày (prod 20/11: 826 nghìn upsert/ngày trên 38.641 đơn), và trigger
+ *     sổ cái trên bảng bản kê không có WHEN nên mỗi lần ghi kéo sổ cái tính lại
+ *     (docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md mục 8). Không truyền `stored` =
+ *     ghi như cũ.
+ * Đường lui chung: SYNC_WRITE_ALWAYS=1.
  */
 async function writeTiktokSettlement(
   order: { id: string; shippingDisputeStatus: ShippingDisputeStatus },
@@ -1137,7 +1192,8 @@ async function writeTiktokSettlement(
     statementIds?: string[];
     estimatedSettlementAt?: Date | null;
     unsettledReason?: string | null;
-  }
+  },
+  stored?: StoredSettlement
 ): Promise<number> {
   const { detail, order: cols } = mapTiktokBreakdownToSettlement(lines);
   // Giá trong giỏ của computePnlRow tin đẳng thức revenue_amount(ORDER) = giá gốc
@@ -1187,6 +1243,9 @@ async function writeTiktokSettlement(
     const { tiktokSettlement, ...storedOrder } = (stored ?? {}) as { tiktokSettlement?: unknown } & Record<string, unknown>;
     writeDetail = rowDiffers(tiktokSettlement as Record<string, unknown> | null, detailData);
     writeOrder = rowDiffers(storedOrder, orderData);
+  } else if (!meta.estimated && stored && !syncWriteAlways()) {
+    writeDetail = rowDiffers(stored.settlement as Record<string, unknown> | null, detailData);
+    writeOrder = rowDiffers(stored.order as Record<string, unknown>, orderData);
   }
 
   if (writeDetail) {

@@ -757,9 +757,9 @@ async function runHourlyTier(
             })
           : await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
       settlementsOk = true;
-      if (s.ordersUpdated > 0) {
+      if (s.ordersUpdated > 0 || s.ordersUnchanged > 0) {
         console.log(
-          `[Auto-sync] Đối soát TikTok "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng bản kê)`
+          `[Auto-sync] Đối soát TikTok "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật, ${s.ordersUnchanged} giữ nguyên (${s.transactions} dòng bản kê)`
         );
       }
     } catch (err) {

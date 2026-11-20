@@ -27,17 +27,21 @@ const api = vi.hoisted(() => ({
   broken: new Set<string>(),
   /** Các lượt đọc dòng theo bản kê, theo thứ tự gọi. */
   txCalls: [] as string[],
+  /** Bản kê sàn trả về KHÔNG kèm mốc thời gian (statement_time / payment_time). */
+  noTime: new Set<string>(),
 }));
 vi.mock("../tiktok/client", async (importOriginal) => {
   const real = await importOriginal<typeof import("../tiktok/client")>();
   return {
     ...real,
     fetchSettlements: async (p: { statementTimeGe?: number; statementTimeLt?: number }) => ({
-      statements: api.statements.filter(
-        (s) =>
-          s.statement_time >= (p.statementTimeGe ?? 0) &&
-          s.statement_time < (p.statementTimeLt ?? Number.MAX_SAFE_INTEGER)
-      ),
+      statements: api.statements
+        .filter(
+          (s) =>
+            s.statement_time >= (p.statementTimeGe ?? 0) &&
+            s.statement_time < (p.statementTimeLt ?? Number.MAX_SAFE_INTEGER)
+        )
+        .map((s) => (api.noTime.has(s.id) ? { id: s.id } : s)),
     }),
     fetchStatementTransactionsV2: async (p: { statementId: string }) => {
       api.txCalls.push(p.statementId);
@@ -138,6 +142,7 @@ describe.skipIf(!columnsReady)("TikTok — sao kê của đơn không bị lư�
     api.linesOf.clear();
     api.broken.clear();
     api.txCalls = [];
+    api.noTime.clear();
   });
 
   afterAll(async () => {
@@ -265,17 +270,123 @@ describe.skipIf(!columnsReady)("TikTok — sao kê của đơn không bị lư�
     expect(Number((await rowOf(a.id)).actualPayout)).toBe(-128_636);
   });
 
-  it("đơn chỉ có một bản kê: mọi lượt đều ghi lại như cũ, không gọi thừa", async () => {
+  // ---- BẢN KÊ THẬT SO TRƯỚC KHI GHI (20/11/2026) ----
+  // Prod: lượt đối soát giờ đọc lại bản kê 7 ngày và ghi lại MỌI đơn dù số không
+  // đổi — 826 nghìn upsert/ngày trên 38.641 đơn, mỗi lần kéo sổ cái tính lại.
+
+  /**
+   * Dấu vết "dòng đã bị ghi": xmin của Postgres đổi ở MỌI lần UPDATE, kể cả ghi
+   * lại đúng giá trị cũ (Order không có cột updatedAt để dựa vào).
+   */
+  const stampsOf = async (id: string) => {
+    const r = await prisma.$queryRaw<{ settlement: string | null; order: string }[]>`
+      SELECT (SELECT s.xmin::text FROM "tiktok_order_settlements" s WHERE s."orderId" = o."id") AS settlement,
+             o.xmin::text AS "order"
+      FROM "Order" o WHERE o."id" = ${id}`;
+    return r[0];
+  };
+
+  it("đơn chỉ có một bản kê: lượt sau số không đổi → KHÔNG ghi lại bản kê lẫn Order, không gọi thừa", async () => {
     const o = await createOrder(6);
     statement("ST-E1", 3, [saleLine(o.code)]);
-    await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    const first = await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    expect(first.ordersUpdated).toBe(1);
+    expect(first.ordersUnchanged).toBe(0);
+    const before = await stampsOf(o.id);
+
     api.txCalls = [];
-    await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    const second = await syncTiktokSettlements(await channel(), { daysBack: 7 });
 
     expect(api.txCalls).toEqual(["ST-E1"]);
+    expect(second.ordersUpdated).toBe(0);
+    expect(second.ordersUnchanged).toBe(1);
+    expect(await stampsOf(o.id)).toEqual(before); // không dòng nào bị đụng
     const row = await rowOf(o.id);
     expect(Number(row.actualPayout)).toBe(560_000);
     expect(row.isSettled).toBe(true);
     expect(row.tiktokSettlement?.statementIds).toEqual(["ST-E1"]);
+  });
+
+  it("sàn sửa số trên CHÍNH bản kê đó → lượt sau thấy khác và ghi số mới", async () => {
+    const o = await createOrder(6);
+    statement("ST-G1", 3, [saleLine(o.code)]);
+    await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    const before = await stampsOf(o.id);
+
+    // Sàn điều chỉnh hoa hồng 60.000 → 70.000 trên cùng bản kê.
+    api.linesOf.set("ST-G1", [
+      {
+        ...saleLine(o.code),
+        settlement_amount: "550000",
+        fee_tax_amount: "-70000",
+        fee_tax_breakdown: { fee: { platform_commission_amount: "-70000" } },
+      },
+    ]);
+    const res = await syncTiktokSettlements(await channel(), { daysBack: 7 });
+
+    expect(res.ordersUpdated).toBe(1);
+    expect(res.ordersUnchanged).toBe(0);
+    const row = await rowOf(o.id);
+    expect(Number(row.actualPayout)).toBe(550_000);
+    expect(Number(row.tiktokSettlement?.feeCommission)).toBe(-70_000);
+    const after = await stampsOf(o.id);
+    expect(after.settlement).not.toBe(before.settlement);
+    expect(after.order).not.toBe(before.order);
+  });
+
+  it("đơn đang giữ số ƯỚC TÍNH: bản kê thật đầu tiên vẫn ghi đè và đặt đã quyết toán", async () => {
+    const o = await createOrder(6);
+    await prisma.tiktokOrderSettlement.create({
+      data: { orderId: o.id, estimated: true, grossSales: 1_390_000, sellerDiscount: -770_000, settlementAmount: 560_000 },
+    });
+    await prisma.order.update({ where: { id: o.id }, data: { expectedPayout: 560_000, actualPayout: 560_000 } });
+    statement("ST-H1", 2, [saleLine(o.code)]);
+
+    const res = await syncTiktokSettlements(await channel(), { daysBack: 7 });
+
+    expect(res.ordersUpdated).toBe(1);
+    const row = await rowOf(o.id);
+    expect(row.isSettled).toBe(true);
+    expect(row.tiktokSettlement?.estimated).toBe(false);
+    expect(row.tiktokSettlement?.statementIds).toEqual(["ST-H1"]);
+    expect(row.tiktokSettlement?.settledAt).not.toBeNull();
+  });
+
+  it("sàn không trả mốc bản kê: mốc quyết toán giữ nguyên qua các lượt, không ghi lại", async () => {
+    const o = await createOrder(6);
+    statement("ST-I1", 3, [saleLine(o.code)]);
+    api.noTime.add("ST-I1");
+    await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    const firstSettledAt = (await rowOf(o.id)).settledAt;
+    expect(firstSettledAt).not.toBeNull();
+    const before = await stampsOf(o.id);
+
+    const res = await syncTiktokSettlements(await channel(), { daysBack: 7 });
+
+    expect(res.ordersUnchanged).toBe(1);
+    const row = await rowOf(o.id);
+    expect(row.settledAt?.getTime()).toBe(firstSettledAt!.getTime()); // không trôi theo giờ chạy
+    expect(row.tiktokSettlement?.settledAt?.getTime()).toBe(firstSettledAt!.getTime());
+    expect(await stampsOf(o.id)).toEqual(before);
+  });
+
+  it("đường lui SYNC_WRITE_ALWAYS=1: số không đổi vẫn ghi lại như trước 20/11", async () => {
+    const o = await createOrder(6);
+    statement("ST-J1", 3, [saleLine(o.code)]);
+    await syncTiktokSettlements(await channel(), { daysBack: 7 });
+    const before = await stampsOf(o.id);
+
+    vi.stubEnv("SYNC_WRITE_ALWAYS", "1");
+    try {
+      const res = await syncTiktokSettlements(await channel(), { daysBack: 7 });
+      expect(res.ordersUpdated).toBe(1);
+      expect(res.ordersUnchanged).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const after = await stampsOf(o.id);
+    expect(after.settlement).not.toBe(before.settlement);
+    expect(after.order).not.toBe(before.order);
+    expect(Number((await rowOf(o.id)).actualPayout)).toBe(560_000);
   });
 });
