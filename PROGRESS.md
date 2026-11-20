@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 20/11 tối (2) — HQ đỏ "Dung lượng DB 80 %": có cần lên M3 không + ngày trả tiền Supabase / Render — CHỈ ĐO, chưa sửa mã, chưa đổi cài đặt
+
+- **Số đo (Supabase + SQL chỉ đọc):** database 6.584 MB / 8.192 (mẫu số HQ = 8 GB kèm gói) = 80 %; ổ thật 7,65 / 12 GB = 64 % (DB 6,3 + WAL 1,0 + hệ 0,2). Đà tăng 08 → 19/11 ~79 MB / ngày, 5 ngày cuối ~55 (06/11 là ~200). Disk IO balance 98 %, kết nối 22 / 90, Memory 62 %, CPU live 20 % (một ngày trong tuần ~97 %). Đơn / ngày TB 7 ngày 10.524 (07/11) → 5.686 (19/11), gian 218 → 275 — chưa tìm lý do.
+- **Kết luận em trình anh:** KHÔNG cần M3 — compute Medium (≈ +45 USD / tháng) không thêm ổ, mà ba đồng hồ compute chữa được đều chưa vàng. Nút chặn thật là **Spend Cap đang bật**: ổ không tự nở được ở mốc 90 % (10,8 GB, ƯỚC cuối 12/2026 → giữa 01/2027; ca xấu WAL phồng 4 GB thì sát ngay). Việc tiền đáng làm duy nhất = tắt Spend Cap (ổ vượt 4 GB ≈ 0,5 USD / tháng). ⏳ anh quyết — em không đổi cài đặt thanh toán.
+- **Mới phát hiện:** Egress Supabase 203 / 250 GB (81 %) khi kỳ còn 6 ngày, ƯỚC 254–262 GB lúc chốt 27/11 → vượt hạn mức trong lúc Spend Cap bật. CHƯA kiểm Supabase áp hạn chế nhanh tới đâu.
+- **Ngày trả tiền:** Supabase 27/10 25,00 USD (PAID), kỳ tới trừ 27/11 dự kiến 30,14. Render hóa đơn tháng 10 = 44,00 USD Paid (trừ đầu tháng 11, trang không ghi ngày), tháng 11 tới 20/11 đã 49,54 (băng thông 28,65 > dịch vụ 20,89), dự kiến 60,65, trừ đầu tháng 12.
+- Chi tiết + bảng lớn nhất: `docs/HQ-SUC-KHOE.md` mục 20/11. Tab SQL Editor trên Chrome của anh còn mở (câu SELECT chưa lưu, đóng không cần lưu).
+- **★ Anh: "Nếu tắt spend không vấn đề gì thì em cứ tắt… Render kiểm tra lại sao lại tốn kém tới vậy":**
+  - **Spend Cap CHƯA tắt.** Em mở hộp Change spend cap, chọn Disabled, đọc thấy dòng "Toggling spend cap triggers an invoice… prorated charges for any usage beyond the Pro Plan's quota during this billing cycle" → bấm Confirm là ra hóa đơn NGAY, trang không báo số tiền (em ƯỚC ≈ 0,26 USD = 1.536 GB-giờ ổ vượt × 0,000171). Đã bấm Cancel, cài đặt giữ nguyên; ⏳ hỏi anh một câu rồi mới bấm.
+  - **Render tốn vì băng thông, không phải máy:** tháng 11 tới 20/11 băng thông 28,65 USD > tiền máy 20,89; "Projected 60,65" của Render không ngoại suy băng thông, ƯỚC thật ≈ 75 USD. Worker chiếm 94 % (183,47 / 195,66 GB), phẳng 300–400 MB / giờ ngày đêm dù đơn / ngày giảm một nửa.
+  - **Gốc lớn nhất (đo `pg_stat_statements` + đọc mã):** lượt đối soát TikTok mỗi giờ ghi lại bản kê THẬT của mọi đơn trong 7 ngày dù không đổi — 826 nghìn upsert / ngày trên 38.641 đơn (≈ 21 lần / đơn / ngày), kèm 2 câu đọc + 1 UPDATE `Order` mỗi lần; nhóm bản kê TikTok ≈ 39 % lượng chữ SQL 10 ngày qua. `writeTiktokSettlement` chỉ so-trước-khi-ghi cho bản kê ước tính. Là việc chưa làm số 6 ở `DON-HOAN-VA-SAO-KE.md` từ 02/10.
+  - **CHƯA đo:** byte thật trên dây; phần sổ cái có phải hệ quả của ghi lặp này không; phần gọi API sàn. Chưa sửa mã. Chi tiết: `docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md` mục 8.
+- **★ Anh: "Render có phương án nào không? Chiếm 10 % thu nhập là không ổn" → em trình phương án, CHƯA code** (`docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md` mục 8.7): đổi gói không cứu được (Pro chỉ kèm 25 GB, Scale 1 TB, vượt 0,15 USD / GB); trigger sổ cái trên `tiktok_order_settlements` không có `WHEN` nên ghi lặp bản kê kéo cả sổ cái tính lại; **lát 1 = bản kê thật cũng so trước khi ghi** (ước bỏ khoảng một nửa, băng thông ≈ 43 → ≈ 20 USD / tháng, không đổi con số tài chính nào); lát 2 = bỏ qua bản kê đã đọc trọn; sàn dưới là tiền máy 32 USD. ⏳ anh duyệt lát 1.
+- **★ Anh: "Việc này có ảnh hưởng gì tới mô hình lớn mình đang làm" → đã đọc lại hai kế hoạch** (docs BANG-THONG mục 8.8): lát 1 đúng nguyên tắc 6.3 của kiến trúc triệu đơn ("không đổi thì không ghi lại", sót bản kê thật), nằm ở đường GHI mà đại tu lớp đọc sàn giữ dùng chung → không lệch, không đảo quyết định nào; **⛔ lát 2 em RÚT** vì chính là con trỏ N2 của luồng sao kê (Pha C tài chính, sau Pha D) — làm lẻ là vá. Rủi ro còn phải kiểm trước khi push lát 1: ghi lặp đang vô tình tính lại sổ cái đơn TikTok mỗi giờ, có thể đang che một chỗ thiếu trigger.
+- **★ Anh: "Làm lát 1" → ĐÃ CODE, chưa commit, chưa lên prod** (docs BANG-THONG mục 8.9):
+  - **Sửa:** `integrations/tiktok/service.ts` — `flushSettlementBatch` đọc đủ cột ngay ở lượt đọc sẵn có (không thêm câu đọc), `writeTiktokSettlement` nhánh bản kê THẬT so `rowDiffers` rồi mới upsert / UPDATE `Order`; sàn không trả mốc bản kê thì giữ `settledAt` đang lưu; kết quả thêm `ordersUnchanged`, log worker in thêm "Y giữ nguyên" (`workers/order-auto-sync.ts`). Đường lui `SYNC_WRITE_ALWAYS=1`. Không đổi con số tài chính nào, không đổi schema, không đụng Lazada / Shopee / bản kê ước tính.
+  - **Đã kiểm (local):** tsc sạch; `tiktok-settlement-merge-db.test.ts` 10 / 10 (5 ca mới, đo dấu vết ghi bằng `xmin`); 4 tệp bản kê liên quan 39 / 39. Bộ rộng integrations + workers có 21 ca đỏ ở 10 tệp sổ cái / xóa gian — ĐỎ SẴN trên mã gốc (đã cất thay đổi chạy đối chứng), do lệch DB dev.
+  - **Đã kiểm (prod, chỉ đọc):** `order_ledger_audit` 52 đêm, 11.200 đơn mẫu, 0 lệch → chưa có dấu hiệu ghi lặp đang che chỗ thiếu trigger.
+  - **CHƯA kiểm:** prod sau deploy — 5 việc đo ghi ở mục 8.9 (log "giữ nguyên", chênh `pg_stat_statements`, biểu đồ băng thông 24–48 giờ, audit đêm, số Lãi/Lỗ một gian TikTok).
+- **★ Anh: "Bấm xác nhận đi" → ✅ SPEND CAP ĐÃ TẮT (20/11 tối).** Đã kiểm trên trang: Billing ghi "Spend cap is disabled"; nhãn "EXCEEDING USAGE LIMITS" hết; trang ổ đĩa hết dòng "Spend cap limits disk size to 8 GB", vẫn ghi ổ tự nở 12 → 18 GB ở mốc 90 %. Supabase **chốt kỳ dùng tại 20/11**: kỳ hiện tại thành 20/11 → 27/11, Egress đếm lại từ 0 / 250 GB; hóa đơn sắp tới hiện Pro 25,00 USD, dự kiến 25,10. **CHƯA thấy** hóa đơn mới trong Past Invoices sau ~1 phút (vẫn 4 dòng cũ) → chưa biết số tiền Supabase tính cho phần 27/10 → 20/11 (compute vượt tín dụng 1,97 USD + ổ vượt em ước 0,26); trang ghi có thể trễ tới 1 giờ. ⏳ Lần tới vào Billing xem dòng hóa đơn mới.
+
+---
 ## Phiên 20/11 tối — Web: Chuẩn bị hàng xong KHÔNG tự in nữa, màn kết quả có nút In / Đóng (khách phản hồi, anh chuyển: "chuẩn bị hàng → có nút in đơn → chọn thì mới in, không chọn thì có nút đóng và trạng thái là chưa in")
 
 - **Gốc:** hộp thoại Chuẩn bị hàng có công tắc "In ngay sau khi sàn xác nhận" mặc định BẬT (chốt 04/09) → sàn nhận xong là nhảy sang in; tắt công tắc thì không in nhưng cũng không có nút In ngay sau đó.
@@ -16,7 +38,7 @@
   - **Sidebar:** nhóm "Đơn hàng" bỏ `href` (bản 16/11 bấm tên nhóm là nhảy vào `/orders`, mũi tên mới là nút xòe) → nay bấm cả hàng chỉ xòe / cụp hai mục con như mọi nhóm; vào danh sách đơn bằng "Xử lý đơn hàng". `app-shell.tsx` gỡ nhánh vẽ riêng cho nhóm có `href` + hàm `openMenu`; nút nhóm thêm `aria-expanded`. Ctrl+K không đổi (vốn liệt kê theo mục con).
   - **Dọn:** thụt lề lại khối màn chọn trong `arrange-shipment-dialog.tsx`; `writePrintOptions` thôi export (chỉ dùng nội bộ); bỏ chú thích cũ ở `command-palette.tsx`. Không còn chỗ nào đọc khóa `hubsell.fulfill.printAfter`.
   - **Đã kiểm (local):** đứng ở Tổng kho bấm "Đơn hàng" → đường dẫn giữ `/products`, trang không tải lại, hai mục con xòe ra; bấm lần nữa cụp lại. tsc + eslint sạch. **CHƯA kiểm:** ngăn kéo menu trên điện thoại; prod.
-  - Commit + push theo lệnh anh (mã băm ở dòng dưới sau khi đẩy). Tệp tạm `backend/scripts/_tmp-kcqt-seed.ts` là của phiên kho, em KHÔNG đụng.
+  - **✅ Commit `0ecb932c`, ĐÃ PUSH master 20/11 tối** (lượt đẩy mang theo cả `e6989ed0` — commit tài liệu video của phiên trước, chưa đẩy). Chỉ đổi frontend + docs → Vercel tự dựng, Render không deploy là đúng. CHƯA nhìn trên prod. Tệp tạm `backend/scripts/_tmp-kcqt-seed.ts` là của phiên kho, em KHÔNG đụng.
 
 ---
 ## Phiên 20/11 chiều — Quay video đóng hàng (app): lối vào dời sang tab ĐƠN HÀNG + bản thử TestFlight 1.5.1 (41) (anh: "chuyển phần Quay video đóng hàng ở tab Tổng quan sang tab Đơn hàng… làm phần trễ mã vận đơn… Rồi build app và lên bản TestFlight mới")
@@ -37,6 +59,28 @@
   - EAS `94dd58e4` = 1.5.1 (43), lượt nộp TestFlight `812ff6a6`. **✅ App Store Connect ghi build 43 VALID (tải lên 14:36, đọc `asc-release.mjs status` 14:39)** — chưa nhìn trong app TestFlight trên máy. ⚠️ đừng gắn build 41 / 42 / 43 khi nộp App Store.
 - **Còn nợ của màn quay app:** clip ĐANG QUAY lúc app bị tắt vẫn mất (chưa có sổ cứu như M1b của web); Android chưa in mã; lối vào cho nhân viên (mục 17.3).
 - **Chờ anh:** thử TestFlight 1.5.1 (43, thay 42): Đơn hàng → "Quay video" → bấm "Trở về"; dòng "Giờ quay" có khớp web không; quay 2–3 tem xem mã hiện sau ~1 giây + số giờ giảm; quay 1 clip rồi TẮT HẲN app ngay, mở lại xem video có lên hệ thống không; bật máy bay quay 2 clip rồi tắt máy bay. Muốn thử ca hết giờ thì anh quyết cách (tài khoản hết giờ / điều chỉnh sổ giờ).
+- **★ Anh ~15:25: "đo lại lượng thời gian và dung lượng trên R2… nếu tính ra mua gói thì sẽ tốn bao nhiêu tiền" → ĐÃ ĐO (chỉ đọc, không sửa mã; docs mục 25.13):** liệt kê bucket R2 bằng khóa thử + `ffprobe` qua đường dẫn ký sẵn. Hôm nay tài khoản prod có **10 clip, 5 phút 27 giây, 38,75 MB** (web 4 clip 6,14 MB / phút; iPhone 6 clip 7,93 MB / phút) = **≈ 136 đ** theo 1.500 đ / giờ; 9 clip đóng hàng thật trung bình **35,8 giây ≈ 15 đ / đơn**, 1 giờ ≈ 100 đơn. Cả tài khoản prod: 54 clip, 23,8 phút, 170 MB (khớp "Còn 19 giờ 36 phút / 20 giờ"); cả bucket 345 MB ≈ 3,5 % hạn mức miễn phí → hóa đơn R2 = 0 đ. Giá vốn theo số đo ≈ 150 đ / giờ quay (giữ 25 ngày), biên ≈ 90 %. ⚠️ iPhone nặng hơn số 6,1 MB / phút đang dùng ≈ 30 % — chưa phải sửa gì. **CHƯA kiểm:** số giây máy chủ đã trừ từng clip trên prod (Chrome không nối được → chưa đọc Supabase). Hai script tạm đã xóa.
+- **★ Anh: "Cũng còn tùy thuộc vào độ phân giải khách đang dùng nữa" → "anh nghĩ là mình sẽ khóa cứng luôn tỉ lệ 3:4 và 800K" → ĐÃ SỬA trên nhánh thử (docs mục 25.13 cuối + 25.14):** cỡ tệp đi theo bitrate; web vốn đã khóa cứng 720p · 800k; app bản thử còn chip chọn 720p / 1080p và 1.500k / 3.000k (giá vốn gấp 2–4 lần, ước chưa đo) → `video-test.tsx` bỏ các chip đó, thay bằng hằng số 3:4 · 800k. Web KHÔNG đổi (em hiểu câu chốt là cho app; webcam khung ngang 16:9). **Đã kiểm:** tsc sạch, eslint 47 (mức nền). **CHƯA kiểm / chưa làm:** chưa chạy trên máy; CHƯA commit nhánh thử, CHƯA dựng bản 44 (bản 43 trên máy anh còn chip cũ); máy chủ vẫn chỉ gắn cờ tệp nặng, không từ chối. Anh chốt: "Để gộp bản sau" → KHÔNG dựng bản 44 riêng; phần khóa đi cùng bản dựng kế tiếp của nhánh thử.
+
+---
+## Phiên 20/11 — TikTok: "Lịch sử bảo vệ ROI" khách gửi — CHỈ KHẢO SÁT, chưa sửa mã
+
+- Anh hỏi: là gì, mình có chưa, ảnh hưởng tới ROI của mình không. Chi tiết `docs/ADS-TIKTOK-GMV-MAX.md` mục 15.
+- **Là gì:** Bảo vệ ROI của GMV Max — ngày nào ROI < 90 % mục tiêu + > 20 đơn + không sửa tay thì TikTok bù tín dụng quảng cáo. ★ Ảnh xác nhận ĐÃ CÓ ở VN. Trong ảnh khách chưa được bù đồng nào (cột tín dụng trống, 16–17/11 "Không đủ điều kiện").
+- **Hubsell:** CHƯA lấy trạng thái / tín dụng. ROI thực tế + hòa vốn KHÔNG đổi; chi phí quảng cáo sẽ cao hơn thực chi đúng bằng tín dụng khi khách được bù; câu khuyên "Nâng ROI mục tiêu" chưa nhắc mất bảo vệ ngày đó.
+- **CHƯA kiểm:** số đơn / số prod của khách; `net_cost` của API có trừ tín dụng không (mới thấy ở tài liệu bên thứ ba).
+- **Chờ anh:** có thử `net_cost` trên API thật không; có thêm câu nhắc vào lời khuyên "Nâng ROI mục tiêu" không.
+
+---
+## Phiên 20/11 — Shopee: tiền ưu đãi "Hỗ trợ Kinh phí Hiệu suất" + Voucher Thông Minh — CHỈ KHẢO SÁT, chưa sửa mã
+
+- Anh gửi ảnh Seller Center của một gian khách (tiền ưu đãi 214.728 đ nạp vào ví quảng cáo 18/11), hỏi Hubsell có lấy về không, về đâu, có nằm trong Tổng giá trị sản phẩm không.
+- **Trả lời:** KHÔNG lấy; KHÔNG nằm trong Tổng giá trị sản phẩm (cột đó chỉ cộng giá trong giỏ của từng đơn). Khoản này chỉ nằm gộp trong số dư ví quảng cáo; khi khách tiêu, Hubsell vẫn tính là chi phí quảng cáo → chi phí cao hơn thực chi đúng bằng tiền ưu đãi.
+- **Đã tra tài liệu Shopee 20/11 (Chrome):** nhóm Ads 24 API, không API nào trả lịch sử giao dịch ví quảng cáo / tiền ưu đãi; `get_total_balance` ghi rõ gồm "paid credits and free credits"; `expense` chỉ ghi "Ad Expenditure". Chi tiết + danh sách API: `docs/SHOPEE-NAP-VI-QUANG-CAO-TRU-TRUNG.md` mục 10.
+- **CHƯA kiểm:** số prod của gian khách; `expense` có gồm phần tiêu bằng tiền ưu đãi không; Voucher Thông Minh về trường nào của đơn (gian mẫu đang 0 đ).
+- **Ticket mới (anh: "soạn trên chrome đi"):** nháp tiếng Anh 5 câu hỏi đã ghi ở docs mục 10. Đường vào form đã đổi (AI Assistant không còn nút Raise Ticket) → đường mới: `/console/raise-ticket/2005?category_name=Feature%20APIs` → Ads → Raise a Ticket (ghi ở docs mục 10). **✅ TICKET ĐÃ GỬI 20/11 ~11:23 — Enquiry ID `2123633047348785173`** (In Progress; em điền + bấm 提交, anh kéo CAPTCHA). AI Assistant của Shopee cũng xác nhận không có API này.
+- **★ Ticket cũ 2113468448421310539 (429 Ads) — Shopee ĐÃ TRẢ LỜI 19/11 19:11**, status "Your Action Required": "The API was receiving a high volume of requests at that time, which triggered rate limiting. Please retry outside peak periods." Không có số trần, không trả lời 4 ý đã hỏi. Ghi ở `docs/ADS-NHIP-CANH-BAO.md` 11.2 + memory. Em chưa chỉnh số nào. **Anh chốt 20/11: đóng, không hỏi lại, không gửi thêm thư — để Shopee tự đóng** (trang ticket không có nút đóng).
+- **Chờ anh:** chờ Shopee trả lời ticket mới 2123633047348785173 (ghi vào docs mục 10); quyết T1–T4.
 
 ---
 ## Phiên 20/11 — Quay video đóng hàng: hai dòng mã hiện TRỄ 1 GIÂY ở đầu mỗi clip (anh chốt cách C; web ĐÃ PUSH `e749f7ce`)
@@ -73,7 +117,12 @@
 - **Anh hỏi xen (19/11 đêm):** đặt Quay video thành tab con trong Kho → khảo sát ghi `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 17.3; anh: "phần này thì sẽ chuyển sau".
 - **00:29 20/11 — CHƯA nộp duyệt bản nào:** Expo gói miễn phí xếp hàng: lượt đẩy iOS `6232e0e8` vẫn IN_QUEUE từ 23:35 (54 phút), Android mới bắt đầu dựng 00:29. Anh: "Để tự nộp được không em? Tắt máy đi ngủ" → đặt lịch một lần `hubsell-mobile-1-5-0-nop-not-20-11` 06:30 20/11 (máy tắt thì chạy khi mở app): kiểm trước, rồi gắn build 38 + gửi duyệt iOS, ghi "Có gì mới" Google Play vc 15; không dựng lại, không commit. Android tự lên kênh production từ máy chủ Expo, không cần máy anh.
 - **✅ 00:33 20/11 — iOS ĐÃ GỬI DUYỆT:** Expo đẩy xong, vòng chờ gắn build 38 vào 1.5.0 lúc 00:33, `asc-release.mjs submit 1.5.0` → **WAITING_FOR_REVIEW, reviewSubmission `78222c6c-78f7-4266-8cd0-a02f93d67a79`** (đọc lại bằng `status` 00:34). Thư Apple cho lượt này mang mã đó.
-- **Trạng thái nộp Android:** xem dòng cập nhật ngay dưới.
+- **00:37 20/11 — Android vc 15 dựng XONG** (xếp hàng 56 phút, dựng 8 phút). Lượt nộp hẹn sẵn `c3a04026` chờ tới lượt trên Expo.
+- **✅ 06:30 20/11 — lượt hẹn tự chạy, cả hai kho đã nộp:**
+  - **iOS:** `asc-release.mjs status` → 1.5.0 **IN_REVIEW** (Apple đã bắt đầu duyệt; đêm qua là WAITING_FOR_REVIEW, reviewSubmission `78222c6c-78f7-4266-8cd0-a02f93d67a79`). Không gắn / gửi lại gì. Build 38 VALID.
+  - **Android:** `play-status.mjs` → kênh production **1.5.0 [vc 15] → completed** (lượt Expo `c3a04026` đã đẩy xong). Đã chạy `play-release-notes.mjs 15` → ghi "Có gì mới" vi-VN 399 ký tự; đọc lại `play-status` vẫn 1.5.0 [vc 15] completed.
+  - **CHƯA kiểm:** lượt này không đọc lại build đang gắn vào 1.5.0 trên ASC (script `status` không in; dựa vào dòng 00:33 là build 38); "completed" trên Play = đã phát hành ở API, chưa mở Play Console xem Google có giữ duyệt không, chưa xem trên máy thật đã thấy bản cập nhật chưa. Không build, không OTA, không commit.
+  - **Còn treo:** chờ Apple duyệt xong 1.5.0; anh quyết ẩn tạm "Tùy chỉnh phiếu in" (dòng ⚠️ phía trên).
 
 ---
 ## Phiên 19/11 ~23:15 — Kho chuẩn quốc tế: BẬT cách "hàng trong kho" cho shop admin@hubsell.vn trên prod (anh: "Bật cho admin")
@@ -183,6 +232,17 @@
 - **Chờ anh:** (1) hết hạn "đợi xong 19/11" → cho em viết thiết kế lại lát 1 theo mục 13.14 không; (2) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu`; (3) biến `STOCK_COMMITTED_SWEEP_MS=3600000` trên Render vẫn đang đặt, xóa khi thiết kế mới lên.
 
 ---
+## Phiên 19/11 chiều (lịch tự chạy) — Tổng giá trị sản phẩm: ĐỀ XUẤT sửa theo sao kê (anh chốt hướng: "đơn nào sàn đã trả sao kê / bản kê thì cột lấy số sao kê, API đơn hàng chỉ dùng tạm") — CHỈ ĐỀ XUẤT, không code, không commit, không ghi prod
+
+- **Ghi ở:** `docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md` **mục 16** (16.0 đã / chưa kiểm · 16.1 Shopee · 16.2 TikTok bản kê · 16.3 price_detail · 16.4 tác động · 16.5 SQL soạn sẵn · 16.6 bảng lát).
+- **⚠️ CHƯA kiểm được số nào ở lượt này:** docs escrow Shopee không đọc lại được (trình duyệt trong app chặn trang, Chrome treo hộp "Allow", WebFetch chặn); SQL prod qua Chrome cũng treo "Allow"; SQL chỉ đọc DB dev bị lớp phân quyền từ chối. Mọi số trong đề xuất là số 18/11 (mục 15). Em không vòng qua các rào này.
+- **Shopee (suy luận, chưa xác nhận):** đơn mẫu 180.000 / giảm 82.800 / combo 10.800 → 40 % + 10 % tròn ⇒ `order_seller_discount` nhiều khả năng ĐÃ gồm combo. Công thức đề xuất không phụ thuộc câu đó: `revenueGross = order_selling_price` khi có escrow, không hủy, không hoàn tiền; thêm dòng khấu trừ "Combo / mua kèm"; cột mới `shopeeSellingPrice`; sổ v4 → v5; 0 lần gọi sàn.
+- **Phát hiện thêm:** đơn combo có `lineGross` = 0 nên đang đứng ngoài hòa vốn quảng cáo, cờ thiếu giá vốn và Lãi/Lỗ SKU. Sửa cấp đơn không sửa cấp dòng → lát S2 riêng, anh chốt có cho combo vào hòa vốn không.
+- **TikTok bản kê (giả thuyết nghi nhất):** `syncTiktokUnsettledEstimates` trần 5.000 dòng/lượt, mới nhất trước, không con trỏ, không log chạm trần → gian lớn mất đuôi đơn cũ. Sửa thì TỐN thêm lượt gọi sàn và đụng làn nhịp gian lớn (đại tu 5e).
+- **TikTok price_detail (giả thuyết):** đơn lỗi / thiếu trường không được đóng dấu → đầu hàng nhiễm độc (5 lỗi là dừng) hoặc kẹt im lặng (lượt chỉ có "thiếu trường" không in log).
+- **Chờ anh:** (1) mở Chrome bấm Allow cho `supabase.com` + `open.shopee.com` rồi gọi em chạy K1–K3 và đọc Render Logs; (2) duyệt thứ tự K → S1 → T3; (3) chốt riêng S2 và T2.
+- **Trước khi push lát nào đổi `revenueGross`:** `scripts/sql/ads-margin-impact.sql` + mô phỏng trợ lý quảng cáo trước / sau.
+
 ---
 ## Phiên 19/11 ~15:00 — Video đóng hàng: M1 làm DỨT ĐIỂM — cứu clip đang quay dở (M1b) + gửi tiếp ở mọi trang (K-6) (anh: "anh nghĩ mình làm dứt điểm M1 đi") — ĐÃ DỰNG → COMMIT + PUSH (anh: "Commit và push")
 

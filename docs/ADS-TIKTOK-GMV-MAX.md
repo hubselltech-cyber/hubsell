@@ -760,4 +760,105 @@ ngân sách cụ thể = max(10 × AOV, 1–5 × chi tiêu thực); C. Đo trư�
 
 72 đơn còn phí: 66 là **hoàn một phần** (DELIVERED, khách trả lại một phần tiền — phí giữ trên phần còn lại), 1 đơn CANCELLED/RECEIVED chưa có dòng hoàn tiền, 5 đơn hoàn toàn bộ còn −2.394 đ tổng (≈ 480 đ/đơn, nghi phần voucher GMV Max; nhỏ, không đào thêm).
 
-**Bảo vệ ROI (ROI Protection) không phải hoàn tiền đơn hủy.** Trang trợ giúp TikTok `ads.tiktok.com/help/article/about-roi-protection-for-gmv-max-campaigns`: từ 25/02/2026, ngày nào ROI chiến dịch < 90 % ROI mục tiêu + > 20 đơn/ngày + không sửa (tăng ROI mục tiêu, giảm >1 lần, tạm dừng, sửa sản phẩm, Phân phối tối đa, Tăng cường video) thì TikTok bù **tín dụng quảng cáo** (không phải tiền mặt) = chi phí − doanh thu gộp ÷ (ROI mục tiêu × 0,9). Trang không nói đơn hủy/hoàn — và vì doanh thu gộp TikTok vẫn đếm đơn hủy (mục 8), đơn hủy KHÔNG kéo ROI xuống nên không kích hoạt bù. Trang không ghi thị trường áp dụng (chưa xác nhận VN). "GMV Max Pro" (TikTok giới thiệu 30/10/2026) chưa có thông tin ngày ra mắt / thị trường VN.
+**⚠️ 17/11 — "đơn hủy không bị trừ" CHƯA chứng minh là "đơn hủy không tốn tiền quảng cáo".** Seller Center gọi dòng này là
+**"Nạp tiền quảng cáo từ đơn hàng"** (đối chiếu 31/10, docs TIKTOK-PHI-BAO-CAO… dòng Voucher GMV Max). Tài liệu chính thức gần nhất là
+**GMV Pay** ([Using GMV to pay for ads](https://ads.tiktok.com/help/article/using-gmv-to-pay-for-ads), 07/2026): trả quảng cáo bằng doanh thu
+TikTok Shop, đang thử nghiệm cho người bán ĐƯỢC MỜI, không ghi thị trường, không ghi cơ chế trừ. Bên thứ ba (Link My Books) mô tả là
+"Top-Up Ads Balance Using GMV Payments" = NẠP số dư quảng cáo từ tiền hàng. Nếu đúng là nạp thì quảng cáo vẫn tiêu theo lượt hiển thị, đơn
+hủy vẫn tốn tiền, chỉ là tiền được lấy từ các đơn giao được (`ads-spend.ts` vốn đã giả định |feeGmvMax| ≈ AdSpend cho gian trả trọn qua đơn).
+Kiểm bằng `hubsell-marketing/so-lieu/SQL-GMV-MAX-TRU-THEO-DON-VS-CHI-PHI.sql`: tỷ lệ tiền trừ trong đơn ÷ chi phí ≈ 1 → kiểu nạp; ≈ tỷ lệ
+đơn không hủy → thu theo đơn. **✅ ĐÃ CHẠY prod 17/11** (`hubsell-marketing/so-lieu/KET-QUA-2026-11-17-GMV-MAX-TRU-THEO-DON.md`):
+gian có nối Ads: tiền trừ trong đơn chỉ 0–0,29 × chi phí quảng cáo; phí ÷ doanh thu đơn CỐ ĐỊNH theo gian ở nấc 1,15/2,30/3,45/4,60 % (bội
+1,15 %), có gian 11,5–28,7 %; chỉ 0,1–69 % đơn giao có phí, đơn hủy/hoàn gần như không. ⇒ khoản trừ trong đơn là **% cố định trên giá trị đơn**
+(nạp từ tiền hàng / phí theo đơn), KHÔNG phải tiền quảng cáo của đơn đó; tiền quảng cáo vẫn tính theo lượt hiển thị trên số dư. Đơn hủy không bị
+trừ ≠ được hoàn. ⚠️ Hệ quả cho mã: giả định `ads-spend.ts` "gian trả trọn qua đơn |feeGmvMax| ≈ AdSpend" chưa gặp gian nào đúng như vậy;
+và `tiktok-breakeven.ts` cộng ngược feeGmvMax như tiền quảng cáo — nếu đây là phí theo đơn chứ không phải nạp, hòa vốn đang hơi lạc quan (chỉ ghi, chưa đề xuất). Cùng bảng 31/10 có dòng SC "Phí giao dịch GMV Max tiết kiệm được (+6,4 tr)" — giảm phí
+nhờ GMV Max ĐÃ có ở VN (giảm phí GIAO DỊCH, API trả số ròng, không có trường riêng).
+
+**Bảo vệ ROI (ROI Protection) không phải hoàn tiền đơn hủy.** Trang trợ giúp TikTok `ads.tiktok.com/help/article/about-roi-protection-for-gmv-max-campaigns`: từ 25/02/2026, ngày nào ROI chiến dịch < 90 % ROI mục tiêu + > 20 đơn/ngày + không sửa (tăng ROI mục tiêu, giảm >1 lần, tạm dừng, sửa sản phẩm, Phân phối tối đa, Tăng cường video) thì TikTok bù **tín dụng quảng cáo** (không phải tiền mặt) = chi phí − doanh thu gộp ÷ (ROI mục tiêu × 0,9). Trang không nói đơn hủy/hoàn — và vì doanh thu gộp TikTok vẫn đếm đơn hủy (mục 8), đơn hủy KHÔNG kéo ROI xuống nên không kích hoạt bù. Trang không ghi thị trường áp dụng (chưa xác nhận VN).
+Đọc lại 17/11 (trang cập nhật 09/2026): ngày KHÔNG được bảo vệ = Product GMV Max tăng ROI mục tiêu hoặc giảm > 1 lần/ngày (LIVE: sửa > 2 lần) ·
+tạm dừng/xóa · sản phẩm/phòng live dùng Phân phối tối đa · ngân sách Tăng cường video · shop/TKQC/quảng cáo bị dừng vì bất kỳ lý do nào
+(gồm hết số dư) · ngày sửa sản phẩm. Đổi ROI do hệ thống bật Promotion Day / Mega LIVE không tính là sửa tay. "ROI mục tiêu ngày" = doanh
+thu gộp ÷ Σ(doanh thu từng giờ ÷ ROI mục tiêu giờ đó). Ví dụ trên trang: 10–11h mục tiêu 10, doanh thu 200, chi 10; 11–12h mục tiêu 5,
+doanh thu 100, chi 50 → mục tiêu ngày 7,5 → bù 60 − 300 ÷ 6,75 = 15,56. Xem lịch sử 60 ngày ở nút "View history"; tín dụng theo Điều khoản
+tín dụng quảng cáo (không quy ra tiền mặt). API `/gmv_max/campaign/get/` có `roi_protection_compensation_status` — Hubsell chưa đọc. "GMV Max Pro" (TikTok giới thiệu 30/10/2026) chưa có thông tin ngày ra mắt / thị trường VN. → Đã tra 17/11, xem mục 14.
+
+## 14. GMV MAX PRO — tra trợ giúp TikTok 17/11/2026 (anh Trung làm video)
+
+**Là gì:** "gói giải pháp xây trên GMV Max" (trang cập nhật 10/2026), chọn ở **Setup Mode = GMV Max Pro** khi tạo Product GMV Max.
+Đang triển khai dần cho một số nhà quảng cáo; khối nào dùng được tùy thị trường, tài khoản, giai đoạn.
+- **Tối ưu chi phí affiliate:** mục tiêu **ROI (Quảng cáo + Affiliate) = GMV ÷ (tiền quảng cáo + hoa hồng affiliate)**; hoa hồng là số
+  ƯỚC theo tỷ lệ trung bình 14 ngày của sản phẩm chọn; ROI hiện ra thấp hơn ROI quảng cáo (TikTok ghi rõ không phải hiệu quả kém đi);
+  ưu tiên video nhà / hoa hồng thấp khi doanh thu ngang. Thị trường ghi trên trang: Mỹ + ID, **VN**, TH, MY, PH, SG.
+- **Phiếu ưu đãi GMV Max:** tỷ lệ chi phí phiếu cấp chiến dịch 1–50 % (mặc định 3 %), "mọi doanh thu thuần trong chiến dịch đang chạy bị
+  tính theo tỷ lệ cố định"; TikTok bù thêm tối đa 60 % chi phí phiếu của shop; cần quyền Net Sales Access.
+- **Giảm phí hoa hồng sàn:** tự áp cho đơn của chiến dịch đủ điều kiện, hiện ở Seller Center Tài chính → Giao dịch → chi tiết đơn
+  ("commission waiver"); mức giảm không công bố.
+
+**Hubsell hiện tại (đọc mã 17/11):** hòa vốn = 1 ÷ biên lãi trước quảng cáo, biên lãi ĐÃ trừ 4 loại hoa hồng affiliate → cùng nền với ROI
+quảng cáo, KHÔNG cùng nền với ROI (Quảng cáo + Affiliate). Hòa vốn kiểu Pro = 1 ÷ (biên lãi trước quảng cáo + tỷ lệ affiliate / doanh thu).
+Chưa biết chiến dịch nào là Pro (báo cáo API chiến dịch Pro chưa probe) → `campaign-advice` "Mục tiêu dưới hòa vốn" có thể so hai loại
+số khác nhau với chiến dịch Pro. Giảm phí hoa hồng nằm trong bản kê đơn → tự vào biên lãi (khóa lạ dồn `feeOther`). Phiếu Pro đi vào
+`gmv_max_coupon_fee` → nằm trong `feeGmvMax` mà hòa vốn cộng ngược như tiền quảng cáo (anh chốt 01/11 không sửa trừ khi voucher lớn —
+phiếu Pro mặc định 3 % mọi doanh thu là ca đó). Chưa code gì.
+
+**"GMV Max Pro hoàn tiền quảng cáo đơn hủy / hoàn" — tra 17/11 (anh hỏi vì nghe người khác nói): KHÔNG có tài liệu nào.** Trang tổng
+Pro không nhắc hoàn tiền / đơn hủy / đơn hoàn / bảo vệ ROI; trang Phiếu ưu đãi chỉ nói phiếu tính trên doanh thu thuần, không định nghĩa
+doanh thu thuần, không nói trả lại khi hủy; không bài trợ giúp hay bài bên thứ ba nào khẳng định. Lời đồn nhiều khả năng lẫn với điều ĐÃ CÓ
+từ GMV Max thường (mục 13): shop chọn trả phí quảng cáo **trừ theo đơn lúc quyết toán** thì đơn hủy / hoàn toàn bộ không bị trừ (SQL prod
+13/11: 0/9.015 đơn hủy trước giao) — không phải tính năng Pro. Nạp tiền trước thì không trả lại; bảo vệ ROI bù tín dụng khi ROI < 90 % mục
+tiêu, không phải hoàn đơn hủy. Chưa loại trừ được phần bị cắt của trang Pro.
+
+## 15. BẢO VỆ ROI — ảnh "Lịch sử bảo vệ ROI" của khách 20/11/2026 (anh Trung hỏi: là gì, mình có chưa, ảnh hưởng ROI của mình không) — CHỈ KHẢO SÁT, chưa sửa mã
+
+**Ảnh khách gửi (Seller Center TikTok, tiếng Việt, tiền VND):** bảng "Lịch sử bảo vệ ROI … trong 60 ngày qua. Kết quả được tính hằng ngày và
+cập nhật sau mỗi 24 giờ", cột Ngày · Trạng thái · Tín dụng quảng cáo · ROI thực tế · Mục tiêu ROI hằng ngày · Chi phí.
+
+| Ngày | Trạng thái | Tín dụng | ROI thực tế | Mục tiêu ngày | Chi phí |
+|---|---|---|---|---|---|
+| 20/11 | Đủ điều kiện | – | – | – | – |
+| 18–19/11 | Đang tính toán | – | – | – | – |
+| 17/11 | Không đủ điều kiện | – | 7,22 | 15,8 | 61.485 |
+| 16/11 | Không đủ điều kiện | – | 11,62 | 15,8 | 91.940 |
+| 15/11 | Đã đạt ROI mục tiêu | – | 17,05 | 14,2 | 120.305 |
+| 14/11 | Đã đạt ROI mục tiêu | – | 38,6 | 14,2 | 150.754 |
+| 13/11 | Đã đạt ROI mục tiêu | – | 16,44 | 14,2 | 150.003 |
+| 12/11 | Đã đạt ROI mục tiêu | – | 13,64 | 14,2 | 61.730 |
+
+**Đọc ảnh:**
+- ★ Xác nhận Bảo vệ ROI ĐÃ CÓ ở Việt Nam (mục 13 ghi "chưa xác nhận VN" → nay đã rõ).
+- Cột Tín dụng quảng cáo TRỐNG cả 9 ngày → trong ảnh này khách CHƯA được bù đồng nào.
+- 12/11 ROI 13,64 < mục tiêu 14,2 nhưng vẫn "Đã đạt": ngưỡng là 90 % mục tiêu (14,2 × 0,9 = 12,78) — khớp trang trợ giúp.
+- 16–17/11 ROI tụt sâu dưới 90 % mục tiêu mà "Không đủ điều kiện". Ảnh không ghi lý do. Hai lý do khớp luật: (a) mục tiêu đổi 14,2 → 15,8
+  đúng ngày 16/11 — tăng ROI mục tiêu bằng tay là mất bảo vệ ngày đó; (b) chi 61–92 nghìn/ngày, doanh thu ≈ 0,44–1,07 triệu → rất khó có
+  > 20 đơn/ngày. Em SUY, chưa có số đơn của khách. Nếu được bù thì theo công thức sẽ là ≈ 16.810 đ (16/11) và ≈ 30.267 đ (17/11).
+
+**Hubsell đã có chưa (đọc mã 20/11):** CHƯA. `report.ts` chỉ xin `cost · orders · gross_revenue · roas_bid · target_roi_budget ·
+max_delivery_budget`; không đọc `roi_protection_enabled` (info), `roi_protection_compensation_status` (campaign/get), không có bảng / cột nào
+lưu tín dụng. Hubsell chỉ dùng LUẬT của bảo vệ ROI trong lời khuyên (hạ ≤ 1 lần/ngày, Phân phối tối đa không được bảo vệ).
+
+**Ảnh hưởng tới số của Hubsell:**
+- ROI thực tế (doanh thu gộp ÷ chi phí): KHÔNG đổi — cùng nguồn `gross_revenue / cost` với cột "ROI thực tế" của TikTok; tín dụng bù không
+  sửa lại ROI của ngày đó.
+- Hòa vốn, biên lãi: KHÔNG đổi.
+- Chi phí quảng cáo / lãi sau quảng cáo: khi khách ĐƯỢC bù, tín dụng cộng vào số dư quảng cáo; lúc tiêu vẫn nằm trong `cost` → Hubsell tính
+  chi phí cao hơn thực chi đúng bằng số tín dụng (giống ca Shopee "Hỗ trợ Kinh phí Hiệu suất", docs SHOPEE-NAP-VI-QUANG-CAO-TRU-TRUNG mục 10).
+  Với khách trong ảnh: 0 đ.
+- Lời khuyên: `campaign-advice.ts` ("Quảng cáo đang lỗ", "Mục tiêu dưới hòa vốn") và `breakeven.ts` bảo "Nâng ROI mục tiêu lên ít nhất
+  <hòa vốn>" mà KHÔNG nhắc: nâng tay là mất bảo vệ ROI của ngày hôm đó (câu khuyên HẠ thì đã có nhắc). Chưa sửa.
+
+**API có lấy được không (tra web 20/11, CHƯA thử trên API thật):** tài liệu của hai bên nối dữ liệu (Adriel, Supermetrics 08/2026) ghi báo cáo
+GMV Max có chỉ số `net_cost` ("spend net of TikTok-side adjustments", cấp chiến dịch / livestream) và chiều `roi_protection_compensation_status`.
+KHÔNG nguồn nào nói `net_cost` đã trừ tín dụng bảo vệ ROI; không thấy trường nào trả SỐ TIỀN tín dụng theo ngày. → muốn chắc phải thử một
+lệnh báo cáo có `cost` + `net_cost` trên gian có tín dụng thật (chờ anh).
+
+**Khách được bù thật thì lấy bằng API hay nhập tay? (anh hỏi tiếp 20/11) — hôm nay: NHẬP TAY.** Chưa có đường API nào đã kiểm:
+- `net_cost` trong báo cáo GMV Max: cùng quyền Reporting đang có, chỉ là thêm một chỉ số vào lệnh báo cáo đang gọi (0 lệnh thêm). Chưa biết
+  có trừ tín dụng bảo vệ ROI không; nếu có cũng chỉ ra chi phí ròng theo chiến dịch × ngày, không ra "được bù bao nhiêu, ngày nào".
+- `GET /bc/transaction/get/` + `GET /advertiser/balance/get/` (Business Center): trang trợ giúp TikTok "Transactions" ghi lịch sử giao dịch có
+  bản ghi ad credit và coupon. Nhưng là quyền Business Center (chỉ trả tài khoản mà BC có quyền quản trị) — app Hubsell CHƯA có nhóm quyền này
+  (đang có: Ad account information, GMV Max › Store management + Identity and video, Reporting › GMV Max reports) → phải xin thêm quyền (app
+  bị xét lại) + mọi khách ủy quyền lại, và khách phải có Business Center. Chưa đọc bảng trường chính thức.
+- `roi_protection_compensation_status`: chỉ là trạng thái, không có số tiền.
+- Nhập tay: khoản **Thu** ở Thu chi vận hành (`OperatingExpense.direction = INCOME`) được CỘNG vào lãi ròng (`lib/net-profit.ts`: lãi gộp −
+  phí sàn − chi vận hành + thu vận hành) → lãi ròng đúng; dòng chi phí quảng cáo và ROI theo chiến dịch giữ nguyên. Chưa chạy thử trên báo cáo.

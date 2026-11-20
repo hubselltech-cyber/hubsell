@@ -408,3 +408,191 @@ tên** (gian khác 4,25 % / 1,65 % / 0,50 % / 0) → đúng chỗ chốt chặn 
 Hubsell không tự ước TNCN 0,5 % (luật không bịa). Đã sửa tooltip 2 cột (`pnl-mappers.ts`): TNCN trống ở đơn ước tính +
 lý do; Phí khác ước tính = tổng sàn báo − phần bóc tách. Lợi nhuận đơn ước tính vẫn = settlement ước tính của sàn (đã gồm
 khoản này) nên không lệch khi quyết toán theo chiều xấu đi.
+
+## 15. RÀ LẠI 18/11 (anh: khách dùng Thuế bổ sung 1% × Tổng giá trị SP trả đội vận hành thuê ngoài — "xem lại công thức đã đúng chưa vì mình có lần thay đổi")
+
+**Mã:** công thức `revenueGross` (lib/pnl-formula.ts) KHÔNG đổi từ v3 29/10; v4 04/11 chỉ đổi cờ thiếu giá vốn. Sổ prod 30 ngày
+(đơn tính doanh thu): Shopee 28.762 đơn 6,16 tỷ · TikTok 197.627 đơn 51,07 tỷ · Lazada 694 đơn 0,23 tỷ; 0 dòng phiên bản cũ.
+Định nghĩa vẫn đúng chốt mục 8 (giá món hàng trong giỏ = sau KM sản phẩm của shop, trước voucher/xu/combo, trước phí sàn).
+
+**SQL chỉ đọc prod 18/11 (Supabase, 30 ngày, mọi gian) — 3 chỗ lệch:**
+1. **Shopee combo / mua kèm: Tổng giá trị SP = 0 cả đơn.** 340 đơn có `revenueGross = 0` (mọi dòng hàng `price = 0`, sàn trả
+   `model_discounted_price = 0` cho hàng trong combo); `totalAmount` 114,2 tr, escrow có `order_original_price`/`seller_discount`/
+   bundle (vd 180.000 − 82.800, combo 10.800). Thêm 18 đơn combo thiếu một phần (ours 4,46 tr vs escrow 15,0 tr). → thiếu
+   ~110–125 tr/30 ngày ≈ 1,8–2 % Shopee, dồn vào gian bán combo. Đây là bẫy mục 13 đã ghi ("Σ items thiếu phần đó") nhưng
+   mức thật là MẤT CẢ ĐƠN chứ không chỉ phần giảm.
+2. **TikTok đơn không có bản kê nào (thật hay ước tính):** 10.783 đơn 1,88 tỷ (10.012 đã giao, phần lớn 15–30 ngày tuổi) dùng
+   dự phòng Σ `sale_price` (đã trừ cả giảm giá sàn). Đơn có bản kê thật: `revenueGross` cao hơn Σ sale_price **20,13 %** → nhóm
+   này đang thiếu ~350 tr (≈0,7 % TikTok), dồn ở vài gian (gian nhiều nhất 33 % đơn 30 ngày không bản kê). Gốc chưa tra: vì sao
+   đơn đã giao lâu vẫn không có bản kê ước tính 202507.
+3. **TikTok voucher shop chưa đọc price_detail:** 9.675 đơn có bản kê nhưng `tiktokPriceDetailAt` null (8.731 ở MỘT gian, dừng
+   từ ~08/11) → Tổng giá trị SP thiếu phần voucher (~1,4–2 % giá trị nhóm, ~13 tr). Nghi lượt bù nền gian đó dừng vì lỗi.
+
+**Không phải lỗi (theo thiết kế):** 394 đơn Shopee hoàn tiền (REFUND_ONLY / PARTIAL_REFUND) — escrow ghi giá gốc − giảm giá
+= 0 sau hoàn, Hubsell giữ giá trong giỏ và trừ hoàn ở dòng hoàn tiền riêng. Nghĩa là Tổng giá trị SP GỒM đơn hoàn tiền không
+trả hàng (chỉ loại đơn hủy + đơn đang hoàn/trả) — khách đối chiếu với đội vận hành cần biết.
+
+Chưa sửa gì; chờ anh chốt (định nghĩa giá trong giỏ của đơn combo: escrow `order_original_price − order_seller_discount`
+có đã gồm combo hay chưa — cần đọc lại docs Shopee trước khi code).
+
+## 16. ĐỀ XUẤT SỬA THEO SAO KÊ (19/11 chiều, lượt chạy theo lịch — anh chốt hướng: "đơn nào sàn đã trả sao kê / bản kê thì cột lấy số sao kê, API đơn hàng chỉ dùng tạm") — CHỈ ĐỀ XUẤT, CHƯA code
+
+### 16.0 Đã kiểm / CHƯA kiểm ở lượt này (nói thẳng)
+
+- **Đã làm:** đọc lại mã `lib/pnl-formula.ts`, `lib/order-ledger.ts` (phân bổ dòng), `shopee/settlements.ts` + `shopee/client.ts`
+  (escrow), `tiktok/service.ts` (`syncTiktokSettlements`, `syncTiktokUnsettledEstimates`), `tiktok/price-detail.ts`,
+  `workers/order-auto-sync.ts` (tầng nhịp giờ), `scripts/sql/ads-margin-impact.sql`.
+- **CHƯA làm được (lượt tự chạy, không có anh bấm duyệt):**
+  1. **Đọc lại docs escrow Shopee** — trình duyệt trong app không mở được `open.shopee.com`, Chrome treo ở hộp "Allow", WebFetch bị chặn.
+  2. **SQL chỉ đọc trên prod** — Chrome cũng treo "Allow" ở `supabase.com`.
+  3. **SQL chỉ đọc trên DB dev cục bộ** — bị lớp phân quyền từ chối.
+  → Mọi con số dưới đây là số ĐÃ GHI ở mục 13 + 15 (29/10, 18/11), **không có số mới**. Các kết luận về Shopee là SUY LUẬN
+  từ số cũ, chưa đối chiếu đơn thật hôm nay. Câu SQL để kiểm đã soạn sẵn ở 16.5 — cần anh mở Chrome bấm Allow (hoặc gọi em
+  chạy lại khi anh ngồi máy).
+
+### 16.1 Shopee — công thức "giá trong giỏ" từ escrow
+
+**Câu phải chốt: `order_seller_discount` đã gồm phần combo chưa?** Chưa đọc lại được docs. Suy luận từ đơn mẫu mục 15
+(giá gốc 180.000, `order_seller_discount` 82.800, combo = `order_selling_price − order_discounted_price` = 10.800):
+- Nếu **đã gồm combo**: giảm giá sản phẩm = 82.800 − 10.800 = 72.000 = đúng **40 %** giá gốc → giá trong giỏ 108.000; combo 10.800 =
+  đúng **10 %** của 108.000 (kiểu "mua 2 giảm 10 %"). Hai tỷ lệ tròn.
+- Nếu **chưa gồm**: giảm giá sản phẩm 46 %, combo 11,11 % của 97.200 — hai tỷ lệ lẻ.
+
+→ **Nghiêng mạnh về "đã gồm combo"**, tức với đơn combo `giá gốc − order_seller_discount` = giá SAU combo, KHÔNG phải giá trong
+giỏ. Mức chắc: suy luận từ MỘT đơn, chưa phải docs, chưa phải nhiều đơn.
+
+**Công thức đề xuất — không phụ thuộc câu trên:** dùng thẳng **`order_selling_price`** (Σ giá sau KM sản phẩm của shop, TRƯỚC
+combo; mục 13 đã đo = Σ `model_discounted_price` × SL ở 97 % đơn không combo).
+
+```
+Shopee, đơn KHÔNG hủy, đã có escrow (ước tính hoặc thật), refundedAmount = 0, order_selling_price > 0:
+    Tổng giá trị SP (revenueGross)   = order_selling_price
+    Khấu trừ "Voucher & xu của shop" = voucher_from_seller + seller_coin_cash_back   (như cũ)
+    Khấu trừ MỚI "Combo / mua kèm"   = order_selling_price − order_discounted_price  (cột shopeeBundleDiscount đã có)
+Còn lại (đơn hủy, chưa có escrow, đơn có hoàn tiền): Σ model_discounted_price × SL như hiện nay.
+```
+- Vì sao loại đơn có hoàn tiền: mục 15 ghi escrow của đơn hoàn về 0 sau hoàn; Hubsell giữ giá trong giỏ và trừ hoàn ở dòng
+  riêng — lấy escrow là trừ hoàn hai lần. **Lỗ còn lại:** đơn combo CÓ hoàn tiền vẫn = 0 (chưa đếm được bao nhiêu đơn).
+- Vì sao lần này cộng combo vào khấu trừ được (mục 13 từng chặn): lúc đó Σ dòng hàng đã thiếu sẵn phần combo nên cộng là trừ
+  hai lần; khi gốc là `order_selling_price` thì không còn thiếu.
+- Đúng định nghĩa mục 8: sau KM sản phẩm của shop, trước voucher / xu / combo.
+- **Giả định phải kiểm (K1, 16.5):** `selling − discounted` đúng là combo chứ không lẫn `shopee_discount` (sàn giảm rồi bù).
+
+**Việc mã (khi anh duyệt):** thêm cột `Order.shopeeSellingPrice` ← `order_selling_price` trong `mapShopeeEscrowFields` (ghi ở cả
+luồng ước tính lẫn quyết toán → đúng "lấy số sao kê"); bù đơn cũ bằng bước bảo trì khởi động worker sổ cái chép từ
+`expectedIncome` (mẫu `backfillShopeeEscrowColumns` 29/10, không SQL tay); `computePnlRow` thêm nhánh Shopee; trigger đánh bẩn sổ
+thêm cột mới; `LEDGER_FORMULA_VERSION` 4 → 5; web + mobile thêm dòng khấu trừ "Combo / mua kèm".
+
+**★ Điểm em tìm thêm khi đọc `order-ledger.ts` — đơn combo đang VÔ HÌNH với quảng cáo:** dòng hàng chia theo `SL × price`; đơn
+combo mọi dòng price = 0 → `lineGross` = 0 → (a) hòa vốn / biên lãi quảng cáo bỏ qua cả đơn (`WHERE lineGross > 0`), (b) cờ thiếu
+giá vốn không bao giờ bật, (c) Lãi/Lỗ theo SKU chia đều theo số dòng. Sửa cấp ĐƠN không tự sửa cấp DÒNG. Muốn dòng đúng: khi
+Σ price = 0 thì chia theo `OrderItem.originalPrice × SL` (đã lưu từ 29/10, 0 lần gọi sàn). Tách thành lát S2 vì nó làm đơn combo
+BƯỚC VÀO hòa vốn quảng cáo.
+
+### 16.2 TikTok (2) — đơn đã giao lâu vẫn không có bản kê nào: giả thuyết + cách kiểm (KHÔNG vá số)
+
+Đọc `syncTiktokUnsettledEstimates` (`tiktok/service.ts`):
+- **H1 (nghi nhất) — trần trang cắt đuôi:** mỗi lượt đọc tối đa `MAX_PAGES = 50` trang × 100 dòng = **5.000 dòng**, xếp
+  `order_create_time` MỚI NHẤT TRƯỚC, lượt nào cũng bắt đầu lại từ đầu (không con trỏ). Gian có > 5.000 dòng chưa quyết toán
+  trong 45 ngày → phần đơn CŨ NHẤT không bao giờ được đọc, và mã KHÔNG ghi log khi chạm trần. Khớp triệu chứng mục 15: dồn ở vài
+  gian lớn, đơn 15–30 ngày tuổi.
+- **H2 — bản kê thật bị cắt 5.000 dòng:** `syncTiktokSettlements` đọc mỗi bản kê tối đa 50 trang × 100 dòng, cũng không log khi
+  còn trang. Bản kê ngày của gian rất lớn > 5.000 dòng → đơn phần đuôi không nhận số thật; cửa sổ nhịp giờ chỉ 7 ngày nên quá
+  7 ngày là không đọc lại.
+- **H3 — sàn lỗi 36009003 giữa chừng:** trang sau lỗi 3 lần thì "dừng êm, giữ N dòng" → đuôi mất; CÓ log
+  `Unsettled "…": trang N bị 36009003`.
+- **H4 — lượt giờ ném lỗi trước khi ghi:** 429 ở `statement_transactions` (log 08/11 đã thấy 2 dòng) làm `syncTiktokSettlements`
+  ném lỗi, lô đang gom trong RAM mất. Một mình H4 chỉ giải thích "đơn giữ số ước tính mãi", không giải thích "không có bản kê nào".
+
+**Cách kiểm (0 lần gọi sàn):**
+1. Render Logs worker, lọc `Ước tính TikTok "<gian>"`: số "(N dòng" lượt nào cũng ≈ 5.000 → H1 đúng.
+2. SQL K2 (16.5): đếm đơn không bản kê theo NGÀY TẠO của một gian — H1 cho hình VÁCH ĐỨNG (mới hơn mốc X gần như đủ, cũ hơn X
+   gần như trống); H2 cho hình rải theo ngày quyết toán.
+3. Log `trang N bị 36009003` → H3; log `Lỗi đối soát TikTok` lặp theo giờ → H4.
+
+**Hướng sửa nếu H1 đúng (thiết kế, không chỉnh số 50):** đọc hết bằng cách cắt lát theo ngày tạo, hoặc luân phiên phần đuôi theo
+con trỏ lưu ở `Channel`; chạm trần phải ghi log + đèn HQ. **Tốn lượt gọi sàn (không phải 0):** gian có T dòng chưa quyết toán
+cần ⌈T/100⌉ trang/lượt thay vì 50 — phải đo `total_count` (trang đầu sàn đã trả sẵn) rồi mới chọn nhịp cho phần đuôi (ví dụ đuôi
+6 giờ/lần). Đường này đi làn RAM `tiktok/rate-limit.ts` — cùng làn với sự cố hàng đợi bền (đại tu 5e); thêm lượt gọi cho gian lớn
+là thêm áp lực lên đúng làn đó → phải cân với thứ tự đại tu anh đã chốt.
+
+### 16.3 TikTok (3) — lượt bù price_detail kẹt ở một gian: giả thuyết + cách kiểm
+
+Đọc `backfillTiktokPriceDetails`: lấy 200 đơn MỚI NHẤT chưa đọc, đơn lỗi và đơn "thiếu trường" đều KHÔNG được đóng dấu → lượt sau
+lấy lại đúng những đơn đó. Từ đó:
+- **G1 — đầu hàng bị nhiễm độc:** ≥ 5 đơn mới nhất lỗi cố định (sàn báo không tìm thấy / không có quyền) → lượt nào cũng gọi 5 lần,
+  dừng, không tiến. Có log `price_detail "<gian>" đơn …` + dòng tổng "lỗi 5".
+- **G2 — kẹt IM LẶNG vì "thiếu trường":** payload không có `voucher_deduction_seller` → `noField`, không đóng dấu, và dòng log tổng
+  chỉ in khi có ghi hoặc có lỗi → 200 đơn đầu hàng đều thiếu trường thì mỗi giờ đốt 200 lượt gọi mà không để lại dấu vết.
+- **G3 — thông lượng:** 200 đơn/giờ = 4.800 đơn/ngày; gian bán nhiều hơn mức đó thì hàng chờ dài mãi (không "dừng" nhưng trông như kẹt).
+- **G4 — tầng giờ của gian không chạy tới bước này** (token, gói hết hạn / ngủ đông, tiến trình chết giữa lượt). Mốc ~08/11 trùng
+  ngày sự cố hàng đợi bền lần 4 — có thể chỉ là trùng hợp, chưa có căn cứ.
+
+**Cách kiểm (0 lần gọi sàn):** SQL K3 (16.5): `max(tiktokPriceDetailAt)` của gian + min/max ngày tạo của đơn chưa đọc. Dấu mới nhất
+đứng im từ 08/11 → G1/G2/G4; vẫn nhích mỗi giờ mà hàng chờ tăng → G3. Rồi Render Logs lọc `price_detail "<gian>"`: có "lỗi 5" lặp →
+G1; KHÔNG có dòng nào mà `Ước tính TikTok` của gian vẫn chạy → G2; không có cả hai → G4.
+
+**Hướng sửa (thiết kế):** đơn lỗi cố định / thiếu trường phải được đóng dấu "đã thử" (số lần + lần cuối) để rời đầu hàng; log cả
+lượt chỉ có `noField`; trần mỗi lượt theo hạn mức gian thay vì số cứng 200. Lượt gọi sàn: vẫn 1 lượt/đơn như thiết kế 29/10, còn
+GIẢM được phần gọi lặp vô ích.
+
+### 16.4 Tác động phải nêu trước khi code
+
+| | Lát S1 (Shopee cấp đơn) | Lát S2 (Shopee cấp dòng) | T2 | T3 |
+|---|---|---|---|---|
+| Sổ cái | `LEDGER_FORMULA_VERSION` 4 → 5, tính lại nền ~40' (587k dòng), báo cáo đang mở tự đủ (đã sửa 807d2fab) | đi chung v5 nếu làm cùng | không đổi công thức; đơn nhận bản kê tự đánh bẩn | không đổi; `tiktokVoucherSeller` tự đánh bẩn |
+| Gọi sàn thêm | **0** (`order_selling_price` nằm sẵn trong `order_income` đã kéo; đơn cũ lấy từ `expectedIncome`) | **0** | **> 0**, phải đo `total_count` trước | 0 thêm, giảm gọi lặp |
+| Tổng giá trị SP (số 18/11, 30 ngày) | Shopee +110–125 tr (≈ +1,8–2 %), dồn gian bán combo | không đổi tổng | TikTok +~350 tr (≈ +0,7 %) khi đủ bản kê | +~13 tr |
+| Doanh thu / hòa vốn ads | Doanh thu đơn combo từ 0 → giá trong giỏ − combo − voucher; `lineGross` vẫn 0 nên biên lãi quảng cáo DỰ KIẾN không đổi — vẫn phải đo | đơn combo BƯỚC VÀO hòa vốn + cờ thiếu giá vốn → biên lãi chiến dịch có SP combo sẽ đổi | đơn có bản kê thật mới vào mẫu TikTok → đổi dần | voucher không đổi `actualRevenue` |
+| Thuế bổ sung 1 % của khách | tăng theo Tổng giá trị SP (gian combo) | — | tăng (gian thiếu bản kê) | tăng nhẹ |
+
+**Bắt buộc trước khi push bất kỳ lát nào đổi `revenueGross` / `actualRevenue` / `lineGross`:** chạy `scripts/sql/ads-margin-impact.sql`
+(viết thêm biểu thức thay "lai" / "dt" cho luật mới vì script mặc định chỉ đo luật CHỌN ĐƠN) + mô phỏng trợ lý quảng cáo trước / sau
+từng chiến dịch, đưa anh bảng `doi2d` / `sang_am` rồi mới push.
+
+### 16.5 SQL chỉ đọc đã soạn (CHƯA chạy) — thay `<gian>` bằng id kênh, không đưa tên / email khách vào
+
+```sql
+-- K1 Shopee: đơn combo 7 ngày của MỘT gian — quan hệ các trường escrow
+SELECT right(o."orderCode",4) ma, o."totalAmount" tong, o."refundedAmount" hoan,
+  (o."expectedIncome"->>'order_original_price')::numeric goc,
+  (o."expectedIncome"->>'order_seller_discount')::numeric giam_sp,
+  (o."expectedIncome"->>'order_selling_price')::numeric selling,
+  (o."expectedIncome"->>'order_discounted_price')::numeric discounted,
+  (o."expectedIncome"->>'shopee_discount')::numeric san_giam,
+  (o."expectedIncome"->>'voucher_from_seller')::numeric voucher
+FROM "Order" o
+WHERE o."channelId" = '<gian>' AND o."createdAt" >= now() - interval '7 days'
+  AND o."shippingStatus" <> 'CANCELLED' AND o."shopeeBundleDiscount" > 0
+ORDER BY o."createdAt" DESC LIMIT 20;
+-- Đọc: goc − giam_sp = discounted → seller_discount ĐÃ gồm combo; = selling → CHƯA gồm.
+--      selling − discounted = san_giam → phần chênh là sàn giảm, KHÔNG phải combo (giả định 16.1 sai).
+
+-- K2 TikTok: đơn không bản kê theo ngày tạo, MỘT gian, 45 ngày (tìm vách đứng)
+SELECT o."createdAt"::date ngay, count(*) don, count(*) FILTER (WHERE s."orderId" IS NULL) khong_ban_ke,
+       count(*) FILTER (WHERE s."estimated") uoc_tinh, count(*) FILTER (WHERE NOT s."estimated") that
+FROM "Order" o LEFT JOIN "tiktok_order_settlements" s ON s."orderId" = o.id
+WHERE o."channelId" = '<gian>' AND o."createdAt" >= now() - interval '45 days' AND o."shippingStatus" <> 'CANCELLED'
+GROUP BY 1 ORDER BY 1;
+
+-- K3 TikTok: hàng chờ price_detail của MỘT gian
+SELECT max(o."tiktokPriceDetailAt") doc_cuoi,
+       count(*) FILTER (WHERE o."tiktokPriceDetailAt" IS NULL) cho,
+       min(o."createdAt") FILTER (WHERE o."tiktokPriceDetailAt" IS NULL) cho_cu_nhat,
+       max(o."createdAt") FILTER (WHERE o."tiktokPriceDetailAt" IS NULL) cho_moi_nhat
+FROM "Order" o JOIN "tiktok_order_settlements" s ON s."orderId" = o.id
+WHERE o."channelId" = '<gian>' AND o."createdAt" >= now() - interval '30 days';
+```
+
+### 16.6 Đề xuất theo lát (chờ anh duyệt)
+
+| Lát | Việc | Trước → sau (30 ngày, số 18/11) | Điều kiện |
+|---|---|---|---|
+| **K (kiểm)** | Chạy K1–K3 + đọc docs escrow + đọc Render Logs | — | anh bấm Allow trên Chrome |
+| **S1** | Shopee: Tổng giá trị SP = `order_selling_price` khi có escrow; dòng khấu trừ "Combo / mua kèm"; sổ v5 | 340 đơn từ 0 → ~114 tr + 18 đơn 4,46 → ~15 tr | sau K1; đo ads trước push |
+| **S2** | Shopee: chia dòng theo giá niêm yết khi Σ giá = 0 → đơn combo vào Lãi/Lỗ SKU + hòa vốn ads + cờ thiếu giá vốn | tổng không đổi; biên lãi chiến dịch có SP combo đổi | anh chốt có cho combo vào hòa vốn không |
+| **T3** | price_detail: đóng dấu đơn đã thử, log lượt im lặng | 9.675 đơn chờ → 0; +~13 tr | sau K3 |
+| **T2** | Bản kê ước tính: đọc hết đuôi + log chạm trần | 10.783 đơn không bản kê; +~350 tr | sau K2 + đo số lượt gọi; cân với đại tu 5e |
+
+Thứ tự em khuyên: K → S1 → T3 → (S2, T2 chờ anh chốt riêng). S1 đúng hướng anh chốt, 0 lần gọi sàn, sửa khoản thiếu rõ nhất của
+khách đang dùng Thuế bổ sung 1 %. T2 lớn tiền nhất nhưng tốn lượt gọi và đụng làn nhịp gian lớn nên không nên đi trước khi có số đo.

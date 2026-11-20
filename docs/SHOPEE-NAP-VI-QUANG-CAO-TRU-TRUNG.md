@@ -67,3 +67,52 @@ Cùng luật đang chạy cho TikTok GMV Max (20/10):
 - `expense` của Ads API Shopee đã gồm VAT 8 % chưa (tiền nạp ví thì có VAT) — chưa biết.
 - Mức % shop đang cài: chưa biết có API không; việc sửa không cần.
 - Mobile: dòng "Nạp ví quảng cáo" và ghi chú đi theo dữ liệu backend, chưa soi trên app.
+
+## 10. Tiền ưu đãi "Hỗ trợ Kinh phí Hiệu suất" + Voucher Thông Minh — Hubsell CHƯA lấy, sàn KHÔNG có API (20/11/2026, chỉ khảo sát, chưa sửa gì)
+
+**Ca gốc:** anh Trung gửi 3 ảnh Seller Center của một gian khách: (1) Voucher Thông Minh "100 % tài trợ bởi nền tảng" (gian này đang 0 đ); (2) hộp "Chi tiết tiền ưu đãi" của Hỗ trợ Kinh phí Hiệu suất — tuần 09–15/11 "Đã phân phối tiền ưu đãi" 214.728 đ, tuần 02–08/11 không được xét vì lượt chuyển đổi < 25; (3) Lịch sử giao dịch ví quảng cáo — dòng 18/11 "Tiền ưu đãi từ Hỗ trợ Kinh phí Hiệu suất + 214.728", hết hạn 23:59 17/05/2027. Anh hỏi: Hubsell có lấy khoản này về không, về đâu, có nằm trong cột Tổng giá trị sản phẩm không.
+
+**Trả lời (đọc mã 20/11):**
+
+- KHÔNG lấy. Hubsell chỉ lấy 3 thứ về tiền quảng cáo Shopee: `expense` theo ngày → `AdSpend` (dòng "Chi phí quảng cáo sàn"); `total_balance` → `Channel.adsWalletBalance` (Trợ lý quảng cáo, cảnh báo ví); khoản trích từ đơn → `Order.adWalletTopup`. Không đường gọi nào đọc lịch sử giao dịch ví quảng cáo.
+- KHÔNG nằm trong Tổng giá trị sản phẩm: cột đó = Σ `revenueGross` (giá món hàng trong giỏ của từng đơn), khoản này không gắn đơn nào. Voucher Thông Minh là tiền sàn trả thay người mua → shop vẫn nhận đủ giá trong giỏ, Hubsell không tách thành số riêng.
+- Hệ quả: khi khách tiêu khoản ưu đãi, sàn vẫn ghi "Khấu trừ" như thường → Hubsell cộng vào chi phí quảng cáo dù khách không bỏ tiền. Chi phí quảng cáo của gian cao hơn thực chi đúng bằng tiền ưu đãi (rải theo ngày tiêu). Đây là suy từ ảnh + mã, CHƯA đối chiếu số prod của gian.
+
+**Tài liệu Shopee Open Platform (đọc 20/11/2026 qua Chrome, open.shopee.com/documents/v2):**
+
+- Nhóm **Ads có 24 API**: get_total_balance, get_shop_toggle_info, get_recommended_keyword_list, get_recommended_item_list, get_all_cpc_ads_hourly_performance, get_all_cpc_ads_daily_performance, create_auto_product_ads + edit_auto_product_ads (ghi "coming offline soon"), get_product_campaign_daily_performance, get_product_campaign_hourly_performance, get_product_level_campaign_id_list, get_product_level_campaign_setting_info, create_manual_product_ads, edit_manual_product_ad_keywords, edit_manual_product_ads, get_create_product_ad_budget_suggestion, get_product_recommended_roi_target, get_ads_fácil_shop_rate, check_create_gms_product_campaign_eligibility, create_gms_product_campaign, edit_gms_product_campaign, list_gms_user_deleted_item, edit_gms_item_product_campaign, get_gms_campaign_performance, get_gms_item_performance. **Không API nào trả lịch sử giao dịch ví quảng cáo, tiền ưu đãi, hay Voucher Thông Minh.**
+- `get_total_balance` — nguyên văn: "seller's ads credit balance, including paid credits and free credits" → tiền ưu đãi ĐÃ nằm trong `adsWalletBalance`, nhưng gộp một số, không tách được.
+- `expense` (get_all_cpc_ads_daily_performance) — tài liệu chỉ ghi "Ad Expenditure", KHÔNG nói có gồm phần tiêu bằng free credit hay không.
+- Nhóm Payment: `get_billing_transaction_info` chỉ cho người bán xuyên biên giới (CB). `get_wallet_transaction_list` (ví shop, Hubsell đang gọi nhưng chỉ lọc lệnh rút) có loại `PAID_ADS_CHARGE` (450) / `PAID_ADS_REFUND` (451) = tiền ví shop nạp sang quảng cáo và hoàn lại — KHÔNG phải tiền ưu đãi (ưu đãi vào thẳng ví quảng cáo).
+
+**Vì sao không tự suy ra được:** biến động số dư = tiền nạp + tiền ưu đãi − tiền tiêu; tiền nạp thẳng bằng thẻ / ngân hàng không có API nào trả → không tách được ưu đãi khỏi tiền nạp một cách chắc chắn.
+
+**Nháp ticket hỏi Shopee (20/11/2026, CHƯA GỬI — anh bảo soạn trên Chrome; đường vào: Console → Raise Ticket → AI Assistant → "Still having problems? Raise Ticket" → form; L1 Feature APIs / L2 Ads / V2-Ads, app Hubsell Ads 2044679):**
+
+> Subject: Ads API – how to get ads credit transaction history / free credits (Performance Funding Support rebate, Smart Voucher)
+>
+> Hello Shopee Open Platform team,
+>
+> We are an ISV serving sellers in Vietnam (region VN). Our sellers need the correct advertising cost in their profit reports.
+>
+> In Seller Centre > Shopee Ads > Ads Credit > Transaction History, sellers see entries such as "Tiền ưu đãi từ Hỗ trợ Kinh phí Hiệu suất" (free ads credit granted weekly by the Performance Funding Support program, with an expiry date), "Nạp tiền tự động" (auto top-up) and "Khấu trừ cho Dịch vụ Hiển thị Sản phẩm" (deduction). There is also "Voucher Thông Minh" (Smart Voucher, 100% funded by the platform) with "voucher value" and "sales with voucher".
+>
+> We checked all APIs under v2.ads and v2.payment and could not find any API returning this data. v2.ads.get_total_balance returns one number only (paid credits and free credits combined).
+>
+> Questions:
+> 1. Is there an Open API (available or planned) to get the ads credit transaction history of a shop (top-up, deduction, free credit / rebate granted, expiry)? If yes, which API and which permission?
+> 2. Is there any API to get the free credit granted by the Performance Funding Support program (amount, review period, distribution date), or to split total_balance into paid credits and free credits?
+> 3. Does the "expense" field of v2.ads.get_all_cpc_ads_daily_performance and v2.ads.get_product_campaign_daily_performance include spending paid by free credits, or paid credits only?
+> 4. For Smart Voucher: is there an API for "voucher value" and "sales with voucher"? In v2.payment.get_escrow_detail, in which field does this platform-funded voucher amount appear (voucher_from_shopee)?
+> 5. If no such API exists, could you please forward this as a feature request?
+>
+> Thank you.
+
+**Trạng thái trên Chrome 20/11 (CHƯA vào được form, CHƯA gửi):** đường cũ 23/10 không còn — hỏi AI Assistant ở Console → Raise Ticket thì bị chuyển sang `/ai-chat-bot/chat`, cuối câu trả lời KHÔNG còn nút "Still having problems? Raise Ticket" (nút ngón tay chỉ xuống chỉ mở hộp góp ý; menu Support Center → Raise Ticket quay lại đúng màn AI Assistant; trang `/console/raise-ticket/<type_id>` trắng, kể cả type 2061 = Feature APIs / Ads lấy từ danh mục của chính trang). AI Assistant của Shopee trả lời câu hỏi 1–2: tài liệu KHÔNG có API lịch sử giao dịch ví quảng cáo, `total_balance` gộp paid + free credits, không có trường tách. → cần anh mở form (hoặc chỉ đường vào), em điền nội dung trên rồi anh bấm gửi.
+
+**★ 20/11 ~11:15 — ĐÃ TÌM RA ĐƯỜNG VÀO + ĐÃ ĐIỀN XONG FORM, CHƯA BẤM GỬI (anh: "em tự mở và điền đi"):** đường mới = mở thẳng `https://open.shopee.com/console/raise-ticket/2005?category_name=Feature%20APIs` (2005 = `category_id` của nhóm Feature APIs, KHÔNG phải type_id; màn Raise Ticket giấu vùng chọn nhóm khi cờ `force_chatbot` bật) → cột trái chọn **Ads** → nút **Raise a Ticket** góc dưới phải → form mở ở TAB MỚI (open-platform.cs.shopee.com/portal/webform/…). Đã điền: email (có sẵn), VN / Feature APIs / Ads (có sẵn), Question Subject, Question Description (bản nháp trên + một dòng ghi chú "không có request_id thật, hai ô dưới là giữ chỗ", 1.859 ký tự), Partner ID 2044679, API Category "V2 - Ads", API Name `v2.ads.get_total_balance`, Request ID "N/A - API consultation, no failed request", Request Time 2026/11/20 11:14. Để trống: Shop ID, File, Request, Response. Form không báo lỗi ô nào. Nút 提交 CHƯA bấm — chờ anh.
+
+**✅ 20/11/2026 ~11:23 — TICKET ĐÃ GỬI: Enquiry ID `2123633047348785173`** (webform 2123633046065553487, tiêu đề hiện "Feature APIs 问题", status In Progress; My Enquiries ghi giờ cập nhật 2026/11/20 12:22 — lệch 1 giờ so với giờ VN). Anh bảo "Gửi đi" → tab form lần đầu rời nhóm tab nên em mở + điền lại form mới (Request Time 2026/11/20 11:21), bấm 提交, anh kéo CAPTCHA mảnh ghép → "已成功提交 … you can expect a reply via email". My Enquiries chỉ có MỘT ticket mới (không trùng). Theo dõi: `https://service.open-platform.cs.shopee.com/` (zing4teen@gmail.com) + thư từ openapi@support.shopee.com. **Trả lời của Shopee ghi ngay dưới đây:**
+- ⏳ chưa có.
+
+**Hướng (chưa làm, chờ anh):** (a) hỏi Shopee qua ticket xem có / sắp có API lịch sử giao dịch ví quảng cáo; (b) trong lúc chờ, khách ghi tay một khoản Thu ở Thu chi vận hành (`OperatingExpense.direction = INCOME`) — lãi ròng đúng, dòng "Chi phí quảng cáo sàn" giữ số cũ; chưa chạy thử trên báo cáo.

@@ -1928,3 +1928,61 @@ ngắt giữa chừng. Clip ĐANG QUAY lúc app bị tắt vẫn mất (chưa c�
 TestFlight hẹn sẵn `812ff6a6-d2d1-43e5-8609-88ce94ab48c8`. ⛔ CHỈ TestFlight; ⚠️ đừng gắn build 41 / 42 / 43 khi nộp App Store.
 
 ✅ **Bản 43 VALID trên App Store Connect** — tải lên 14:36, đọc bằng `asc-release.mjs status` lúc 14:39 20/11; chưa nhìn trong app TestFlight trên máy.
+
+### 25.13 ĐO clip thật trên R2 sau buổi anh đóng hàng thử 20/11 (15:12–15:21) — thời lượng, dung lượng, quy ra tiền
+
+Anh 20/11: "hôm nay anh test một lượng video đóng hàng thật… đo lại lượng thời gian và dung lượng trên R2 là bao nhiêu và nếu tính ra mua
+gói thì sẽ tốn bao nhiêu tiền."
+
+**Cách đo [ĐO 20/11 ~15:30, chỉ đọc]:** liệt kê bucket `hubsell-video-thu` bằng khóa thử (ListObjectsV2) → cỡ từng tệp là số của R2;
+thời lượng đọc bằng `ffprobe` qua đường dẫn ký sẵn (chỉ đọc phần đầu tệp, không tải clip về máy). Tiền tố `cms4dqhw…` = tài khoản
+admin@hubsell.vn trên PROD (54 tệp, khớp chip "Tất cả 54"); tiền tố `cmrotg43…` = tài khoản thử trên máy local (dùng chung bucket).
+**CHƯA kiểm:** số giây máy chủ đã TRỪ cho từng clip (cột `durationSec` trên prod) — Chrome không nối được nên chưa đọc Supabase. Kiểm chéo
+gián tiếp: tổng 54 clip theo ffprobe = 23,8 phút, màn anh chụp ghi "Còn 19 giờ 36 phút / 20 giờ" (đã dùng ≈ 24 phút) → khớp.
+
+| Phần | Số clip | Thời lượng | Dung lượng | MB / phút | Tiền giờ quay (1.500 đ / giờ) |
+|---|---|---|---|---|---|
+| **Hôm nay 20/11 (prod)** | 10 | 327 giây = 5 phút 27 giây | 38,75 MB | 7,11 | ≈ 136 đ |
+| – quay bằng web (1280×720) | 4 | 151 giây | 15,42 MB | 6,14 | ≈ 63 đ |
+| – quay bằng iPhone (768×1024, 30 khung / giây) | 6 | 176 giây | 23,33 MB | 7,93 | ≈ 74 đ |
+| Cả tài khoản prod từ 16/11 | 54 | 1.428 giây = 23,8 phút | 169,98 MB | 7,14 | ≈ 595 đ |
+| Cả bucket (gồm 28 tệp của tài khoản thử local) | 82 | — | 345,10 MB | — | — |
+
+- Hôm nay có 1 clip 4,6 giây (thử lúc 15:12); 9 clip còn lại là đóng hàng thật: **29–44 giây, trung bình 35,8 giây, 4,2 MB / đơn**.
+- Chip "Chưa tải lên xong 1" trên màn anh chụp: clip đó chưa có tệp hoàn chỉnh trên R2 nên không nằm trong các số trên.
+
+**Quy ra tiền cho khách (đơn giá đã chốt 1.500 đ / giờ; mốc 35,8 giây / đơn là số đo của MỘT buổi, một người, một loại hàng — túi):**
+1 giờ ≈ 100 đơn → **≈ 15 đ / đơn**. Mua tối thiểu 20 giờ (30.000 đ) ≈ 2.000 đơn; 50 giờ (75.000 đ) ≈ 5.000 đơn; 200 giờ (300.000 đ)
+≈ 20.000 đơn; 500 giờ (750.000 đ) ≈ 50.000 đơn. Shop 100 đơn / ngày ≈ 30 giờ / tháng ≈ 45.000 đ; 300 đơn / ngày ≈ 90 giờ ≈ 134.000 đ;
+1.000 đơn / ngày ≈ 298 giờ ≈ 447.000 đ.
+
+**Giá vốn hạ tầng theo số đo này (giá R2 + tỷ giá 26.000 như mục 16):** 7,1 MB / phút = 427 MB / giờ → lưu ≈ 167 đ / giờ quay / tháng
+(web 144, iPhone 186), giữ 25 ngày ≈ 139 đ + ghi ≈ 12 đ (≈ 100 tệp / giờ) ≈ **150 đ / giờ quay** — vẫn trong khung 125–150 đ của mục 16,
+biên gộp hạ tầng ≈ 90 %. Hôm nay hóa đơn R2 thật = 0 đ: cả bucket 345 MB ≈ 3,5 % hạn mức miễn phí 10 GB.
+
+⚠️ **iPhone ra 7,93 MB / phút, cao hơn ≈ 30 % so với số 6,1 MB / phút đang dùng** (`PACK_VIDEO_SIZE_BYTES_PER_MIN`, đo trên Note8 ở
+15 khung / giây); web đúng 6,14. Chưa ảnh hưởng gì: biên kiểm chéo ±40 % vẫn phủ, giá bán tính theo GIỜ nên không đổi. Chỉ cần nhớ khi
+tính giá vốn cho shop quay toàn iPhone (≈ 476 MB / giờ thay vì 360).
+
+**Anh 20/11: "Cũng còn tùy thuộc vào độ phân giải khách đang dùng nữa" → đọc mã [20/11]:** cỡ tệp đi theo BITRATE, không theo độ phân
+giải. Web khóa cứng 1280×720 · 30 khung / giây · 800k (`frontend/src/lib/pack-video-recorder/config.ts`), khách không đổi được. App bản
+thử (nhánh thử, `src/app/video-test.tsx`) mặc định 3:4 · 800k nhưng bảng "⚙ Cài đặt" còn chip 720p / 1080p / 3:4 và bitrate 800k / 1.500k /
+3.000k — là công cụ của người thử. ƯỚC (chưa đo): 1.500k ≈ 675–890 MB / giờ, 3.000k ≈ 1.350–1.780 MB / giờ → giá vốn giữ 25 ngày
+≈ 220–290 đ và ≈ 440–580 đ / giờ quay; ở 3.000k mà giữ đủ 90 ngày thì vượt giá bán 1.500 đ. Máy chủ hiện chỉ GẮN CỜ khi cỡ tệp lệch
+thời lượng quá ±40 %, không từ chối. → Trước khi mở màn quay của app cho khách: bỏ các chip độ phân giải / bitrate (hoặc chỉ để cho tài
+khoản thí điểm). ⏳ anh chốt lúc mở cho khách.
+
+### 25.14 ★ ANH CHỐT 20/11: app KHÓA CỨNG khung 3:4 + bitrate 800k — đã sửa trên nhánh thử (CHƯA commit, CHƯA dựng bản mới)
+
+Anh 20/11 (sau số đo mục 25.13): "anh nghĩ là mình sẽ khóa cứng luôn tỉ lệ 3:4 và 800K." ⛔ Đừng thêm lại nút chọn độ phân giải / bitrate
+trên màn quay của app; đừng đề xuất gói "chất lượng cao" khi anh chưa hỏi.
+
+- **Đã sửa** `hubsell-mobile/src/app/video-test.tsx` (nhánh `thu/video-dong-goi-lat-0`, `D:\HubsellVideo`): bỏ ba chip 720p / 1080p / 3:4
+  và ba chip 800k / 1.500k / 3.000k trong bảng "⚙ Cài đặt"; thay bằng hằng số `RECORD_RESOLUTION` (4:3 của cảm biến → tệp 3:4),
+  `RECORD_ASPECT`, `RECORD_BITRATE = 800_000`. Bảng ⚙ còn chip 15 / 30 khung / giây và "soi vừa / soi cao" (công cụ người thử; bitrate
+  đã khóa nên không đổi cỡ tệp).
+- **Em HIỂU câu chốt là cho APP.** Web giữ 1280×720 · 800k như đang khóa: webcam là khung ngang 16:9, ép 3:4 thì cắt mất hai bên mặt bàn.
+  Anh muốn web cũng 3:4 thì nói, em chưa đổi.
+- **Đã kiểm:** `tsc` sạch; eslint cả `src` = 47 (mức nền), tệp vừa sửa không có lỗi. **CHƯA kiểm:** chưa chạy trên máy nào — bản
+  TestFlight 43 trên máy anh VẪN còn các chip cũ; muốn có trên iPhone phải dựng bản mới. Anh chốt 20/11: "Để gộp bản sau" → không dựng bản 44 riêng, đi cùng bản dựng kế tiếp.
+- **Chưa làm:** máy chủ chưa từ chối tệp nặng bất thường (vẫn chỉ gắn cờ lệch ±40 %); máy không quay được 3:4 chưa có đường lùi 9:16.

@@ -327,13 +327,15 @@ Mỗi bước một commit, không gộp.
 > quota is per app or per seller, and how an ISV can request a higher quota.
 
 
-### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 — ✅ ĐÃ GỬI 11:11, Enquiry ID 2113468448421310539 (In Progress)
+### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 — ✅ ĐÃ GỬI 11:11, Enquiry ID 2113468448421310539 (Shopee trả lời 19/11; anh chốt 20/11 để tự đóng)
 
 **Đã gửi 23/10/2026 11:11** (em điền qua Chrome, anh bấm 提交): Enquiry ID **2113468448421310539**, webform 2113468448136294418, app 2044679, L1 Feature APIs / L2 Ads / API Category V2-Ads / API Name v2.ads.get_all_cpc_ads_daily_performance / Shop ID mẫu 1359898174 / Request ID mẫu e3e3e7f35e74662c33951aca17f32500 / Request Time 23/10 04:18 VN. Mô tả gửi = phần A dưới đây rút còn 8.037 ký tự (form giới hạn 9.999) + 57 dòng request_id dạng ngắn (mã ALLCPC/SETTING/BALANCE/ROI/BUDGET có chú giải). Theo dõi: My Enquiries `https://service.open-platform.cs.shopee.com/` (zing4teen@gmail.com) + email openapi@support.shopee.com. Lịch nhắc kiểm 27/10 08:30. Trả lời của Shopee ghi ngay dưới đây.
 
 **Trả lời Shopee:**
 - **23/10/2026 17:33 — vòng 1 (Shopee Agent, via email 2113564488338505794), status vẫn In Progress:** nguyên văn: "We have submitted the issue you reported to the relevant R&D team for confirmation and resolution. We will respond to you via the ticket as soon as there are further updates." → mới là thư xác nhận đã chuyển R&D, CHƯA có số/câu trả lời. Khác lần 1 (15/09 đòi log rồi 10/10 nói không công bố): lần này không bác, đã nhận log 57 request_id. Giữ nguyên quyết định 23/10: không chỉnh số, không mở C2/D/C3; kiểm lại 27/10 08:30 (My Enquiries). Nếu 27/10 vẫn chỉ In Progress thì chờ thêm, không giục trước 30/10.
-- ⏳ vòng 2 (R&D): chưa có.
+- **30/10/2026 14:25 — mình nhắn (via Seller Services Portal):** "Thank you for the update. I will wait for further information from the R&D team."
+- **★ 19/11/2026 19:11 — vòng 2 (Shopee Agent, via email 2123373507076309070), status → "Your Action Required" (đọc trên My Enquiries 20/11/2026):** nguyên văn: "Dear Developer, The API was receiving a high volume of requests at that time, which triggered rate limiting. Please retry outside peak periods. Best regards, Shopee OpenAPI Team". → Shopee nhận 429 là do API của HỌ quá tải lúc cao điểm, khuyên gọi lại ngoài giờ cao điểm. KHÔNG trả lời 4 ý đã hỏi: không nói tầng nào bị dính, không cho con số trần theo partner / shop, không xác nhận cửa sổ 17–19h UTC, không nói cách xin nâng trần, không gợi ý endpoint thay thế. Quyết định T1–T4 (mục 13.9.11) vẫn là của anh; em chưa chỉnh số nào.
+- **★ 20/11/2026 — ANH CHỐT: ĐÓNG, không hỏi lại "peak periods"; KHÔNG gửi thêm thư — "để tự đóng".** Trang chi tiết ticket trên My Enquiries không có nút đóng (chỉ có Reply) → để nguyên "Your Action Required" cho Shopee tự đóng. Coi như ticket này XONG: không có số trần, đừng hỏi lại Shopee về trần 429.
 
 **Gửi ở đâu:** Shopee Open Platform Console → Raise Ticket, L1 Feature APIs / L2 Ads / API Category V2-Ads, chọn app **Hubsell Ads partner_id 2044679** (ticket 12/09 gửi dưới app 2040029 — lần này đúng app dính lỗi). Anh kéo CAPTCHA; trả lời về hộp thư đăng ký Console. Nhắc ticket cũ 2098790879624904785 (Shopee 15/09: "provide complete and specific API call logs"; 10/10: "shop level once per minute should generally be allowed"). Dán phần A vào thân ticket, phần B (bảng request_id) vào ô mô tả hoặc đính kèm .txt. Câu trả lời ghi vào memory `hubsell-api-quota-san` + mục này.
 
