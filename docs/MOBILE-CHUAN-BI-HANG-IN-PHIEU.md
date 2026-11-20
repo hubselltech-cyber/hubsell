@@ -225,7 +225,7 @@ Cùng việc với hộp Chuẩn bị hàng của web (sàn sắp xếp vận ch
   / chưa hỗ trợ (thẻ đỏ / vàng, bị bỏ qua); gian chọn lấy hàng tận nơi mà sàn chưa có địa chỉ lấy hàng.
 - **Ba màn trong một hộp:** chọn → đang chạy (thanh tiến độ "Sàn đã sắp xếp x/y") → kết quả (sàn nhận bao
   nhiêu; đơn bị từ chối liệt kê ĐỦ mã + lý do; nút "In phiếu N đơn" đi tiếp).
-- **Không có công tắc "In ngay sau khi sàn xác nhận"** như web: màn kết quả đã có nút In, một chạm.
+- **Không có công tắc "In ngay sau khi sàn xác nhận"** như web: màn kết quả đã có nút In, một chạm. (20/11/2026: web cũng đã bỏ công tắc này, dùng cùng khuôn màn kết quả — `CHUAN-BI-HANG-THEO-ME.md` mục 6.)
 
 Backend thêm `GET /api/orders/process-queue?stage=ARRANGE|PRINT|REPRINT` (`lib/process-queue.ts`): trả id đơn
 của một công đoạn gom gian → hãng, chỉ đọc bảng Order, không gọi sàn. App cần nó vì không có bảng tích; kéo

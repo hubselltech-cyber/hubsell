@@ -28,7 +28,7 @@
 - [APPLE-IAP-MUA-GOI-TRONG-APP.md](APPLE-IAP-MUA-GOI-TRONG-APP.md) — mua gói trong app iOS
 
 ## Đơn hàng, kho, vận hành
-- [CHUAN-BI-HANG-THEO-ME.md](CHUAN-BI-HANG-THEO-ME.md) — chuẩn bị hàng theo mẻ, chạy nền
+- [CHUAN-BI-HANG-THEO-ME.md](CHUAN-BI-HANG-THEO-ME.md) — chuẩn bị hàng theo mẻ, chạy nền; 20/11/2026 chuẩn bị xong không tự in — màn kết quả có nút In / Đóng (mục 6)
 - [LUU-VAN-DON-DA-IN.md](LUU-VAN-DON-DA-IN.md) — 06/11/2026 công tắc "Lưu vận đơn" theo gian: chép phiếu khách in vào kho tệp (bucket riêng tư `order-labels`), giữ 60 ngày, nút "In lại phiếu" cho đơn hãng đã lấy kiện; hàng chờ nhỏ giọt, dọn theo thư mục ngày; kết quả thăm dò prod (Shopee + TikTok không trả phiếu sau khi lấy kiện). Đã push 06/11, anh tự thử trên prod
 - [TU-CHUAN-BI-HANG.md](TU-CHUAN-BI-HANG.md) — 04/11/2026 công tắc "Tự chuẩn bị hàng" theo gian: worker làn `fulfill` tự chạy mẻ Chuẩn bị hàng 30′/lần (đơn sang Đã xử lý · Chưa in phiếu), luật chọn đơn + 5 nhóm kết cục, `POST /api/channels/:id/auto-arrange`, chạy bóng bằng SQL
 - [DONG-GOI-BAN-GIAO.md](DONG-GOI-BAN-GIAO.md) — 01/11/2026 trạng thái nội bộ "Đã đóng gói" (quét lại kiện sau in, chặn đơn hủy) + Biên bản bàn giao cho ship (mỗi hãng một tờ A4 có mã vạch, `handover_sheets`), trang `/orders/packing`, API `/api/orders/packing/*`; mobile nối sau

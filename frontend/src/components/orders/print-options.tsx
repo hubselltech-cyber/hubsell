@@ -46,7 +46,7 @@ export function readPrintOptions(): PrintOptions {
   }
 }
 
-export function writePrintOptions(opts: PrintOptions) {
+function writePrintOptions(opts: PrintOptions) {
   try {
     localStorage.setItem(PREF_KEY, JSON.stringify(opts));
   } catch {

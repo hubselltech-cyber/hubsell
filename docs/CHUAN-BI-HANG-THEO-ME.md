@@ -33,7 +33,7 @@ POST /api/orders/bulk/confirm  → kiểm đơn
      sàn OK → Order.PROCESSED + mã vận đơn ngay từng nhóm; tiến độ `done` ghi ≤1 lần/giây
 GET  /api/orders/bulk/confirm/:batchId → {status, done, total, confirmed, failed, notes}
      RUNNING quá 3 phút không cập nhật = FAILED (máy chủ khởi động lại)
-Giao diện: lib/api bulkConfirmOrders tự poll 1,5 s; nút "Sàn đã sắp xếp x/y…"; xong → đợi mã → in
+Giao diện: lib/api bulkConfirmOrders tự poll 1,5 s; nút "Sàn đã sắp xếp x/y…"; xong → MÀN KẾT QUẢ có nút In / Đóng (20/11, mục 6) — bấm In mới đợi mã → in
            reattached → toast "Lượt trước vẫn đang chạy — đang theo dõi tiếp" rồi poll lượt cũ như thường
 ```
 
@@ -120,3 +120,31 @@ Trước khi có số thật (5.2), em đã code một lát: `get_channel_list` 
 **Vậy lát 5.1 có cần không?** Không gấp. Phần lộ `hint` + câu báo + `allocat` giữ vì vô hại và lần sau nhìn log là biết ngay sàn lỗi. Phần kênh preprint: chỉ có ích đúng lúc sàn lỗi với đơn hỏa tốc (tài xế đến sớm, chờ 10–16 phút là đau) và chỉ khi Shopee gắn cờ `preprint` cho SPX Instant — **chưa kiểm được**; mã an toàn (không cờ = chạy như cũ). → **Anh chốt BỎ (26/10): mã đã gỡ, không commit; chỉ giữ ghi chép này.**
 
 Lưu ý phụ thấy trong log 25/10: `download_shipping_document` gộp bị sàn từ chối `packages_can_not_download_together` (4 lần, 5–29 đơn) → lùi tải từng đơn, đúng thiết kế nhưng mất lợi thế tải gộp; có thể gom theo (hãng, kênh) trước khi tải gộp — việc riêng, chưa làm.
+
+## 6. 20/11/2026 — Chuẩn bị xong KHÔNG tự in nữa: màn kết quả có nút In / Đóng (web)
+
+**Khách phản hồi (anh Trung chuyển):** chuẩn bị hàng xong web nhảy ngay sang in. Khách muốn: chuẩn bị hàng → có nút In đơn → bấm thì mới in; không bấm thì có nút Đóng và các đơn đó ở trạng thái "Chưa in".
+
+**Gốc:** hộp thoại Chuẩn bị hàng có công tắc "In ngay sau khi sàn xác nhận (khổ A6)", **mặc định bật** (chốt 04/09). Tắt công tắc thì không in, nhưng cũng không có nút In nào ngay sau đó — phải tự lọc "Chưa in phiếu" rồi bấm In ở thanh dưới.
+
+**Sửa (`frontend/src/components/orders/arrange-shipment-dialog.tsx`):**
+
+- **Bỏ công tắc "In ngay"** và hai ô loại phiếu ở màn chọn phương án. Khóa `hubsell.fulfill.printAfter` trong localStorage không còn được đọc.
+- Sàn trả lời xong → hộp thoại sang **màn kết quả** (`ResultStep`): tiêu đề "Sàn đã nhận N đơn"; đơn sàn từ chối liệt kê **đủ** mã + lý do (vùng giữa tự cuộn); đơn bị bỏ qua gom theo lý do; hai ô loại phiếu (Vận đơn của sàn / Phiếu xuất hàng, vẫn nhớ lựa chọn cũ); hai nút **Đóng** / **In N đơn**.
+- **Bấm In** → lúc này mới đợi sàn cấp mã vận đơn (`/bulk/label-readiness`) → xin PDF → mở hộp in → đánh dấu Đã in → đóng hộp thoại. Lỗi ở bước in hiện ngay trong hộp ("Chưa in được: … — bấm In lại, hoặc Đóng rồi lọc Chưa in phiếu"), hộp thoại **không đóng** để bấm In lại; trình duyệt chặn pop-up cũng giữ hộp thoại (`printLabels` nay trả `boolean`).
+- **Bấm Đóng** (hoặc dấu X / Esc) → không gọi in, không gọi sàn thêm lượt nào; đơn ở tab Đã xử lý với nhãn **Chưa in phiếu**.
+- Bảng đơn **tải lại ngay khi sàn trả lời** (không đợi đóng hộp thoại) — đóng tab giữa chừng thì danh sách vẫn đúng; lựa chọn trên bảng bị bỏ, màn kết quả giữ id đơn riêng (`confirmedIds`).
+- Không sàn nào nhận: tiêu đề "Không chuẩn bị được đơn nào", chỉ còn nút Đóng. Mã 409 `NO_READY_ORDERS` giữ như cũ (toast + đóng + tải lại).
+- Cùng khuôn với app mobile (chọn → đang chạy → kết quả có nút In, `MOBILE-CHUAN-BI-HANG-IN-PHIEU.md`). Backend **không đổi dòng nào**; số lượt gọi sàn không tăng (bấm Đóng thì còn ít hơn trước: không hỏi mã, không xin PDF).
+
+**Vì sao bỏ hẳn công tắc thay vì đổi mặc định sang tắt:** một luồng duy nhất, khách không phải hiểu thêm một cài đặt; ai trước đây để "in ngay" nay tốn thêm đúng một lần bấm mỗi mẻ. Nếu có shop đòi lại kiểu tự in thì thêm lại công tắc là việc nhỏ — chưa ai đòi thì chưa làm.
+
+**Đã kiểm (local, `backend-http-fulfill-demo` = sàn giả lập, tài khoản seed, 17 đơn Shopee 4 + Lazada 2 + TikTok 11, một đơn cố ý cho sàn từ chối):**
+
+- Chuẩn bị → màn kết quả "Sàn đã nhận 16 đơn" + 1 đơn từ chối kèm lý do; **không có khung in nào được tạo** trước khi bấm In.
+- Bấm Đóng → DB: 16 đơn `PROCESSED`, có mã vận đơn, `labelPrintedAt` rỗng; 1 đơn còn `PENDING`. Tab Đã xử lý tăng 28 → 44, đều "Chưa in phiếu".
+- Bấm In → toast "Đã mở 16 trang để in · 16 vận đơn sàn · đánh dấu ĐÃ IN 16 đơn", hộp thoại đóng; DB: 16 đơn có `labelPrintedAt`. (Hộp in của trình duyệt được thay bằng bản giả khi thử để khỏi treo khung xem.)
+- Màn kết quả ở 1366×768 nền sáng và 375×812 nền tối: không tràn ngang, hai nút nhìn thấy đủ.
+- `tsc --noEmit` + eslint 3 tệp đã sửa: sạch.
+
+**CHƯA kiểm:** chưa chạy với sàn thật / trên prod (chưa push); ca lỗi ở bước in (mất mạng, sàn cấp mã trễ quá 45 giây) và ca trình duyệt chặn pop-up mới đọc mã, chưa dựng lại; ca mẻ rất nhiều đơn bị từ chối (danh sách dài) mới thử 1 dòng; Firefox (mở tab mới thay vì khung in) chưa thử.

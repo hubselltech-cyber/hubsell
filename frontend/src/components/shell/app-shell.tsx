@@ -107,9 +107,9 @@ export interface NavItem {
    */
   hidden?: boolean;
   /**
-   * Đường dẫn của mục. Mục CÓ `children` mà vẫn khai `href` = nhóm bấm TÊN là vào
-   * trang đó (và nhóm xòe ra), mũi tên bên phải là nút riêng để xòe / cụp — chỉ
-   * nhóm "Đơn hàng" dùng, để khách không mất thói quen bấm "Đơn hàng" là thấy đơn.
+   * Đường dẫn của mục LÁ. Nhóm có `children` thì KHÔNG khai `href`: bấm nhóm chỉ
+   * xòe / cụp mục con, không đi đâu (20/11/2026 — trước đó riêng nhóm "Đơn hàng"
+   * bấm tên là vào /orders, anh Trung bảo bỏ cho mọi nhóm chạy một kiểu).
    */
   href?: string;
   label: string;
@@ -161,9 +161,10 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Tổng quan", icon: "dashboard", perm: "dashboard" },
   {
     // 16/11/2026 anh Trung (docs/VIDEO-DONG-HANG-THIET-KE.md): "Đơn hàng" thành NHÓM hai mục con
-    // "Xử lý đơn hàng" + "Video đóng hàng". `href` giữ lại nên bấm TÊN nhóm vẫn vào thẳng danh
-    // sách đơn như trước; "Video đóng hàng" đứng sau cổng packVideo — tài khoản chưa mở thấy MỜ.
-    href: "/orders",
+    // "Xử lý đơn hàng" + "Video đóng hàng"; "Video đóng hàng" đứng sau cổng packVideo — tài khoản
+    // chưa mở thấy MỜ. 20/11/2026: bấm "Đơn hàng" chỉ xòe / cụp mục con như mọi nhóm khác (bản
+    // 16/11 bấm tên nhóm là nhảy vào /orders — anh Trung: "nó load lại cả trang chứ không phải
+    // mở thư mục con").
     label: "Đơn hàng",
     icon: "shopping_cart",
     perm: "orders",
@@ -536,13 +537,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }
 
-  // Bấm TÊN một nhóm có `href` (Đơn hàng): chỉ XÒE, không bao giờ cụp — cụp là
-  // việc của mũi tên. Đang đứng sẵn ở trang đó thì pathname không đổi nên effect
-  // phía trên không chạy; hàm này lo ca ấy.
-  function openMenu(label: string) {
-    setOpenMenus((prev) => (prev.has(label) ? prev : new Set(prev).add(label)));
-  }
-
   const checkStatus = useCallback(async () => {
     try {
       const res = await fetchMe();
@@ -705,72 +699,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
       // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
       const open = openMenus.has(item.label);
-      const groupHref = item.href;
       return (
         <div key={item.label}>
-          {groupHref ? (
-            // Nhóm có `href` (Đơn hàng): TÊN nhóm là đường dẫn vào trang chính của
-            // nhóm, mũi tên là nút riêng xòe / cụp. Một khung chung giữ đúng kích
-            // thước, nền hover và pill của hàng nhóm thường (đệm 12px hai mép).
-            <div
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => toggleMenu(item.label)}
+            className={cn(
+              // text-left: button mặc định canh GIỮA — nhãn dài xuống
+              // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
+              // canh giữa lộn xộn nếu không ép canh trái.
+              NAV_ITEM_BASE,
+              groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
+              // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
+              // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
+              // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
+              // tránh hai pill chồng nhau trong cùng một nhóm.
+              groupActive && !open && "bg-sidebar-active-bg"
+            )}
+          >
+            <NavIcon name={item.icon} filled={groupActive} />
+            <span className="min-w-0 flex-1">{item.label}</span>
+            <ChevronDown
               className={cn(
-                "relative flex w-full items-center rounded-lg text-sm leading-6 transition-colors",
-                groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
-                groupActive && !open && "bg-sidebar-active-bg"
+                "size-4 shrink-0 transition-transform",
+                open && "rotate-180"
               )}
-            >
-              <Link
-                href={groupHref}
-                onClick={() => openMenu(item.label)}
-                onMouseEnter={() => prefetch(groupHref)}
-                onFocus={() => prefetch(groupHref)}
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 pl-3 text-left"
-              >
-                <NavIcon name={item.icon} filled={groupActive} />
-                <span className="min-w-0 flex-1">{item.label}</span>
-              </Link>
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-label={open ? `Thu gọn nhóm ${item.label}` : `Mở nhóm ${item.label}`}
-                onClick={() => toggleMenu(item.label)}
-                className="flex shrink-0 items-center self-stretch rounded-lg px-3"
-              >
-                <ChevronDown
-                  className={cn(
-                    "size-4 shrink-0 transition-transform",
-                    open && "rotate-180"
-                  )}
-                />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => toggleMenu(item.label)}
-              className={cn(
-                // text-left: button mặc định canh GIỮA — nhãn dài xuống
-                // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
-                // canh giữa lộn xộn nếu không ép canh trái.
-                NAV_ITEM_BASE,
-                groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
-                // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
-                // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
-                // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
-                // tránh hai pill chồng nhau trong cùng một nhóm.
-                groupActive && !open && "bg-sidebar-active-bg"
-              )}
-            >
-              <NavIcon name={item.icon} filled={groupActive} />
-              <span className="min-w-0 flex-1">{item.label}</span>
-              <ChevronDown
-                className={cn(
-                  "size-4 shrink-0 transition-transform",
-                  open && "rotate-180"
-                )}
-              />
-            </button>
-          )}
+            />
+          </button>
           {open && (
             <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
               {item.children.map((child) => {

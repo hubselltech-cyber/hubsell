@@ -235,7 +235,7 @@ export const ORDERS_TOUR: GuideTour = {
     {
       img: `${GT}/dh-orders-bulk.png`,
       title: "Tick đơn Chờ xử lý → “Chuẩn bị hàng” & “In phiếu”",
-      desc: "Tick nhiều đơn, thanh dưới đáy hiện: “Chuẩn bị hàng” báo sàn sắp xếp vận chuyển (như bấm trên Seller Center) rồi in vận đơn; “In phiếu” in vận đơn + phiếu xuất hàng hàng loạt — cả 3 sàn một lượt.",
+      desc: "Tick nhiều đơn, thanh dưới đáy hiện: “Chuẩn bị hàng” báo sàn sắp xếp vận chuyển (như bấm trên Seller Center), xong có nút In — in ngay hoặc đóng lại in sau; “In phiếu” in vận đơn + phiếu xuất hàng hàng loạt — cả 3 sàn một lượt.",
       target: { x: 50, y: 95.83, w: 100, h: 8.33 },
       zoom: 1.5,
     },

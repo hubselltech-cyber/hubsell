@@ -80,8 +80,6 @@ export function CommandPalette({
   const entries = React.useMemo<PaletteEntry[]>(() => {
     const out: PaletteEntry[] = [];
     for (const item of items) {
-      // Xét `children` TRƯỚC `href`: nhóm "Đơn hàng" có cả hai (bấm tên nhóm vào thẳng
-      // /orders) — phải liệt kê từng trang con chứ không phải một dòng "Đơn hàng".
       if (item.children) {
         for (const child of item.children) {
           // Mục khóa (chưa mở / cổng tính năng đóng) không được nhảy tới từ đây.

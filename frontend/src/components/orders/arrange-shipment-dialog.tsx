@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, PackageCheck, Printer } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, PackageCheck, Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Switch } from "@/components/ui/switch";
 import {
   PrintOptionsFields,
   readPrintOptions,
@@ -28,6 +27,7 @@ import {
   fetchShippingOptions,
   markOrdersPrinted,
   type ChannelName,
+  type BulkConfirmResult,
   type ExcludedOrder,
   type FulfillChoice,
   type Order,
@@ -47,8 +47,13 @@ import { cn } from "@/lib/utils";
  * hiện ghi chú. Lựa chọn lần trước của gian được backend điền sẵn → lần sau
  * chỉ cần bấm một nút.
  *
- * Sau khi sàn OK, mặc định mở luôn hộp thoại in vận đơn A6 (anh Trung chốt);
- * ai muốn in sau thì tắt công tắc — trạng thái nhớ trong localStorage.
+ * 20/11 — CHUẨN BỊ XONG KHÔNG TỰ IN NỮA (khách phản hồi, anh Trung chuyển):
+ * sàn trả lời xong thì hộp thoại sang MÀN KẾT QUẢ — sàn nhận bao nhiêu đơn, đơn
+ * bị từ chối kèm lý do — với hai nút "In N đơn" / "Đóng". Bấm In mới đợi vận
+ * đơn + mở hộp in; bấm Đóng thì đơn ở "Đã xử lý · Chưa in phiếu", in sau bằng
+ * bộ lọc Chưa in. Công tắc "In ngay sau khi sàn xác nhận" đã BỎ (trước đó mặc
+ * định bật nên vừa chuẩn bị xong là nhảy sang in). Cùng khuôn với app mobile
+ * (docs/MOBILE-CHUAN-BI-HANG-IN-PHIEU.md: chọn → đang chạy → kết quả có nút In).
  *
  * 14/10 — CHẠY NỀN + THEO MẺ: bấm Chuẩn bị, máy chủ trả batchId ngay rồi gọi
  * sàn theo mẻ (Shopee mass_ship_order 50 kiện/lần, TikTok Batch Ship); nút hiện
@@ -58,29 +63,10 @@ import { cn } from "@/lib/utils";
  * 05/09 — ĐỢI SÀN CẤP VẬN ĐƠN rồi mới in: Shopee nhận ship_order xong nhưng
  * cấp tracking_number trễ vài giây tới vài chục giây. Trước đây xin PDF ngay
  * nên đơn chưa có mã bị rơi khỏi file (chuẩn bị 4 đơn, in ra 1). Nay sau khi
- * sàn nhận, hộp thoại hỏi /bulk/label-readiness mỗi 2,5s, hiện "đã cấp x/y",
+ * bấm In, hộp thoại hỏi /bulk/label-readiness mỗi 2,5s, hiện "đã cấp x/y",
  * đủ rồi mới xin PDF MỘT lần; quá 45s vẫn thiếu thì in phần có, đơn thiếu ở
  * nguyên "Chưa in phiếu" kèm thông báo rõ để in lại sau.
  */
-
-const PREF_PRINT_AFTER = "hubsell.fulfill.printAfter";
-
-function readPref(key: string, fallback: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === "1";
-  } catch {
-    return fallback;
-  }
-}
-
-function writePref(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // trình duyệt chặn storage — bỏ qua
-  }
-}
 
 /** Dựng lựa chọn ban đầu cho một gian từ mặc định đã lưu + danh sách sàn trả. */
 function initialChoice(g: ShippingOptionGroup): FulfillChoice {
@@ -138,7 +124,10 @@ export function ArrangeShipmentDialog({
   const [waitProgress, setWaitProgress] = React.useState<{ ready: number; total: number } | null>(null);
   /** Tiến độ lượt chạy nền "đã sắp xếp x/y" (14/10) — null khi chưa bắt đầu. */
   const [confirmProgress, setConfirmProgress] = React.useState<{ done: number; total: number } | null>(null);
-  const [printAfter, setPrintAfter] = React.useState(true);
+  /** Kết quả sàn trả về — khác null = hộp thoại đang ở MÀN KẾT QUẢ (In / Đóng). */
+  const [result, setResult] = React.useState<BulkConfirmResult | null>(null);
+  /** Lỗi của lượt bấm In gần nhất — hiện ngay trong màn kết quả để bấm In lại. */
+  const [printError, setPrintError] = React.useState<string | null>(null);
   const [printOpts, setPrintOpts] = React.useState<PrintOptions>({ labels: true, pickList: false });
 
   const orderIds = React.useMemo(() => orders.map((o) => o.id), [orders]);
@@ -153,7 +142,8 @@ export function ArrangeShipmentDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    setPrintAfter(readPref(PREF_PRINT_AFTER, true));
+    setResult(null);
+    setPrintError(null);
     setPrintOpts(readPrintOptions());
     let cancelled = false;
     setLoading(true);
@@ -211,52 +201,11 @@ export function ArrangeShipmentDialog({
         () => toast.info("Lượt trước vẫn đang chạy — đang theo dõi tiếp", { duration: 6000 })
       );
 
-      const failedText =
-        res.failed.length > 0
-          ? ` · ${res.failed.length} đơn sàn từ chối: ${res.failed
-              .slice(0, 3)
-              .map((f) => `${f.orderCode} (${f.reason})`)
-              .join("; ")}${res.failed.length > 3 ? "…" : ""}`
-          : "";
-      // Đơn khách chưa thanh toán nói riêng — đó là câu chủ shop cần nghe
-      // ("sót đơn" sáng 09/09 thực ra là 5 đơn chưa thanh toán).
-      const unpaid = res.skipped.filter((s) => /chưa thanh toán/i.test(s.reason)).length;
-      const otherSkipped = res.skipped.length - unpaid;
-      const skippedText =
-        (unpaid > 0 ? ` · loại ${unpaid} đơn vì khách chưa thanh toán` : "") +
-        (otherSkipped > 0 ? ` · bỏ qua ${otherSkipped}` : "");
-      if (res.confirmed > 0) {
-        toast.success(`Đã chuẩn bị ${formatNumber(res.confirmed)} đơn trên sàn${skippedText}${failedText}`, {
-          duration: 8000,
-        });
-      } else {
-        toast.error(`Không chuẩn bị được đơn nào${failedText}`, { duration: 8000 });
-      }
-      for (const n of res.notes ?? []) toast.info(`${n.orderCode}: ${n.note}`, { duration: 7000 });
-
-      if (printAfter && (printOpts.labels || printOpts.pickList) && res.confirmedIds.length > 0) {
-        // Bước IN tách khỏi bước CHUẨN BỊ (15/10): sàn đã nhận đơn rồi thì lỗi ở
-        // bước in (mạng, pop-up, sàn chưa dựng xong vận đơn…) chỉ là "chưa in
-        // được", KHÔNG được báo như chuẩn bị hỏng và KHÔNG giữ hộp thoại mở —
-        // anh Trung 15/10 thấy "Không kết nối được máy chủ", bấm lại thì 30 đơn
-        // đã rời Chờ xử lý. Hộp thoại luôn đóng + bảng tải lại sau đoạn này.
-        try {
-          if (printOpts.labels) {
-            setBusy("wait");
-            await waitForLabelsReady(res.confirmedIds, setWaitProgress);
-          }
-          setBusy("print");
-          await printLabels(res.confirmedIds, printOpts);
-        } catch (err) {
-          console.error("[arrange-shipment] in sau khi chuẩn bị lỗi:", err);
-          toast.warning(
-            `${formatNumber(res.confirmed)} đơn đã được sàn nhận nhưng chưa in được: ${describeError(err)} — ` +
-              `lọc "Chưa in phiếu" rồi bấm In sau ít phút.`,
-            { duration: 12_000 }
-          );
-        }
-      }
-      onOpenChange(false);
+      // Sàn trả lời xong → sang MÀN KẾT QUẢ, KHÔNG tự in (20/11). Bảng tải lại
+      // NGAY ở nền: đơn sàn nhận rời Chờ xử lý, hiện "Chưa in phiếu" — người
+      // dùng có đóng tab giữa chừng thì danh sách phía sau vẫn đúng. Lựa chọn
+      // trên bảng bị bỏ theo; màn kết quả giữ id đơn riêng (res.confirmedIds).
+      setResult(res);
       onDone();
     } catch (err) {
       // Không còn đơn nào ở Chờ xử lý (thường là bấm lần 2 sau khi sàn đã nhận ở
@@ -272,8 +221,35 @@ export function ArrangeShipmentDialog({
       toast.error(describeError(err));
     } finally {
       setBusy(null);
-      setWaitProgress(null);
       setConfirmProgress(null);
+    }
+  }
+
+  /**
+   * Nút "In N đơn" ở màn kết quả. Lỗi ở bước in (mạng, pop-up bị chặn, sàn chưa
+   * dựng xong vận đơn…) chỉ là "chưa in được": hiện ngay trong hộp để bấm In
+   * lại, KHÔNG báo như chuẩn bị hỏng — sàn đã nhận đơn rồi (bài học 15/10).
+   */
+  async function handlePrint() {
+    if (!result || result.confirmedIds.length === 0) return;
+    setPrintError(null);
+    try {
+      if (printOpts.labels) {
+        setBusy("wait");
+        await waitForLabelsReady(result.confirmedIds, setWaitProgress);
+      }
+      setBusy("print");
+      const opened = await printLabels(result.confirmedIds, printOpts);
+      // Pop-up bị chặn: printLabels đã báo; giữ hộp thoại để cho phép rồi bấm lại.
+      if (!opened) return;
+      onOpenChange(false);
+      onDone(); // tải lại để nhãn "Đã in" hiện ngay
+    } catch (err) {
+      console.error("[arrange-shipment] in sau khi chuẩn bị lỗi:", err);
+      setPrintError(describeError(err));
+    } finally {
+      setBusy(null);
+      setWaitProgress(null);
     }
   }
 
@@ -294,85 +270,205 @@ export function ArrangeShipmentDialog({
           nên tiêu đề và hai nút LUÔN nhìn thấy dù 20 gian hay laptop 1280×720;
           trước 09/09 hộp thoại cao hơn viewport, điện thoại 375×812 mất tiêu đề. */}
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Chuẩn bị hàng · {formatNumber(orders.length)} đơn</DialogTitle>
-          <DialogDescription>
-            Hubsell sẽ báo sàn <b>sắp xếp vận chuyển</b> cho từng đơn (như bấm trên Seller
-            Center). Sàn nhận rồi thì không hoàn tác được.
-          </DialogDescription>
-        </DialogHeader>
+        {result ? (
+          <ResultStep
+            result={result}
+            printOpts={printOpts}
+            onPrintOptsChange={setPrintOpts}
+            printError={printError}
+            busy={busy !== null}
+            busyLabel={busyLabel}
+            onPrint={handlePrint}
+            onClose={() => onOpenChange(false)}
+          />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Chuẩn bị hàng · {formatNumber(orders.length)} đơn</DialogTitle>
+              <DialogDescription>
+                Hubsell sẽ báo sàn <b>sắp xếp vận chuyển</b> cho từng đơn (như bấm trên Seller
+                Center). Sàn nhận rồi thì không hoàn tác được.
+              </DialogDescription>
+            </DialogHeader>
 
-        {loading && (
-          <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Đang hỏi sàn phương án vận chuyển…
-          </div>
-        )}
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <p>{error}</p>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            {groups.length === 0 && excluded.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                Không có đơn nào đang Chờ xử lý trong lựa chọn.
-              </p>
+            {loading && (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Đang hỏi sàn phương án vận chuyển…
+              </div>
             )}
-            {excluded.length > 0 && <UnpaidNotice excluded={excluded} />}
-            {groups.map((g) => (
-              <GroupCard
-                key={g.channelId}
-                group={g}
-                choice={choices[g.channelId]}
-                onChange={(patch) => setChoice(g.channelId, patch)}
-              />
-            ))}
-          </div>
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <p>{error}</p>
+              </div>
+            )}
+
+            {!loading && !error && (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {groups.length === 0 && excluded.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Không có đơn nào đang Chờ xử lý trong lựa chọn.
+                  </p>
+                )}
+                {excluded.length > 0 && <UnpaidNotice excluded={excluded} />}
+                {groups.map((g) => (
+                  <GroupCard
+                    key={g.channelId}
+                    group={g}
+                    choice={choices[g.channelId]}
+                    onChange={(patch) => setChoice(g.channelId, patch)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+              {/* Điện thoại: ghi chú chiếm trọn một dòng trên hai nút, không bị ép thành 3 dòng */}
+              <span className="basis-full text-xs text-muted-foreground sm:basis-auto sm:flex-1">
+                {blockedCount + excluded.length > 0 &&
+                  `${formatNumber(blockedCount + excluded.length)} đơn sẽ bỏ qua` +
+                    (excluded.length > 0 ? ` (${formatNumber(excluded.length)} chưa thanh toán)` : " (xem ghi chú)")}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy !== null}>
+                  Hủy
+                </Button>
+                <Button onClick={handleConfirm} disabled={busy !== null || loading || runnableCount === 0}>
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <PackageCheck className="size-4" />
+                  )}
+                  {busyLabel ?? `Chuẩn bị ${formatNumber(runnableCount)} đơn`}
+                </Button>
+              </div>
+            </div>
+          </>
         )}
-
-        <div className="shrink-0 space-y-3 border-t pt-3">
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span className="flex items-center gap-2">
-              <Printer className="size-4 text-muted-foreground" />
-              In ngay sau khi sàn xác nhận (khổ A6)
-            </span>
-            <Switch
-              checked={printAfter}
-              onCheckedChange={(v) => {
-                setPrintAfter(v);
-                writePref(PREF_PRINT_AFTER, v);
-              }}
-            />
-          </label>
-          {printAfter && <PrintOptionsFields value={printOpts} onChange={setPrintOpts} />}
-        </div>
-
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          {/* Điện thoại: ghi chú chiếm trọn một dòng trên hai nút, không bị ép thành 3 dòng */}
-          <span className="basis-full text-xs text-muted-foreground sm:basis-auto sm:flex-1">
-            {blockedCount + excluded.length > 0 &&
-              `${formatNumber(blockedCount + excluded.length)} đơn sẽ bỏ qua` +
-                (excluded.length > 0 ? ` (${formatNumber(excluded.length)} chưa thanh toán)` : " (xem ghi chú)")}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy !== null}>
-              Hủy
-            </Button>
-            <Button onClick={handleConfirm} disabled={busy !== null || loading || runnableCount === 0}>
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <PackageCheck className="size-4" />
-              )}
-              {busyLabel ?? `Chuẩn bị ${formatNumber(runnableCount)} đơn`}
-            </Button>
-          </div>
-        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * MÀN KẾT QUẢ sau khi sàn trả lời (20/11): sàn nhận bao nhiêu đơn, đơn nào bị
+ * từ chối / bỏ qua kèm lý do (liệt kê ĐỦ, vùng giữa tự cuộn), rồi hai nút
+ * "In N đơn" / "Đóng". Không bấm In thì đơn ở "Chưa in phiếu".
+ */
+function ResultStep({
+  result,
+  printOpts,
+  onPrintOptsChange,
+  printError,
+  busy,
+  busyLabel,
+  onPrint,
+  onClose,
+}: {
+  result: BulkConfirmResult;
+  printOpts: PrintOptions;
+  onPrintOptsChange: (next: PrintOptions) => void;
+  printError: string | null;
+  busy: boolean;
+  busyLabel: string | null;
+  onPrint: () => void;
+  onClose: () => void;
+}) {
+  const ok = result.confirmedIds.length;
+  // Gom đơn bị bỏ qua theo lý do — "5 đơn: khách chưa thanh toán" dễ đọc hơn 5 dòng giống nhau
+  const skippedByReason = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const sk of result.skipped) m.set(sk.reason, (m.get(sk.reason) ?? 0) + 1);
+    return [...m.entries()].sort((x, y) => y[1] - x[1]);
+  }, [result.skipped]);
+  const notes = result.notes ?? [];
+  const nothingTicked = !printOpts.labels && !printOpts.pickList;
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 pr-8 leading-snug">
+          {ok > 0 ? (
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertTriangle className="size-5 shrink-0 text-rose-600" />
+          )}
+          {ok > 0 ? `Sàn đã nhận ${formatNumber(ok)} đơn` : "Không chuẩn bị được đơn nào"}
+        </DialogTitle>
+        <DialogDescription>
+          {ok > 0 ? (
+            <>
+              Bấm <b>In</b> để in ngay. Bấm <b>Đóng</b> nếu muốn in sau — đơn nằm ở tab Đã xử
+              lý với nhãn <b>Chưa in phiếu</b>.
+            </>
+          ) : (
+            "Các đơn vẫn ở Chờ xử lý. Xem lý do bên dưới rồi thử lại."
+          )}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+        {result.failed.length > 0 && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            <p className="font-medium">
+              {formatNumber(result.failed.length)} đơn sàn từ chối — vẫn ở Chờ xử lý
+            </p>
+            <ul className="mt-1.5 space-y-1 text-xs">
+              {result.failed.map((f) => (
+                <li key={f.orderCode} className="break-words">
+                  <span className="font-medium tabular-nums">{f.orderCode}</span>: {f.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {skippedByReason.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-800">
+            <p className="font-medium">Bỏ qua {formatNumber(result.skipped.length)} đơn</p>
+            <ul className="mt-1.5 space-y-1 text-xs">
+              {skippedByReason.map(([reason, count]) => (
+                <li key={reason} className="break-words">
+                  <span className="font-medium tabular-nums">{formatNumber(count)} đơn</span>: {reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {notes.length > 0 && (
+          <ul className="space-y-1 text-xs text-muted-foreground">
+            {notes.map((n) => (
+              <li key={n.orderCode} className="break-words">
+                <span className="font-medium tabular-nums">{n.orderCode}</span>: {n.note}
+              </li>
+            ))}
+          </ul>
+        )}
+        {ok > 0 && (
+          <PrintOptionsFields value={printOpts} onChange={onPrintOptsChange} disabled={busy} />
+        )}
+        {printError && (
+          <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p className="min-w-0 break-words">
+              Chưa in được: {printError} — bấm In lại, hoặc Đóng rồi lọc “Chưa in phiếu” để in
+              sau ít phút.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex shrink-0 justify-end gap-2">
+        <Button variant="outline" onClick={onClose} disabled={busy}>
+          Đóng
+        </Button>
+        {ok > 0 && (
+          <Button onClick={onPrint} disabled={busy || nothingTicked}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}
+            {busyLabel ?? `In ${formatNumber(ok)} đơn`}
+          </Button>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -623,14 +719,15 @@ export async function waitForLabelsReady(
  * Lấy PDF theo lựa chọn (vận đơn sàn / phiếu xuất hàng) rồi mở hộp thoại in.
  * Chỉ đánh dấu ĐÃ IN khi có in vận đơn và hộp thoại mở được; đơn sàn chưa cấp
  * vận đơn giữ nguyên "Chưa in" để kho không bỏ sót. Dùng chung cho hộp thoại
- * Chuẩn bị hàng và BulkBar.
+ * Chuẩn bị hàng và BulkBar. Trả false khi trình duyệt chặn cửa sổ in (chưa in
+ * gì, chưa đánh dấu gì) để nơi gọi giữ nguyên màn cho người dùng bấm lại.
  */
-export async function printLabels(orderIds: string[], opts: PrintOptions): Promise<void> {
+export async function printLabels(orderIds: string[], opts: PrintOptions): Promise<boolean> {
   const { blob, summary } = await fetchOrderLabelsPdf(orderIds, opts);
   const opened = printPdfBlob(blob);
   if (!opened) {
     toast.error("Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm In lại.");
-    return;
+    return false;
   }
   const failed = summary?.failed ?? [];
   if (opts.labels && failed.length > 0) {
@@ -656,4 +753,5 @@ export async function printLabels(orderIds: string[], opts: PrintOptions): Promi
       (markedPrinted > 0 ? ` · đánh dấu ĐÃ IN ${markedPrinted} đơn` : ""),
     { duration: 6000 }
   );
+  return true;
 }

@@ -5,6 +5,20 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 20/11 tối — Web: Chuẩn bị hàng xong KHÔNG tự in nữa, màn kết quả có nút In / Đóng (khách phản hồi, anh chuyển: "chuẩn bị hàng → có nút in đơn → chọn thì mới in, không chọn thì có nút đóng và trạng thái là chưa in")
+
+- **Gốc:** hộp thoại Chuẩn bị hàng có công tắc "In ngay sau khi sàn xác nhận" mặc định BẬT (chốt 04/09) → sàn nhận xong là nhảy sang in; tắt công tắc thì không in nhưng cũng không có nút In ngay sau đó.
+- **Sửa (chỉ frontend, backend không đổi):** `arrange-shipment-dialog.tsx` bỏ công tắc; sàn trả lời xong → màn kết quả "Sàn đã nhận N đơn" + đơn bị từ chối / bỏ qua kèm lý do + hai ô loại phiếu + nút **Đóng** / **In N đơn**. Bấm In mới đợi mã vận đơn → in → đánh dấu Đã in; bấm Đóng thì đơn ở Đã xử lý · **Chưa in phiếu**. Lỗi bước in hiện trong hộp, bấm In lại được. Bảng tải lại ngay khi sàn trả lời. Sửa câu gợi ý nút ở `bulk-action-bar.tsx` + một câu ở `guide-tours.ts`. Cùng khuôn màn kết quả của app mobile.
+- **Đã kiểm (local, sàn giả lập, 17 đơn 3 sàn, 1 đơn cố ý bị từ chối):** không có khung in nào trước khi bấm In; Đóng → 16 đơn PROCESSED, có mã, chưa in; In → 16 đơn có labelPrintedAt; màn kết quả 1366 sáng + 375 tối không tràn; tsc + eslint sạch.
+- **CHƯA kiểm:** sàn thật / prod; ca lỗi bước in + pop-up bị chặn mới đọc mã; danh sách từ chối dài; Firefox.
+- Chi tiết: `docs/CHUAN-BI-HANG-THEO-ME.md` mục 6. Anh ghi "1." — nếu còn ý 2 trở đi về Chuẩn bị hàng → In đơn thì em làm tiếp trong cùng lát này.
+- **★ Anh xem xong: "Phần đơn này dọn luôn. Khi nhấn vào 'Đơn hàng' nó load lại cả trang chứ không phải mở thư mục con → Fix lại cho chuẩn. Sau đó dọn dẹp code thừa, commit và push":**
+  - **Sidebar:** nhóm "Đơn hàng" bỏ `href` (bản 16/11 bấm tên nhóm là nhảy vào `/orders`, mũi tên mới là nút xòe) → nay bấm cả hàng chỉ xòe / cụp hai mục con như mọi nhóm; vào danh sách đơn bằng "Xử lý đơn hàng". `app-shell.tsx` gỡ nhánh vẽ riêng cho nhóm có `href` + hàm `openMenu`; nút nhóm thêm `aria-expanded`. Ctrl+K không đổi (vốn liệt kê theo mục con).
+  - **Dọn:** thụt lề lại khối màn chọn trong `arrange-shipment-dialog.tsx`; `writePrintOptions` thôi export (chỉ dùng nội bộ); bỏ chú thích cũ ở `command-palette.tsx`. Không còn chỗ nào đọc khóa `hubsell.fulfill.printAfter`.
+  - **Đã kiểm (local):** đứng ở Tổng kho bấm "Đơn hàng" → đường dẫn giữ `/products`, trang không tải lại, hai mục con xòe ra; bấm lần nữa cụp lại. tsc + eslint sạch. **CHƯA kiểm:** ngăn kéo menu trên điện thoại; prod.
+  - Commit + push theo lệnh anh (mã băm ở dòng dưới sau khi đẩy). Tệp tạm `backend/scripts/_tmp-kcqt-seed.ts` là của phiên kho, em KHÔNG đụng.
+
+---
 ## Phiên 20/11 chiều — Quay video đóng hàng (app): lối vào dời sang tab ĐƠN HÀNG + bản thử TestFlight 1.5.1 (41) (anh: "chuyển phần Quay video đóng hàng ở tab Tổng quan sang tab Đơn hàng… làm phần trễ mã vận đơn… Rồi build app và lên bản TestFlight mới")
 
 - **Apple đã duyệt + phát hành 1.5.0** (`asc-release.mjs status` ~13:00 20/11: READY_FOR_SALE) → điều kiện dựng bản thử 1.5.1 đã đủ.

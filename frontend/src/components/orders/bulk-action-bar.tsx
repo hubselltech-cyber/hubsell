@@ -81,7 +81,7 @@ export function BulkActionBar({
     setBusy("print");
     const toastId = toast.loading("Đang chuẩn bị phiếu in…");
     try {
-      // Đơn vừa chuẩn bị mà tắt "in ngay" có thể chưa có mã vận đơn → đợi sàn
+      // Đơn vừa chuẩn bị mà bấm Đóng (chưa in) có thể chưa có mã vận đơn → đợi sàn
       // cấp đủ trước khi xin PDF, y như hộp thoại Chuẩn bị hàng.
       if (opts.labels) {
         const needWait = withLabel.filter((o) => !o.trackingCode).map((o) => o.id);
@@ -151,7 +151,7 @@ export function BulkActionBar({
           title={
             packable.length === 0
               ? "Chỉ đơn đang Chờ xử lý mới chuẩn bị hàng được"
-              : "Báo sàn sắp xếp vận chuyển (như bấm Chuẩn bị hàng trên Seller Center) rồi in vận đơn"
+              : "Báo sàn sắp xếp vận chuyển (như bấm Chuẩn bị hàng trên Seller Center). Xong có nút In — in ngay hoặc đóng lại in sau"
           }
         >
           <PackageCheck className="size-4" />
