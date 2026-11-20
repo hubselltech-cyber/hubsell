@@ -270,9 +270,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const platformAdsTotal = platformAds?.total ?? 0;
 
     // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — cùng số với
-    // Báo cáo dòng tiền. `damagedLossInCost` đã nằm trong totalCost; phần của
-    // đơn không tính doanh thu (`outside`) cộng vào totalOperatingExpense để
-    // thác nước của bản app chưa cập nhật vẫn đóng, bản mới vẽ bậc riêng.
+    // Báo cáo dòng tiền, kỳ ghi nhận = NGÀY KHO BÁO HỎNG (20/11/2026).
+    // `damagedLossInCost` đã nằm trong totalCost; phần còn lại (`outside` = thất
+    // thu của kỳ − phần đó, âm được) cộng vào totalOperatingExpense để thác nước
+    // của bản app chưa cập nhật vẫn đóng, bản mới vẽ bậc riêng.
     const damaged = seesFinancials
       ? await ledgerDamagedLoss(scope, range, { byDaySince: toBusinessDateKey(chartStart) })
       : null;

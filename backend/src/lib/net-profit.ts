@@ -52,9 +52,9 @@ export function cashFlowNetProfit(input: {
   operatingExpense: number;
   operatingIncome: number;
   /**
-   * Thất thu hàng mất/hỏng của đơn KHÔNG tính doanh thu (đơn hủy, đơn hỏng chờ
-   * khiếu nại — lib/damaged-loss.ts `outside`). Phần của đơn tính doanh thu đã
-   * nằm trong `orderProfit` nên không truyền vào đây.
+   * Thất thu hàng mất/hỏng phải trừ thêm ngoài lãi đơn (lib/damaged-loss.ts
+   * `outside`): thất thu của kỳ theo ngày kho báo hỏng − phần đã nằm trong
+   * `orderProfit` (giá vốn hàng hỏng của đơn tính doanh thu tạo trong kỳ). Âm được.
    */
   damagedLossOutside?: number;
   additionalTaxOf: (provisionalProfit: number) => number;

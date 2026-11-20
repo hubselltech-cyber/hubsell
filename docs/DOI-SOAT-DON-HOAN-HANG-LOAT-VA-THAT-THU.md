@@ -378,3 +378,86 @@ Không đổi hành vi; chỉ xếp lại sau ba đợt sửa liền nhau (mục
 - **README:** đoạn "Lọc & phân trang" của mục Hàng hoàn về kho viết lại theo giao diện mới; gỡ cảnh báo "Badge tab Tất cả" (tab đã gỡ).
 - Rà export thêm trong ba đợt bằng grep (không chạy được knip trong phiên này): hàm nào cũng có nơi dùng ngoài test; ba kiểu `ReturnShippingState`, `ReturnShipping`, `ReturnLegSummary` chỉ dùng trong chính tệp nhưng là kiểu trả về của hàm export nên giữ `export`.
 - Kiểm sau dọn: tsc backend + frontend, eslint 4 tệp web sạch; vitest các tệp return / warehouse / order-tracking 153 ca qua; soi lại local đủ thẻ, chip, mũi tên.
+
+## 16. Anh hỏi 20/11/2026: "Hôm nay anh báo hỏng 3 đơn hoàn này sao trong báo cáo dòng tiền không có?" — CHỈ KIỂM, chưa sửa mã
+
+**Kết luận:** cả 3 đơn ĐÃ vào dòng "Thất thu hàng mất/hỏng", nhưng dòng này ghi theo **ngày tạo đơn** (trục `createdDate` của sổ cái, `ledgerDamagedLoss` → `ledgerScopeSql`), không theo ngày báo hỏng. Xem kỳ "Hôm nay" / "7 ngày qua" thì dòng không hiện (dòng chỉ hiện khi > 0).
+
+**Số prod đã kiểm** (tài khoản Chủ Shop Hubsell, gọi `/api/finance/realized-pnl?search=` + `/api/finance/analytics` theo từng kỳ, 20/11 tối):
+
+| Đơn | Ngày tạo (giờ VN) | Giá vốn | Sổ đang ghi |
+|---|---|---|---|
+| 26102183NBVE4N (TC049) | 21/10 | 130.000 | DAMAGED, đơn hủy, không cờ nhập lại kho |
+| 261110022TCXBQ (TC058-DEN) | 10/11 | 126.000 | DAMAGED, đơn hủy, không cờ nhập lại kho |
+| 261108QR5X6A1J (TC025) | 08/11 | 131.000 | DAMAGED, trả toàn bộ, không cờ nhập lại kho |
+
+| Kỳ xem | Dòng Thất thu | Gồm |
+|---|---|---|
+| Hôm nay 20/11 | không hiện | — |
+| 7 ngày qua (14 → 20/11) | không hiện | — |
+| Tháng này (01 → 20/11) | 257.000 | 126.000 + 131.000 |
+| 30 ngày qua (22/10 → 20/11) | 257.000 | đơn tạo 21/10 nằm ngoài kỳ đúng 1 ngày |
+| 21/10 → 20/11 | 387.000 | đủ 3 đơn |
+| Tháng 10 | 153.000 | 130.000 + 23.000 (đơn thắt lưng 02/10) |
+| 01/08 → 20/11 | 456.000 | 3 đơn trên + 3 đơn thắt lưng 23.000 |
+
+Trigger sổ cái + worker chạy đúng: báo hỏng hôm nay, sổ đã có ngay trong ngày.
+
+**Gốc:** đây là câu 5 ở mục 7 (kỳ ghi nhận theo ngày tạo đơn hay ngày báo hỏng) — 13/11 em làm theo ngày tạo đơn cho khớp sổ, anh chưa chốt riêng câu này.
+
+**✅ Anh chốt 20/11 tối: "Đổi sang ngày báo hỏng" (hướng B) → mục 17.** Hai hướng em đã trình:
+- (A, em đề xuất) Giữ theo ngày tạo đơn — mọi dòng khác của Báo cáo dòng tiền đều theo trục này, Lợi nhuận ròng của kỳ = kết quả các đơn tạo trong kỳ; chỉ sửa cho DỄ THẤY: chú thích của dòng ghi rõ "tính vào kỳ theo ngày tạo đơn", và lúc báo hỏng thông báo luôn "đã ghi X đ vào Thất thu, kỳ tháng …". Không đụng công thức.
+- (B) Đổi dòng này sang ngày báo hỏng — đúng chuẩn kế toán hơn, nhưng thành dòng duy nhất chạy trục thời gian khác; phải thêm mốc "ngày báo hỏng" (hiện không lưu riêng — `returnedAt` là mốc quét nhận), sửa 4 nơi đọc (Dòng tiền, Tổng quan, cầu nối Lãi/Lỗ, Trợ lý) + app, và đo quảng cáo trước / sau.
+
+## 17. Dòng Thất thu ghi theo NGÀY KHO BÁO HỎNG (20/11/2026 tối, anh Trung: "Đổi sang ngày báo hỏng") — đã code + kiểm local, CHƯA commit, CHƯA lên prod
+
+**Luật mới:** kho báo hỏng ngày nào thì giá vốn hàng đó vào dòng "Thất thu hàng mất/hỏng" của ngày đó, bất kể đơn tạo khi nào. Đây là dòng DUY NHẤT của Báo cáo dòng tiền / Tổng quan chạy trục thời gian khác trục ngày tạo đơn. Chốt khiếu nại sau đó (Không được đền → xóa sổ) KHÔNG dời ngày; Đã được đền bù thì đơn ra khỏi dòng như cũ.
+
+### 17.1 Mã
+
+- **Mốc mới `Order.returnDamagedAt`** (migration `20261120230000_order_return_damaged_at`, cột nullable — chỉ sửa metadata). Ghi ở cả hai đường báo hỏng: nút hàng loạt `POST /api/orders/returns/bulk-damaged` và đường từng đơn `POST /api/orders/:id/return` (web + app mobile dùng chung); bộ bồi đơn demo cũng ghi. Sổ cái KHÔNG đọc cột này → không sửa trigger, không tăng `LEDGER_FORMULA_VERSION`, không tính lại sổ.
+- **Đơn báo hỏng trước ngày lên bản không có mốc** → câu đọc lùi về lúc kho nhận kiện (`returnedAt`), rồi ngày tạo đơn. Không ghi hàng loạt lên bảng đơn trong migration.
+- **Câu đọc** (`ledgerDamagedLoss`, services/order-ledger.ts) thành hai phép trên hai trục:
+  1. Trục ngày báo hỏng: đi từ tập nhỏ "đơn kho đã báo hỏng / xóa sổ" của các gian trong phạm vi (chỉ mục một phần mới `Order_return_damaged_idx (channelId) WHERE returnStatus IN ('DAMAGED','WRITTEN_OFF')`), lọc mốc theo kỳ, nối sang sổ cái bằng khóa chính để lấy số tiền → `total`.
+  2. Trục ngày tạo đơn (như cũ): giá vốn hàng hỏng đang nằm sẵn trong giá vốn của đơn tính doanh thu tạo trong kỳ → `inActive`, tách khỏi dòng Giá vốn.
+  - `outside = total − inActive` là phần Lợi nhuận ròng trừ thêm; **âm được** (kỳ có đơn xóa sổ tạo trong kỳ nhưng báo hỏng ở kỳ khác: dòng Giá vốn kỳ đó bớt lại, kỳ báo hỏng gánh). Cả đời đơn giá vốn hàng hỏng bị trừ đúng một lần.
+  - Bốn nơi đọc (Dòng tiền, Tổng quan, cầu nối Lãi/Lỗ, Trợ lý) không đổi phép tính — vẫn dùng `total` / `inActive` / `outside`; chỉ sửa chú thích.
+- **Tính nốt sổ ngay trong lượt đọc:** đơn vừa báo hỏng thường TẠO ngoài kỳ đang xem nên `ensureLedgerFresh` của báo cáo (quét theo ngày tạo) không tính nốt giúp. Câu đọc tự đếm dòng sổ còn bẩn trong tập đơn hỏng của kỳ; có thì tính lại ngay (trần 200 dòng — mặc định tự chọn, bằng một lô của `ensureLedgerFresh`) rồi đọc lại. Thường ngày không có dòng bẩn → vẫn hai câu SELECT như trước.
+- **Câu chữ:** chú thích dòng thêm "tính vào ngày kho báo hỏng"; bước "Bỏ đơn hủy & đang hoàn" của cầu nối Lãi/Lỗ thêm một câu về phần lệch kỳ của hàng hỏng (lãi đơn vẫn theo ngày tạo đơn).
+
+### 17.2 Đã kiểm trên local
+
+- `tsc` backend sạch. Test: `lib/__tests__/damaged-loss.test.ts` 6 ca (có ca "tạo tháng 10, báo hỏng tháng 11: chỉ trừ một lần, ở tháng 11") + `integrations/__tests__/damaged-loss-db.test.ts` 10 ca chạy trên Postgres thật (đơn tự tạo: biên 00:30 và 23:59 giờ VN, đơn cũ lùi về ngày nhận kiện / ngày tạo, lọc gian, đã đền bù không tính, vừa báo hỏng sổ chưa tính lại vẫn ra đủ).
+- Kế hoạch chạy trên DB local (12.385 đơn): phía bảng đơn dùng `Order_return_damaged_idx`, phía sổ chỉ chạm mảnh tháng của từng đơn; 7,6 ms chạy, ~29 ms lập kế hoạch.
+- **Ba API thật, tài khoản reviewer@, 7 kỳ, trước và sau khi báo hỏng 3 đơn (tạo 23/10, 29/10, 04/11; giá vốn 205 + 205 + 118 = 528.000) qua đúng đường nút "Báo hỏng / mất":**
+
+| Kỳ | Thất thu trước | Thất thu sau | Lợi nhuận ròng đổi |
+|---|---|---|---|
+| Hôm nay 20/11 | 0 | 528.000 | −528.000 |
+| 7 ngày qua | 0 | 528.000 | −528.000 |
+| Tháng 11 | 112.000 | 640.000 | −528.000 |
+| Tháng 10 (tháng tạo 2 trong 3 đơn) | 651.000 | 651.000 | 0 |
+| Tháng 9 / Tháng 8 | 760.000 / 182.000 | không đổi | 0 |
+| 01/08 → 30/11 | 1.705.000 | 2.233.000 | −528.000 |
+
+  - Ở mọi kỳ, trước lẫn sau: dòng Thất thu = phép tính độc lập từ đơn gốc; Σ các dòng = tổng cột Chi phí; Lợi nhuận ròng Dòng tiền = Tổng quan = đáy cầu nối Lãi/Lỗ từng đồng.
+  - Tổng cả kỳ dài trước khi báo hỏng vẫn 1.705.000 (469.000 trong giá vốn) — đúng con số 13/11 ở mục 10: đổi trục chỉ dời tiền giữa các kỳ, không đổi tổng.
+  - Sổ cái local TẮT worker mà số vẫn ra ngay → bước tính nốt hoạt động.
+  - Đường từng đơn: báo hỏng thêm 1 đơn 96.000 → 624.000, có ghi mốc; nhập kho nguyên vẹn không ghi mốc, không đổi dòng.
+
+### 17.3 Chưa kiểm / chưa làm
+
+- **Chưa soi bằng mắt trên web local:** backend local chạy HTTPS chứng chỉ tự ký, trình duyệt trong app lẫn Chrome đều chặn → không chụp được ảnh. Phần giao diện chỉ đổi hai câu chú thích.
+- Bộ test rộng `src/lib` + `integrations/__tests__`: xem PROGRESS phiên 20/11 tối (3).
+- **Quảng cáo:** hòa vốn / biên lãi đọc thẳng sổ cái; lần này không đổi cột, cờ hay công thức nào của sổ, các module quảng cáo không gọi `ledgerDamagedLoss` (đã grep). Chưa chạy mô phỏng từng chiến dịch trên prod vì không có gì của sổ thay đổi để đo.
+- App mobile: không cần sửa (đọc số từ backend). Câu nhắc 13/11 về bậc "Thất thu" trên thác nước app vẫn giữ nguyên.
+
+### 17.4 Việc phải làm TRƯỚC và SAU khi push (prod)
+
+1. **Trước khi push** phải dựng chỉ mục bằng tay ở Supabase SQL Editor (không thì migration tự dựng trong lúc giữ khóa bảng đơn → đứng ghi / đọc đơn suốt lúc quét bảng):
+   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_return_damaged_idx" ON "Order" ("channelId") WHERE "returnStatus" IN ('DAMAGED', 'WRITTEN_OFF');`
+   **✅ ĐÃ CHẠY 20/11 ~22:40** (anh: "Em chạy lệnh luôn đi" — em chạy qua Chrome của anh). Trước khi chạy: chưa có chỉ mục, bảng đơn 548 MB / ~1.003.000 dòng, không lượt dựng chỉ mục nào đang chạy, `statement_timeout` 2 phút. Lệnh xong trong < 10 giây. Sau khi chạy: `indisvalid = true`, `indisready = true`, cỡ 16 kB, cả hệ thống có 77 đơn Hàng hỏng / xóa sổ. EXPLAIN ANALYZE câu đọc mới (bản chưa có cột mốc, chủ shop nhiều đơn hỏng nhất, 42 đơn): phía bảng đơn đi `Order_return_damaged_idx`, phía sổ chỉ chạm 5 mảnh tháng; lần đầu (bộ đệm nguội) lập kế hoạch 162 ms + chạy 87 ms, lần hai phần nối ~2 ms, 308 khối đều từ bộ đệm.
+2. Push → Render chạy migration (thêm cột, lấy khóa có thử lại).
+3. **Sau deploy, kiểm:** kỳ Hôm nay của tài khoản Chủ Shop Hubsell; EXPLAIN câu đọc trên prod; Lợi nhuận ròng Dòng tiền = Tổng quan ở 2–3 kỳ.
+4. **Ba đơn anh báo hỏng 20/11 trên prod** (đã đọc mốc nhận kiện 20/11 tối): `261110022TCXBQ` + `261108QR5X6A1J` kho nhận 20/11 → tự rơi đúng 20/11 (257.000). `26102183NBVE4N` kho nhận 31/10, báo hỏng 20/11 nhưng lúc đó chưa lưu mốc → sẽ nằm ở **31/10** (130.000). Muốn về đúng 20/11 phải ghi tay mốc `returnDamagedAt` cho riêng đơn này — ⏳ anh quyết.
+5. Ba đơn thắt lưng cũ (23.000 mỗi đơn) rơi về ngày kho nhận: 01/10, 04/10, 04/10.

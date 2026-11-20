@@ -42,9 +42,10 @@ import {
   type OrderLineLedgerRow,
 } from "../lib/order-ledger";
 import {
-  DAMAGED_LOSS_AMOUNT_SQL,
-  DAMAGED_LOSS_WHERE_SQL,
   buildDamagedLoss,
+  damagedAtSql,
+  damagedLossAmountSql,
+  damagedLossWhereSql,
   type DamagedLoss,
 } from "../lib/damaged-loss";
 import {
@@ -988,49 +989,108 @@ export async function ledgerCashFlowBreakdown(
 // Thất thu hàng mất/hỏng (lib/damaged-loss.ts) — 13/11/2026
 // ------------------------------------------------------------
 
+/** Trần số dòng sổ của đơn hỏng được tính nốt ngay trong một lượt đọc báo cáo (mặc định tự chọn: bằng một lô ghi của ensureLedgerFresh). */
+const DAMAGED_FRESHEN_MAX = 200;
+
 /**
- * Giá vốn hàng hoàn kho đã báo hỏng / mất trong phạm vi, tách phần đã nằm trong
- * giá vốn của đơn tính doanh thu (`inActive`) và phần của đơn không tính doanh
- * thu (`outside` — đơn hủy, đơn hỏng chờ khiếu nại). Một câu GROUP BY trên cột
- * sổ đã có; `byDaySince` = có lấy chuỗi ngày của phần `outside` từ mốc này.
+ * Dòng "Thất thu hàng mất/hỏng" của phạm vi — KỲ GHI NHẬN = NGÀY KHO BÁO HỎNG
+ * (anh Trung chốt 20/11/2026, lib/damaged-loss.ts). Hai câu đọc trên hai trục:
+ *   1. Trục NGÀY BÁO HỎNG: đi từ tập nhỏ "đơn kho đã báo hỏng / xóa sổ" của các
+ *      gian trong phạm vi (chỉ mục một phần "Order_return_damaged_idx"), lọc mốc
+ *      báo hỏng theo kỳ, nối sang sổ cái bằng đúng khóa chính (createdDate, orderId)
+ *      để lấy số tiền — không quét sổ theo kỳ. Điều kiện trạng thái lặp lại trên
+ *      dòng sổ: số tiền chỉ đúng khi sổ đã tính lại sau lần đổi trạng thái.
+ *   2. Trục NGÀY TẠO ĐƠN (như mọi dòng khác): giá vốn hàng hỏng đang nằm trong
+ *      giá vốn của đơn tính doanh thu tạo trong kỳ → tách khỏi dòng Giá vốn.
+ * `byDaySince` = có dựng chuỗi ngày của phần trừ thêm (`outside`) từ mốc này.
  */
 export async function ledgerDamagedLoss(
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
   opts: { byDaySince?: string } = {}
 ): Promise<DamagedLoss> {
-  const where = Prisma.sql`${ledgerScopeSql(scope, range)}
-      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
-      AND ${Prisma.raw(DAMAGED_LOSS_WHERE_SQL)}`;
-  const amount = Prisma.raw(DAMAGED_LOSS_AMOUNT_SQL);
-  const [groups, days] = await Promise.all([
-    prisma.$queryRaw<{ ch: string; active: boolean; n: unknown; v: unknown }[]>(Prisma.sql`
-      SELECT "channelName"::text AS ch, "countsAsRevenue" AS active, count(*) AS n,
-             COALESCE(sum(${amount}), 0) AS v
-      FROM "order_ledger" WHERE ${where}
-      GROUP BY "channelName", "countsAsRevenue"
-    `),
-    opts.byDaySince
-      ? prisma.$queryRaw<{ key: Date; v: unknown }[]>(Prisma.sql`
-          SELECT "createdDate" AS key, COALESCE(sum(${amount}), 0) AS v
-          FROM "order_ledger" WHERE ${where} AND NOT "countsAsRevenue"
-            AND "createdDate" >= ${dayParam(opts.byDaySince)}
-          GROUP BY "createdDate"
-        `)
-      : Promise.resolve([]),
-  ]);
-  return buildDamagedLoss(
-    groups.map((g) => ({
+  const version = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
+  const damagedAt = Prisma.raw(damagedAtSql("o."));
+  // Cùng nghĩa với `channel: scope` của Prisma, viết trên bảng đơn.
+  const orderScope: Prisma.Sql[] = [
+    Prisma.sql`o."channelId" IN (
+      SELECT c."id" FROM "Channel" c
+      WHERE c."userId" = ${scope.userId}
+        ${scope.channelName ? Prisma.sql`AND c."channelName" = ${scope.channelName}::"ChannelName"` : Prisma.empty}
+    )`,
+  ];
+  if (typeof scope.id === "string") {
+    orderScope.push(Prisma.sql`o."channelId" = ${scope.id}`);
+  } else if (scope.id && "in" in scope.id) {
+    if (scope.id.in.length === 0) orderScope.push(Prisma.sql`FALSE`);
+    else orderScope.push(Prisma.sql`o."channelId" IN (${Prisma.join(scope.id.in)})`);
+  }
+  if (range) {
+    orderScope.push(
+      Prisma.sql`${damagedAt} >= ${tsParam(range.gte)} AND ${damagedAt} <= ${tsParam(range.lte)}`
+    );
+  }
+  // Đơn kho báo hỏng trong kỳ ⋈ dòng sổ của chính đơn đó (khóa chính → Postgres chỉ chạm
+  // đúng mảnh tháng của từng đơn). "stale" = dòng sổ còn bẩn / mang phiên bản cũ: đơn vừa
+  // báo hỏng mà worker chưa kịp tính lại — và vì đơn thường TẠO ngoài kỳ đang xem nên
+  // ensureLedgerFresh của báo cáo (quét theo ngày tạo) không tính nốt giúp.
+  const damagedFrom = Prisma.sql`
+      FROM "Order" o
+      JOIN "order_ledger" l
+        ON l."orderId" = o."id" AND l."createdDate" = (o."createdAt" + INTERVAL '7 hours')::date
+      WHERE ${Prisma.raw(damagedLossWhereSql("o."))}
+        AND ${Prisma.join(orderScope, " AND ")}`;
+  const staleSql = Prisma.sql`(l."dirtyAt" IS NOT NULL OR l."formulaVersion" <> ${version})`;
+  const freshSql = Prisma.sql`(${Prisma.raw(damagedLossWhereSql("l."))} AND l."formulaVersion" = ${version})`;
+  const readDamaged = () =>
+    prisma.$queryRaw<{ day: Date; n: unknown; v: unknown; stale: unknown }[]>(Prisma.sql`
+      SELECT (${damagedAt} + INTERVAL '7 hours')::date AS day,
+             count(*) FILTER (WHERE ${freshSql}) AS n,
+             COALESCE(sum(${Prisma.raw(damagedLossAmountSql("l."))}) FILTER (WHERE ${freshSql}), 0) AS v,
+             count(*) FILTER (WHERE ${staleSql}) AS stale
+      ${damagedFrom}
+      GROUP BY 1
+    `);
+  const readInActive = () =>
+    prisma.$queryRaw<{ ch: string; day: Date; v: unknown }[]>(Prisma.sql`
+      SELECT "channelName"::text AS ch, "createdDate" AS day,
+             COALESCE(sum(${Prisma.raw(damagedLossAmountSql())}), 0) AS v
+      FROM "order_ledger"
+      WHERE ${ledgerScopeSql(scope, range)}
+        AND "formulaVersion" = ${version}
+        AND ${Prisma.raw(damagedLossWhereSql())}
+        AND "countsAsRevenue"
+      GROUP BY "channelName", "createdDate"
+    `);
+  let [damagedDays, inActive] = await Promise.all([readDamaged(), readInActive()]);
+  if (damagedDays.some((d) => Number(d.stale) > 0)) {
+    // Tính nốt ngay các dòng đó (tập nhỏ: đơn hỏng của kỳ; trần DAMAGED_FRESHEN_MAX) rồi đọc
+    // lại. Ghi theo đúng luật của worker: chỉ xóa mốc bẩn khi mốc chưa đổi từ lúc đọc.
+    const stale = await prisma.$queryRaw<{ orderId: string; dirtyAt: Date | null }[]>(Prisma.sql`
+      SELECT l."orderId", l."dirtyAt"
+      ${damagedFrom}
+        AND ${staleSql}
+      LIMIT ${DAMAGED_FRESHEN_MAX}::int
+    `);
+    await recomputeLedgerOrders(stale);
+    [damagedDays, inActive] = await Promise.all([readDamaged(), readInActive()]);
+  }
+  // Cột DATE về dạng Date lúc 00:00 UTC → lấy đúng chuỗi yyyy-mm-dd, không đổi giờ VN.
+  const dayKey = (d: Date | string) =>
+    d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  return buildDamagedLoss({
+    damagedDays: damagedDays.map((d) => ({
+      day: dayKey(d.day),
+      count: Number(d.n),
+      amount: Number(d.v),
+    })),
+    inActive: inActive.map((g) => ({
       channelName: g.ch,
-      countsAsRevenue: g.active,
-      count: Number(g.n),
+      day: dayKey(g.day),
       amount: Number(g.v),
     })),
-    days.map((d) => ({
-      day: d.key instanceof Date ? d.key.toISOString().slice(0, 10) : String(d.key).slice(0, 10),
-      amount: Number(d.v),
-    }))
-  );
+    byDaySince: opts.byDaySince,
+  });
 }
 
 // ------------------------------------------------------------

@@ -738,9 +738,10 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
       const gd = computeGrossDeductionsFromTotals(t.active);
       const activeOrderProfit = t.settled.profitAfterTax + t.pending.profitAfterTax;
       const operatingExpense = offOrder.fixedExpenseTotal + offOrder.variableExpenseTotal;
-      // Thất thu hàng mất/hỏng của đơn không tính doanh thu: Lãi đơn hàng (tab
-      // Tất cả) ĐÃ trừ giá vốn này, Lợi nhuận ròng từ 13/11/2026 cũng trừ → không
-      // còn nằm trong phần chênh "đơn hủy + đang hoàn" (lib/damaged-loss.ts).
+      // Thất thu hàng mất/hỏng: Lợi nhuận ròng trừ thêm `outside` (thất thu của kỳ
+      // theo NGÀY BÁO HỎNG − phần đã nằm trong giá vốn đơn tạo trong kỳ, 20/11/2026
+      // — lib/damaged-loss.ts). Lãi đơn hàng (tab Tất cả) tính theo ngày tạo đơn nên
+      // phần lệch kỳ của hàng hỏng nằm trong bước "Bỏ đơn hủy & đang hoàn".
       const damaged = await ledgerDamagedLoss(scope, range);
       const np = cashFlowNetProfit({
         orderProfit: activeOrderProfit,
@@ -2766,8 +2767,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       getShopTaxConfig(ownerId),
     ]);
     const { expenses, operatingIncomeTotal } = offOrder;
-    // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — đọc SAU bộ tổng
-    // để sổ đã được tính nốt dòng bẩn của kỳ; chuỗi ngày 14 ngày như biểu đồ.
+    // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — kỳ ghi nhận là
+    // NGÀY KHO BÁO HỎNG (20/11/2026). Đọc SAU bộ tổng để sổ đã được tính nốt dòng
+    // bẩn của kỳ; chuỗi ngày 14 ngày như biểu đồ.
     const damaged = await ledgerDamagedLoss(scope, range, {
       byDaySince: toBusinessDateKey(
         new Date(businessDayStart(new Date()).getTime() - 13 * 86_400_000)
@@ -2809,8 +2811,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // KHÔNG còn dòng Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu, giữ lại là
     // trừ trùng — chốt chủ shop 31/07; chi tiết phí vẫn xem ở thẻ Tổng giá
     // trị SP + bảng Lãi/Lỗ). ---
-    // Giá vốn hàng kho đã báo hỏng nằm ở dòng riêng "Thất thu hàng mất/hỏng" →
-    // tách phần đang lẫn trong giá vốn đơn tính doanh thu để không cộng hai lần.
+    // Giá vốn hàng kho đã báo hỏng nằm ở dòng riêng "Thất thu hàng mất/hỏng" (ghi
+    // ở kỳ báo hỏng) → tách phần đang lẫn trong giá vốn đơn tính doanh thu tạo
+    // trong kỳ này để cả đời đơn không bị cộng hai lần.
     const cogsAll = active.costSnapshot - damaged.inActive;
     const damagedLossTotal = damaged.total;
     // Chi phí cố định/biến đổi CHỈ là khoản NHẬP TAY từ Thu chi vận hành (đã
@@ -2888,9 +2891,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // lib/finance-definitions.ts; 30/09 → 04/11 bị loại). Đẳng thức: Doanh thu −
     // Chi phí + Thu khác − Thuế dự phòng = LN ròng. Số đơn vẫn trả để UI nhắc nhập.
     const missingCost = missingCostApiSummary(active.missingCostCount);
-    // Thất thu hàng mất/hỏng: phần của đơn tính doanh thu đã nằm trong
-    // profitAfterTax; chỉ trừ thêm phần của đơn KHÔNG tính doanh thu (đơn hủy,
-    // đơn hỏng chờ khiếu nại) — đẳng thức Doanh thu − Chi phí + Thu khác vẫn đóng.
+    // Thất thu hàng mất/hỏng: phần đã nằm trong profitAfterTax của đơn tính doanh
+    // thu tạo trong kỳ không trừ lại; chỉ trừ thêm `outside` = thất thu của kỳ −
+    // phần đó (âm được khi đơn tạo trong kỳ nhưng báo hỏng ở kỳ khác) — đẳng thức
+    // Doanh thu − Chi phí + Thu khác vẫn đóng.
     const actualProfit =
       settled.profitAfterTax -
       variableExpenseTotal -

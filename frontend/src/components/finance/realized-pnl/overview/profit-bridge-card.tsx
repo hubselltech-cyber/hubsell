@@ -33,7 +33,7 @@ export function ProfitBridgeCard({ bridge, className }: { bridge: PnlProfitBridg
     {
       key: "nonRevenue",
       label: "Bỏ đơn hủy & đang hoàn",
-      hint: "Thẻ Lãi đơn hàng ('Tất cả') cộng cả đơn hủy (phí sàn vẫn trừ, thường âm) và đơn đang hoàn; Lợi nhuận ròng chỉ tính đơn có doanh thu nên phải bỏ phần của hai nhóm đó ra. Dấu + nghĩa là hai nhóm đang âm, bỏ ra thì lợi nhuận tăng lại.",
+      hint: "Thẻ Lãi đơn hàng ('Tất cả') cộng cả đơn hủy (phí sàn vẫn trừ, thường âm) và đơn đang hoàn; Lợi nhuận ròng chỉ tính đơn có doanh thu nên phải bỏ phần của hai nhóm đó ra. Dấu + nghĩa là hai nhóm đang âm, bỏ ra thì lợi nhuận tăng lại. Gồm cả phần lệch kỳ của hàng hỏng: Thất thu hàng mất/hỏng tính vào ngày kho báo hỏng, còn lãi đơn tính theo ngày tạo đơn.",
       amount: -bridge.nonRevenueOrdersProfit,
       kind: "step",
     },

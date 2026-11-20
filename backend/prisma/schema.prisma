@@ -1650,6 +1650,12 @@ model Order {
   returnStatus ReturnStatus @default(NONE)
   returnNote   String? // ghi chú tình trạng kiện hàng khi nhận (vỡ, thiếu, bị tráo…)
   returnedAt   DateTime? // thời điểm kho xác nhận đã cầm hàng trên tay
+  /// Thời điểm kho BÁO HỎNG / MẤT kiện hoàn (returnStatus → DAMAGED). Là mốc ghi nhận dòng
+  /// "Thất thu hàng mất/hỏng" của Báo cáo dòng tiền + Tổng quan (anh Trung chốt 20/11/2026:
+  /// tính vào NGÀY BÁO HỎNG, không phải ngày tạo đơn — lib/damaged-loss.ts). Chốt khiếu nại
+  /// sau đó (WRITTEN_OFF) KHÔNG đổi mốc này. Null ở đơn báo hỏng trước 20/11/2026 → câu đọc
+  /// lùi về returnedAt rồi createdAt. Sổ cái đơn không đọc cột này.
+  returnDamagedAt DateTime?
 
   /// Mã vận đơn CHIỀU HOÀN (kiện khách gửi trả về kho). Shopee cấp tracking
   /// RIÊNG cho chiều ngược (tracking_number trong Returns API) — khác hẳn
@@ -1896,6 +1902,9 @@ model Order {
   // Chỉ mục MỘT PHẦN "đơn đang Chờ hàng về" (kho chuẩn quốc tế lát 2, 20/11/2026) chỉ có trong SQL
   // migration 20261120100000_stock_on_hand_model:
   //   Order_return_awaiting_idx (channelId) WHERE returnStatus = 'AWAITING'
+  // Chỉ mục MỘT PHẦN "đơn kho đã báo hỏng / xóa sổ" (dòng Thất thu theo ngày báo hỏng, 20/11/2026)
+  // chỉ có trong SQL migration 20261120230000_order_return_damaged_at:
+  //   Order_return_damaged_idx (channelId) WHERE returnStatus IN ('DAMAGED', 'WRITTEN_OFF')
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

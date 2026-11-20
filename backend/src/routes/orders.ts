@@ -1974,6 +1974,8 @@ router.post("/returns/bulk-damaged", async (req: AuthRequest, res, next) => {
             returnStatus: ReturnStatus.DAMAGED,
             returnNote: appendReturnNote(o.returnNote, reason, note),
             returnedAt: o.returnedAt ?? now,
+            // Mốc ghi nhận dòng Thất thu hàng mất/hỏng (lib/damaged-loss.ts).
+            returnDamagedAt: now,
           },
         })
       )
@@ -2080,6 +2082,8 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
           // Mốc "đã cầm hàng trên tay" ghi ở lần quét nhận; xử lý tắt từ
           // AWAITING thì ghi tại đây
           returnedAt: order.returnedAt ?? new Date(),
+          // Báo hỏng: mốc ghi nhận dòng Thất thu hàng mất/hỏng (lib/damaged-loss.ts).
+          ...(condition === "DAMAGED" ? { returnDamagedAt: new Date() } : {}),
           // Đơn hoàn về thì coi như đã kết thúc vòng đời giao hàng
           shippingStatus: ShippingStatus.CANCELLED,
         },

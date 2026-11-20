@@ -526,7 +526,17 @@ async function ageOrders(
       : rr < 0.97 ? ReturnStatus.CLAIM_SETTLED
       : ReturnStatus.WRITTEN_OFF;
     await prisma.$transaction([
-      prisma.order.update({ where: { id: o.id }, data: { returnStatus, returnedAt } }),
+      prisma.order.update({
+        where: { id: o.id },
+        data: {
+          returnStatus,
+          returnedAt,
+          // Kho báo hỏng ngay lúc nhận kiện — mốc ghi nhận dòng Thất thu (lib/damaged-loss.ts).
+          ...(returnStatus === ReturnStatus.DAMAGED || returnStatus === ReturnStatus.WRITTEN_OFF
+            ? { returnDamagedAt: returnedAt }
+            : {}),
+        },
+      }),
       ...(returnStatus === ReturnStatus.RECEIVED_INTACT
         ? [prisma.orderItem.updateMany({ where: { orderId: o.id }, data: { returnRestocked: true } })]
         : []),
