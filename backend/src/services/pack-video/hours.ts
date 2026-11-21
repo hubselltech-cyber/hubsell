@@ -5,7 +5,8 @@
 // Anh Trung 16/11: "thiếu thống kê số giờ còn lại (ví dụ khách mua 1000 giờ, đã quay 400 thì còn
 // lại 600)"; "khách mua bao nhiêu thì hệ thống cộng vào tài khoản của khách bấy nhiêu, mình thu trước".
 //
-//   đã mua   = Σ seconds của sổ pack_hour_grants (chỉ chèn, không sửa — dựng lại được từ đầu)
+//   đã mua   = Σ seconds của sổ pack_hour_grants (chỉ chèn, không sửa — dựng lại được từ đầu); gồm cả giờ
+//              MUA lẫn giờ Hubsell TẶNG (21/11/2026: mỗi chủ shop 2 giờ miễn phí — ensureWelcomeHours)
 //   đã quay  = Σ thời lượng các video ĐÃ LƯU: STORED + DELETED (usage-daily.ts: bảng gộp theo ngày
 //              + phần chưa gộp — số không tụt khi bỏ mảnh tháng cũ của pack_videos)
 //   còn lại  = đã mua − đã quay   (ĐƯỢC ÂM: video quay dở lúc hết giờ vẫn quay nốt, phần lố trừ
@@ -27,6 +28,7 @@ import {
   PACK_VIDEO_HOUR_PRESETS,
   PACK_VIDEO_HOUR_PRICE_VND,
   PACK_VIDEO_OVERRUN_LOOKBACK_SEC,
+  PACK_VIDEO_WELCOME_HOURS,
   packVideoHourSalesOpen,
 } from "../../config/pack-video";
 import { isPayosConfigured } from "../../integrations/payos/client";
@@ -91,7 +93,7 @@ export async function getHoursOverview(ownerId: string): Promise<HoursOverview> 
     }),
   ]);
   // Số hóa đơn của dòng mua: dòng giờ ↔ chứng từ nối nhau bằng CÙNG mã khoản tiền (paymentRef = externalRef).
-  const refs = rows.map((r) => r.paymentRef).filter((x): x is string => !!x);
+  const refs = rows.map((r) => r.paymentRef).filter((x): x is string => !!x && !x.startsWith(WELCOME_REF_PREFIX));
   const invoiceByRef = new Map<string, string | null>();
   if (refs.length > 0) {
     const pays = await prisma.packagePayment.findMany({
@@ -120,6 +122,45 @@ export async function getHoursOverview(ownerId: string): Promise<HoursOverview> 
       invoiceNo: r.paymentRef ? (invoiceByRef.get(r.paymentRef) ?? null) : null,
     })),
   };
+}
+
+// ---------- TẶNG GIỜ QUAY MIỄN PHÍ, một lần cho mỗi chủ shop (anh Trung 21/11/2026) ----------
+
+/**
+ * Khóa chống tặng trùng nằm ở cột `paymentRef` ("welcome:<id chủ shop>"): cột này đã có chỉ mục DUY NHẤT một phần
+ * (migration 20261118200000) và ràng buộc CHECK chỉ bắt dòng PURCHASE phải có nó — dòng GRANT mang một khóa riêng
+ * là hợp lệ. Nhờ vậy KHÔNG cần migration, và hai request tới cùng lúc / nhiều máy web cùng chạy vẫn chỉ ra MỘT dòng.
+ */
+const WELCOME_REF_PREFIX = "welcome:";
+export const welcomeRefOf = (ownerId: string): string => `${WELCOME_REF_PREFIX}${ownerId}`;
+
+/**
+ * Chủ shop đã được máy NÀY hỏi rồi → khỏi gõ database mỗi request. Chỉ là lối tắt: đúng / sai do chỉ mục duy nhất
+ * quyết định, quên sổ này (máy khởi động lại, máy web khác) thì cùng lắm thêm một câu INSERT không ra dòng nào.
+ */
+const welcomeAsked = new Set<string>();
+const WELCOME_ASKED_MAX = 100_000;
+
+/** Chỉ cho test: quên sổ "đã hỏi" để đi lại đường database. */
+export function forgetWelcomeAsked(): void {
+  welcomeAsked.clear();
+}
+
+/**
+ * Bảo đảm chủ shop đã nhận giờ tặng. Trả true khi CHÍNH lượt gọi này vừa cộng giờ.
+ * Gọi ở cửa /api/pack-videos (middleware/require-pack-video.ts) — tài khoản chạm vào tính năng lần đầu là có giờ.
+ */
+export async function ensureWelcomeHours(ownerId: string): Promise<boolean> {
+  if (PACK_VIDEO_WELCOME_HOURS <= 0 || !ownerId || welcomeAsked.has(ownerId)) return false;
+  const note = `Hubsell tặng ${PACK_VIDEO_WELCOME_HOURS.toLocaleString("vi-VN")} giờ quay miễn phí`;
+  const inserted = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    INSERT INTO "pack_hour_grants" ("id", "ownerId", "seconds", "kind", "note", "paymentRef")
+    VALUES (${randomUUID()}, ${ownerId}, ${PACK_VIDEO_WELCOME_HOURS * SECONDS_PER_HOUR}, 'GRANT', ${note}, ${welcomeRefOf(ownerId)})
+    ON CONFLICT ("paymentRef") WHERE "paymentRef" IS NOT NULL DO NOTHING
+    RETURNING "id"`);
+  if (welcomeAsked.size >= WELCOME_ASKED_MAX) welcomeAsked.clear();
+  welcomeAsked.add(ownerId);
+  return inserted.length === 1;
 }
 
 export interface GrantHoursInput {

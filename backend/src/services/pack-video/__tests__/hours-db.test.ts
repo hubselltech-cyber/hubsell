@@ -10,14 +10,18 @@ import "../../../integrations/__tests__/load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toBusinessDateKey } from "../../../lib/date-range";
 import { prisma } from "../../../lib/prisma";
+import { PACK_VIDEO_WELCOME_HOURS } from "../../../config/pack-video";
 import {
   canOpenNewVideo,
   computeBalance,
+  ensureWelcomeHours,
+  forgetWelcomeAsked,
   getHoursBalance,
   getHoursOverview,
   grantHours,
   grantPurchasedHours,
   HourPurchaseError,
+  welcomeRefOf,
 } from "../hours";
 
 const dbReady: boolean = await (async () => {
@@ -105,7 +109,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
   });
 
   it("mua 1.000 giờ rồi quay 400 giờ → còn 600 giờ; chỉ video đã lưu mới tính", async () => {
-    await grantPurchasedHours({ ownerId: ownerA, hours: 1000, amountVnd: 1_500_000, paymentRef: `${TAG}-pay1`, note: "gói thử" });
+    await grantPurchasedHours({ ownerId: ownerA, hours: 1000, amountVnd: 2_000_000, paymentRef: `${TAG}-pay1`, note: "gói thử" });
     await addVideo(ownerA, 300 * HOUR, "STORED");
     await addVideo(ownerA, 100 * HOUR, "DELETED"); // đã xóa vì hết hạn giữ — giờ đã dùng vẫn tính
     await addVideo(ownerA, 50 * HOUR, "PENDING"); // quay xong chưa tải lên — chưa tính
@@ -119,7 +123,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
   });
 
   it("mua thêm thì cộng dồn; điều chỉnh là một dòng ngược dấu, không sửa dòng cũ", async () => {
-    await grantPurchasedHours({ ownerId: ownerA, hours: 200, amountVnd: 300_000, paymentRef: `${TAG}-pay2` });
+    await grantPurchasedHours({ ownerId: ownerA, hours: 200, amountVnd: 400_000, paymentRef: `${TAG}-pay2` });
     await grantHours({ ownerId: ownerA, seconds: -50 * HOUR, kind: "ADJUST", note: "cộng nhầm" });
 
     const balance = await getHoursBalance(ownerA);
@@ -143,7 +147,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
 
   it("cùng một khoản tiền (webhook bắn hai lần / poll đua webhook) chỉ cộng giờ MỘT lần", async () => {
     const before = (await getHoursBalance(ownerA)).purchasedSeconds;
-    const input = { ownerId: ownerA, hours: 50, amountVnd: 75_000, paymentRef: `${TAG}-dup` };
+    const input = { ownerId: ownerA, hours: 50, amountVnd: 100_000, paymentRef: `${TAG}-dup` };
     const [a, b] = await Promise.all([grantPurchasedHours(input), grantPurchasedHours(input)]);
     expect([a.created, b.created].sort()).toEqual([false, true]);
     expect(a.id).toBe(b.id);
@@ -154,18 +158,21 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
 
   it("mã khoản tiền của chủ shop A không cộng được giờ cho chủ shop B", async () => {
     await expect(
-      grantPurchasedHours({ ownerId: ownerB, hours: 50, amountVnd: 75_000, paymentRef: `${TAG}-dup` })
+      grantPurchasedHours({ ownerId: ownerB, hours: 50, amountVnd: 100_000, paymentRef: `${TAG}-dup` })
     ).rejects.toBeInstanceOf(HourPurchaseError);
     expect((await getHoursBalance(ownerB)).purchasedSeconds).toBe(0);
   });
 
-  it("số tiền không khớp số giờ × 1.500 đ → KHÔNG cộng giờ", async () => {
+  it("số tiền không khớp số giờ × 2.000 đ → KHÔNG cộng giờ (kể cả tiền theo giá cũ 1.500 đ)", async () => {
     const before = (await getHoursBalance(ownerA)).purchasedSeconds;
     await expect(
-      grantPurchasedHours({ ownerId: ownerA, hours: 200, amountVnd: 299_000, paymentRef: `${TAG}-lech` })
+      grantPurchasedHours({ ownerId: ownerA, hours: 200, amountVnd: 399_000, paymentRef: `${TAG}-lech` })
     ).rejects.toBeInstanceOf(HourPurchaseError);
     await expect(
-      grantPurchasedHours({ ownerId: ownerA, hours: 10, amountVnd: 15_000, paymentRef: `${TAG}-duoi-min` })
+      grantPurchasedHours({ ownerId: ownerA, hours: 200, amountVnd: 300_000, paymentRef: `${TAG}-gia-cu` })
+    ).rejects.toBeInstanceOf(HourPurchaseError);
+    await expect(
+      grantPurchasedHours({ ownerId: ownerA, hours: 10, amountVnd: 20_000, paymentRef: `${TAG}-duoi-min` })
     ).rejects.toBeInstanceOf(HourPurchaseError);
     expect((await getHoursBalance(ownerA)).purchasedSeconds).toBe(before);
   });
@@ -176,12 +183,68 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
     ).rejects.toThrow();
   });
 
-  it("bản tổng quan: đơn giá 1.500 đ, gói sẵn 50 / 200 / 500, tối thiểu 20 giờ, sổ giờ mới nhất trước", async () => {
+  it("bản tổng quan: đơn giá 2.000 đ, gói sẵn 50 / 200 / 500, tối thiểu 20 giờ, sổ giờ mới nhất trước", async () => {
     const overview = await getHoursOverview(ownerA);
-    expect(overview.pricing).toEqual({ priceVnd: 1500, minHours: 20, maxHours: 10_000, presets: [50, 200, 500] });
+    expect(overview.pricing).toEqual({ priceVnd: 2000, minHours: 20, maxHours: 10_000, presets: [50, 200, 500] });
     expect(overview.salesOpen).toBe(false);
-    expect(overview.ledger[0]).toMatchObject({ kind: "PURCHASE", seconds: 50 * HOUR, amountVnd: 75_000 });
+    expect(overview.ledger[0]).toMatchObject({ kind: "PURCHASE", seconds: 50 * HOUR, amountVnd: 100_000 });
     expect(overview.ledger.some((r) => r.kind === "ADJUST" && r.seconds === -50 * HOUR)).toBe(true);
+  });
+
+  describe("tặng mỗi chủ shop 2 giờ quay miễn phí, MỘT lần — ensureWelcomeHours", () => {
+    let ownerW = "";
+    beforeAll(async () => {
+      ownerW = (
+        await prisma.user.create({
+          data: { email: `${TAG}-w@test.local`, passwordHash: "x", fullName: `${TAG}-w` },
+          select: { id: true },
+        })
+      ).id;
+    });
+    afterAll(async () => {
+      if (!ownerW) return;
+      await prisma.packHourGrant.deleteMany({ where: { ownerId: ownerW } });
+      await prisma.user.delete({ where: { id: ownerW } });
+    });
+
+    it("anh Trung chốt 21/11: tặng 2 giờ", () => {
+      expect(PACK_VIDEO_WELCOME_HOURS).toBe(2);
+    });
+
+    it("chủ shop mới chạm vào lần đầu → có 2 giờ, mở được video mới, sổ giờ ghi một dòng GRANT", async () => {
+      forgetWelcomeAsked();
+      expect(await getHoursBalance(ownerW)).toEqual({ purchasedSeconds: 0, usedSeconds: 0, remainingSeconds: 0 });
+      expect(await ensureWelcomeHours(ownerW)).toBe(true);
+      expect(await getHoursBalance(ownerW)).toEqual({ purchasedSeconds: 2 * HOUR, usedSeconds: 0, remainingSeconds: 2 * HOUR });
+      expect(await canOpenNewVideo(ownerW, new Date())).toEqual({ ok: true });
+      const rows = await prisma.packHourGrant.findMany({ where: { ownerId: ownerW } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ kind: "GRANT", seconds: 2 * HOUR, amountVnd: null, paymentRef: welcomeRefOf(ownerW) });
+      expect(rows[0].note).toBe("Hubsell tặng 2 giờ quay miễn phí");
+    });
+
+    it("gọi lại (cùng máy, máy khác) KHÔNG tặng lần hai", async () => {
+      expect(await ensureWelcomeHours(ownerW)).toBe(false); // lối tắt trong bộ nhớ
+      forgetWelcomeAsked(); // như một máy web khác / máy vừa khởi động lại
+      expect(await ensureWelcomeHours(ownerW)).toBe(false);
+      expect(await prisma.packHourGrant.count({ where: { ownerId: ownerW } })).toBe(1);
+    });
+
+    it("ba request ĐẦU TIÊN tới cùng lúc → đúng một dòng tặng", async () => {
+      await prisma.packHourGrant.deleteMany({ where: { ownerId: ownerW } });
+      forgetWelcomeAsked();
+      const raced = await Promise.all([ensureWelcomeHours(ownerW), ensureWelcomeHours(ownerW), ensureWelcomeHours(ownerW)]);
+      expect(raced.filter(Boolean)).toHaveLength(1);
+      expect(await prisma.packHourGrant.count({ where: { ownerId: ownerW } })).toBe(1);
+    });
+
+    it("giờ tặng cộng dồn với giờ mua; sổ giờ hiện dòng tặng, không có số hóa đơn", async () => {
+      await grantPurchasedHours({ ownerId: ownerW, hours: 20, amountVnd: 40_000, paymentRef: `${TAG}-w-pay` });
+      const overview = await getHoursOverview(ownerW);
+      expect(overview.purchasedSeconds).toBe(22 * HOUR);
+      const gift = overview.ledger.find((r) => r.kind === "GRANT");
+      expect(gift).toMatchObject({ seconds: 2 * HOUR, amountVnd: null, invoiceNo: null });
+    });
   });
 
   describe("hết giờ thì dừng — canOpenNewVideo", () => {

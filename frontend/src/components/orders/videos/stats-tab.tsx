@@ -138,14 +138,14 @@ export function StatsTab() {
             subtitle={
               level === "out"
                 ? "Hết giờ thì không mở được video mới"
-                : "Giờ đã mua trừ giờ đã quay, tính từ trước tới nay"
+                : "Tổng giờ trừ giờ đã quay, tính từ trước tới nay"
             }
           />
           <StatCard
-            label="Giờ đã mua"
+            label="Tổng giờ"
             value={formatHoursBalance(hours.purchasedSeconds)}
             icon={ShoppingBag}
-            subtitle="Tổng các lần mua và được cấp"
+            subtitle="Giờ đã mua + giờ Hubsell tặng"
           />
           <StatCard
             label="Giờ đã quay"

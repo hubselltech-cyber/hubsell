@@ -5,6 +5,19 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 21/11 tối (2) — Giờ quay video 1.500 → 2.000 đ + tặng mỗi chủ shop 2 giờ quay miễn phí — PUSH 21/11 tối
+
+- **Anh bảo:** "Nâng giờ quay video lên 2000đ đi. Và tặng cho mỗi khách hàng 2 giờ quay miễn phí."
+- **Giá:** `PACK_VIDEO_HOUR_PRICE_VND` 1.500 → 2.000 (`backend/src/config/pack-video.ts`, một hằng số; web lấy giá từ máy chủ). Gói sẵn 50 / 200 / 500 giờ = 100.000 / 400.000 / 1.000.000 đ; tối thiểu 20 giờ = 40.000 đ. Giờ đã mua giữ nguyên. Mã QR lấy ở giá cũ trả sau khi lên bản mới → MISMATCH, không cộng giờ, HQ nhận thư (đường có sẵn).
+- **Tặng 2 giờ:** `ensureWelcomeHours` (`services/pack-video/hours.ts`) gọi ở cửa `/api/pack-videos` — tài khoản chạm vào tính năng lần đầu là có một dòng GRANT 2 giờ; mỗi chủ shop đúng một lần, chống trùng bằng khóa `welcome:<id>` ở cột `paymentRef` (chỉ mục duy nhất có sẵn) → KHÔNG migration. Giờ tặng không hết hạn (mặc định em chọn). ⚠️ Tính năng còn khóa cho mọi khách trừ tài khoản thí điểm → lúc này chỉ tài khoản đó nhận; khách khác nhận khi mở tính năng.
+- **Web:** "Đã mua" → "Tổng giờ" (gồm giờ tặng), nhãn sổ giờ "Hubsell cấp" → "Hubsell tặng".
+- **Đã kiểm:** tsc backend + frontend sạch; vitest 10 tệp / 134 ca, 132 xanh (có ca tặng một lần, ba request đua nhau, tiền giá cũ không cộng giờ); soi local: API trả 2.000 đ, sổ giờ đúng một dòng tặng, hộp mua hiện 400.000 ₫ cho 200 giờ.
+- **⚠️ 2 ca đỏ SẴN** ở `retention-db.test.ts` (đỏ cả trên mã gốc, không do lượt này) — chưa tìm gốc.
+- **CHƯA kiểm:** mua thật qua payOS ở giá mới; tài khoản mới tinh qua cửa HTTP thật; app điện thoại; prod.
+- **Push:** anh bảo "Push luôn" → commit backend + web + tài liệu của lượt này; không migration. Render dựng lại web + worker.
+- Chi tiết: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 27.
+
+---
 ## Phiên 21/11 tối — Màn quay video webcam làm GỌN (ô Lượt quay lên dưới khung hình, số giờ lên đầu, khối thẳng hàng) — PUSH 21/11 tối
 
 - **Anh bảo (kèm ảnh khoanh):** chuyển ô "Lượt quay này" lên vùng dưới khung hình, làm dạng đếm "10 (tải lên) / 12 (đã quay)"; đưa số giờ còn lại lên trên. Sửa thêm trong lúc dựng: ô tem bên trái rút NGẮN nhường chỗ cho ô Lượt quay (trái nhỏ hơn phải); các khối thẳng hàng thẳng lối; "Camera" → **"Camera toàn cảnh"**. Anh xem bản xếp chồng (bộ đếm trên, danh sách clip dưới) và chốt "Như thế này ok"; em hỏi màn rộng có cho hai nửa đứng cạnh nhau không → **anh chốt "Luôn xếp chồng"** vì "muốn mã đơn hàng luôn được hiển thị đầy đủ" → danh sách hiện mã tem ĐẦY ĐỦ (không rút gọn, không cắt "…", chật thì xuống dòng).
@@ -12,6 +25,7 @@
 - **Đã kiểm:** tsc + eslint sạch; bản chốt đo bằng JS ở 1.280 và 1.920 với số liệu giả 1.196 / 1.200 + mã dài 24 ký tự — đáy ô tem = đáy ô Lượt quay = đáy nút lớn, không mã nào bị cắt, không tràn ngang; số liệu giả đã gỡ. (Bản đầu đã đo thêm 1.440 / 1.536 / 1.700, sáng + tối.)
 - **CHƯA kiểm:** quay bằng webcam thật (trình duyệt trong app bị chặn camera); dải đỏ hết giờ ở chỗ mới; màn < 1.024px; bản chốt chưa đo lại ở 1.440 / 1.536 / 1.700 và giao diện tối.
 - **Push:** anh bảo "Em push lên đi" khi chưa thử webcam thật trên local → commit chỉ mã web + tài liệu của lượt này (các mục PROGRESS / docs của phiên khác để nguyên, chưa commit); màn quay trên prod vẫn chỉ mở cho tài khoản thí điểm. ⏳ anh thử webcam thật trên prod.
+- **✅ Commit `5878ce2e`, push 22:19; 22:22:06 gói mã công khai trang quay trên `app.hubsell.tech` đã có bản mới** (dò tệp tĩnh tìm chuỗi `h-[66px]`, không đăng nhập; lượt dò `app.hubsell.vn` 2 giây trước đó chưa thấy — đúng lúc đang chuyển bản, chưa dò lại). Chưa nhìn màn hình prod.
 - Chi tiết + bảng số đo: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 26.
 
 ---

@@ -2063,3 +2063,66 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
   dưới không thẳng (ô Camera toàn cảnh dài quá đáy khung hình). Đây là bản anh nhìn và duyệt.
 - tsc + eslint sạch sau khi gỡ thế cạnh nhau và `shortCode`. CHƯA đo lại 1.440 / 1.536 / 1.700 và giao diện tối cho bản chốt (bố cục
   xếp chồng đã soi tối ở 1.280 trước đó; lượt này chỉ đổi cách hiện mã).
+
+---
+
+## 27. Đơn giá giờ quay 1.500 → 2.000 đ + TẶNG mỗi chủ shop 2 giờ quay miễn phí (21/11/2026 tối — dựng local → COMMIT + PUSH cùng tối, anh: "Push luôn")
+
+**Anh Trung 21/11 tối:** "Nâng giờ quay video lên 2000đ đi. Và tặng cho mỗi khách hàng 2 giờ quay miễn phí."
+⛔ Đừng đề xuất lại 1.500 đ / 1.800 đ. Câu hỏi "giờ dùng thử một lần" treo từ 14/11 (mục 55 tài liệu khảo sát) nay đã có đáp án: 2 giờ.
+
+### 27.1 Đơn giá
+
+- `backend/src/config/pack-video.ts`: `PACK_VIDEO_HOUR_PRICE_VND` 1.500 → **2.000**. Một hằng số — báo giá, tạo mã payOS, kiểm tiền
+  lúc tiền về và hộp mua trên web (web lấy giá từ máy chủ) đều đổi theo. Vẫn tính thẳng, không bậc, không giảm giá theo gói.
+- Ba gói sẵn giữ số giờ: 50 / 200 / 500 giờ = **100.000 / 400.000 / 1.000.000 đ**. Mua tối thiểu 20 giờ = 40.000 đ; tối đa 10.000 giờ
+  = 20.000.000 đ một lần (trần là số tự chọn từ 16/11 để chặn gõ nhầm; hạn mức một giao dịch của payOS em vẫn CHƯA có số).
+- Giờ đã mua ở giá cũ GIỮ NGUYÊN, không tính lại.
+- Mã QR lấy ở giá 1.500 đ mà trả SAU khi bản mới lên: tiền về không khớp số giờ × 2.000 → đơn thành MISMATCH, KHÔNG cộng giờ, HQ
+  nhận thư để xử lý tay (đường có sẵn ở `gateway-checkout.ts`, không sửa). Mã QR chỉ sống vài chục phút và trên prod mới một tài
+  khoản thí điểm mua được nên gần như không xảy ra — em CHƯA soi prod xem có mã nào đang treo.
+- Quy đổi theo số đo 20/11 (mục 25.13): clip trung bình ≈ 36 giây → ≈ **20 đ / đơn** (trước ≈ 15 đ); 1 phút = 33 đ; giá vốn ≈ 150 đ /
+  giờ giữ 25 ngày không đổi → biên ≈ 92 % (trước ≈ 90 %). So thị trường (mục 16): Ship Xanh 1.320–1.500 đ / giờ cloud, Dohana / EPack
+  ≈ 1.800–2.250 → 2.000 đ nằm ở NỬA TRÊN dải, không còn "giữa dải".
+
+### 27.2 Tặng 2 giờ
+
+- `PACK_VIDEO_WELCOME_HOURS = 2` (cùng tệp cấu hình). Hàm `ensureWelcomeHours(ownerId)` ở `services/pack-video/hours.ts`, gọi ở cửa
+  `/api/pack-videos` (`middleware/require-pack-video.ts`) SAU khi tài khoản qua cổng tính năng → tài khoản chạm vào Video đóng hàng
+  lần đầu (web hay app, cùng đường API) là có 2 giờ, quay được ngay.
+- Là MỘT dòng `GRANT` trong sổ `pack_hour_grants`: 7.200 giây, ghi chú "Hubsell tặng 2 giờ quay miễn phí", không tiền, không hóa đơn,
+  không sổ quỹ. Cộng vào cùng số dư với giờ mua, dùng trước / sau không phân biệt.
+- **Mỗi chủ shop đúng MỘT lần:** khóa chống trùng `welcome:<id chủ shop>` đặt ở cột `paymentRef` — cột này đã có chỉ mục duy nhất một
+  phần, và ràng buộc CHECK chỉ bắt dòng PURCHASE phải có nó → **KHÔNG cần migration**. Hai request tới cùng lúc / nhiều máy web vẫn
+  ra một dòng (`INSERT … ON CONFLICT DO NOTHING`). Trong bộ nhớ mỗi máy có một sổ "đã hỏi" để khỏi gõ database mỗi request — chỉ là
+  lối tắt, không quyết định đúng / sai.
+- Tặng hỏng (database trục trặc) không chặn request: ghi log, request sau tự thử lại.
+- **Mặc định em tự chọn, anh chưa nói:** giờ tặng KHÔNG hết hạn (như giờ mua); tặng theo CHỦ shop (nhân viên không có phần riêng);
+  tài khoản đã có giờ từ trước (thí điểm) cũng được +2 giờ; đổi số 2 về sau không tặng bù / không thu lại của người đã nhận; đặt 0 là
+  ngừng tặng cho người chưa nhận.
+- ⚠️ **"Mỗi khách hàng" hiện mới là MỘT tài khoản:** tính năng vẫn chỉ mở cho tài khoản thí điểm (mục 3), nên lúc này chỉ tài khoản đó
+  nhận 2 giờ. Khách khác nhận khi cổng tính năng mở cho họ — không phải làm thêm gì. Em KHÔNG chèn sẵn dòng tặng cho các tài khoản
+  đang có (không cần, và tránh ghi hàng loạt vào prod).
+- Web đổi chữ cho đúng nghĩa (tổng giờ nay gồm cả giờ tặng): ô "Đã mua" trong hộp mua → **"Tổng giờ"**; thẻ "Giờ đã mua" ở tab Thống
+  kê → "Tổng giờ" (phụ đề "Giờ đã mua + giờ Hubsell tặng"); chú thích rê chuột "Tổng … (mua + Hubsell tặng) · đã quay …"; nhãn dòng
+  sổ giờ "Hubsell cấp" → "Hubsell tặng". Tên trường API `purchasedSeconds` GIỮ NGUYÊN (app đang đọc).
+- Khách có 2 giờ tặng mà chưa mua: hàng đầu hiện "Còn 2 giờ / 2 giờ" (không còn "Chưa mua giờ quay"); quay hết thì thành dải đỏ "Hết
+  giờ quay" + nút mua như cũ.
+
+### 27.3 Đã kiểm / chưa kiểm
+
+- **Đã kiểm:** `tsc` backend + frontend sạch, eslint thư mục video sạch. vitest 10 tệp / 134 ca: **132 xanh**, gồm ca mới — chủ shop
+  mới chạm lần đầu → 2 giờ + mở được video; gọi lại / máy khác không tặng lần hai; ba request đầu tiên đua nhau → đúng một dòng; giờ
+  tặng cộng dồn với giờ mua, dòng tặng không có số hóa đơn; tiền theo giá cũ 1.500 đ không cộng giờ; cửa tính năng gọi tặng đúng chủ
+  shop, tặng hỏng không chặn request, tài khoản bị khóa không được tặng.
+- **2 ca ĐỎ SẴN, không do lượt này** (`retention-db.test.ts`: "giờ đã quay không tụt…" và "xóa tài khoản: sau cờ chỉ đếm…") — em cất
+  phần sửa đi chạy trên mã gốc vẫn đỏ y hệt; nhiều khả năng do dữ liệu thử còn sót trên DB local. CHƯA tìm gốc.
+- **Soi local** (tài khoản thí điểm DB local): `GET /api/pack-videos/hours` trả `priceVnd: 2000`, tổng 1.002 giờ (1.000 nạp thử + 2
+  tặng), sổ giờ có đúng MỘT dòng "Hubsell tặng 2 giờ quay miễn phí"; hộp mua hiện 100.000 / 400.000 / 1.000.000 ₫ và "200 giờ ×
+  2.000 ₫ = 400.000 ₫", ô "Tổng giờ".
+- **CHƯA kiểm:** mua thật qua payOS ở giá mới (local đang tắt thanh toán); tài khoản mới tinh đi qua cửa HTTP thật (mới thử bằng hàm
+  + bài test cửa có hàm giả); app điện thoại (bản thử đọc cùng API, chữ "Chưa mua giờ quay" trên app chưa đổi); prod.
+- **Chưa làm / ngoài phạm vi:** không có chỗ nào trên landing / Điều khoản ghi giá giờ quay nên không phải sửa chữ công bố; chưa có
+  thông báo "bạn được tặng 2 giờ" (khách thấy qua số dư + sổ giờ); hoa hồng giới thiệu cho khoản mua giờ vẫn chờ anh (mục 20.6).
+- Tệp: backend `config/pack-video.ts`, `lib/pack-video-hour-pricing.ts` (chú thích), `services/pack-video/hours.ts`,
+  `middleware/require-pack-video.ts`, 3 tệp test; frontend `hours-balance.tsx`, `stats-tab.tsx`, `hour-ledger.tsx`.

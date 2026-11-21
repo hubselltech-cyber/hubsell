@@ -1,7 +1,12 @@
 // CỔNG MỞ Video đóng hàng — anh Trung 16/11/2026: "chỉ mở cho một mình tài khoản admin@hubsell.vn".
 // Ba ca bị khóa (rào S2): tài khoản thường · nhân viên của tài khoản thí điểm · thí điểm khi thiếu kho.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Response } from "express";
+
+// Cửa tính năng gọi việc tặng giờ quay (21/11/2026). Tệp này là test THUẦN, không chạm database → thay bằng hàm giả.
+const { ensureWelcomeHours } = vi.hoisted(() => ({ ensureWelcomeHours: vi.fn(async (_ownerId: string) => false) }));
+vi.mock("../hours", () => ({ ensureWelcomeHours }));
+
 import { PACK_VIDEO_PILOT_EMAILS } from "../../../config/pack-video";
 import type { AuthRequest } from "../../../middleware/auth";
 import { requirePackVideo } from "../../../middleware/require-pack-video";
@@ -82,7 +87,18 @@ describe("middleware requirePackVideo", () => {
     requirePackVideo(req as AuthRequest, res, () => {
       passed = true;
     });
-    return { status, body, passed };
+    // Bộ đọc (không chụp giá trị): cửa mở thì `next` chạy SAU khi việc tặng giờ xong, tức sau lúc hàm này trả về.
+    return {
+      get status() {
+        return status;
+      },
+      get body() {
+        return body;
+      },
+      get passed() {
+        return passed;
+      },
+    };
   }
 
   function withR2<T>(env: Record<string, string | undefined>, fn: () => T): T {
@@ -103,15 +119,32 @@ describe("middleware requirePackVideo", () => {
 
   const LOCKED = { error: expect.any(String), code: "FEATURE_LOCKED" };
 
-  it("chủ tài khoản thí điểm đi tiếp", () => {
+  it("chủ tài khoản thí điểm đi tiếp — SAU khi đã bảo đảm giờ quay tặng cho chủ shop", async () => {
+    ensureWelcomeHours.mockClear();
     const r = withR2(R2_ENV, () => run({ userId: "u1", ownerId: "u1", userEmail: "admin@hubsell.vn" }));
-    expect(r.passed).toBe(true);
+    await vi.waitFor(() => expect(r.passed).toBe(true));
+    expect(ensureWelcomeHours).toHaveBeenCalledExactlyOnceWith("u1");
   });
 
-  it("tài khoản thường → 403 FEATURE_LOCKED", () => {
+  it("tặng giờ hỏng (database trục trặc) KHÔNG chặn request", async () => {
+    ensureWelcomeHours.mockRejectedValueOnce(new Error("mất kết nối"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const r = withR2(R2_ENV, () => run({ userId: "u1", ownerId: "u1", userEmail: "admin@hubsell.vn" }));
+      await vi.waitFor(() => expect(r.passed).toBe(true));
+      expect(r.status).toBe(200);
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("tài khoản thường → 403 FEATURE_LOCKED, không tặng giờ", () => {
+    ensureWelcomeHours.mockClear();
     const r = withR2(R2_ENV, () => run({ userId: "u2", ownerId: "u2", userEmail: "khach@shop.vn" }));
     expect([r.passed, r.status]).toEqual([false, 403]);
     expect(r.body).toEqual(LOCKED);
+    expect(ensureWelcomeHours).not.toHaveBeenCalled();
   });
 
   it("nhân viên của tài khoản thí điểm → 403 (ownerId khác userId)", () => {

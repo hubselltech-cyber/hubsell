@@ -80,7 +80,7 @@ export function HoursSummary({ hours, className }: { hours: PackVideoHours; clas
       className={cn("min-w-0 flex-col items-end", className)}
       title={
         hours.purchasedSeconds > 0
-          ? `Đã mua ${formatHoursBalance(hours.purchasedSeconds)} · đã quay ${formatHoursBalance(hours.usedSeconds)}`
+          ? `Tổng ${formatHoursBalance(hours.purchasedSeconds)} (mua + Hubsell tặng) · đã quay ${formatHoursBalance(hours.usedSeconds)}`
           : undefined
       }
     >
@@ -202,7 +202,7 @@ export function BuyHoursButton({
 /**
  * Hộp MUA THÊM GIỜ QUAY (phác thảo anh Trung duyệt 16/11; 18/11 anh: "thêm cả việc nhập số lượng giờ quay
  * video muốn mua, từ đó tính ra tiền"): số dư · ba gói sẵn (lối tắt) · Ô "SỐ GIỜ MUỐN MUA" · dòng
- * "n giờ × 1.500 đ" · nút "Thanh toán X đ" · hai dòng luật hết giờ.
+ * "n giờ × đơn giá" · nút "Thanh toán X đ" · hai dòng luật hết giờ.
  *
  * MỘT nguồn số: ô nhập. Bấm một gói sẵn chỉ là điền số của gói vào ô; khách sửa số thì tiền đổi theo
  * ngay. Đơn giá, gói, tối thiểu / tối đa do MÁY CHỦ trả (backend/src/config/pack-video.ts); số tiền lúc
@@ -257,7 +257,8 @@ function BuyHoursDialog({
         ) : (
           <div className="space-y-4">
             <dl className="grid grid-cols-3 gap-2 rounded-lg border bg-muted/40 p-3 text-center">
-              <BalanceCell label="Đã mua" value={formatHoursBalance(hours.purchasedSeconds)} />
+              {/* Tổng = giờ mua + giờ Hubsell tặng (21/11/2026: mỗi chủ shop 2 giờ miễn phí) — không gọi là "Đã mua". */}
+              <BalanceCell label="Tổng giờ" value={formatHoursBalance(hours.purchasedSeconds)} />
               <BalanceCell label="Đã quay" value={formatHoursBalance(hours.usedSeconds)} />
               <BalanceCell
                 label={hours.remainingSeconds < 0 ? "Vượt gói" : "Còn lại"}

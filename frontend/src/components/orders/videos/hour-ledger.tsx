@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 const KIND_LABEL: Record<PackVideoHourLedgerRow["kind"], string> = {
   PURCHASE: "Mua giờ",
-  GRANT: "Hubsell cấp",
+  GRANT: "Hubsell tặng",
   ADJUST: "Điều chỉnh",
 };
 

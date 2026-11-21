@@ -1,7 +1,7 @@
 // ============================================================
 // VIDEO ĐÓNG HÀNG — TÍNH TIỀN MUA GIỜ QUAY (hàm thuần, 18/11/2026)
 //
-// Anh Trung chốt 16/11: 1.500 đ / giờ, TÍNH THẲNG, không bậc. Máy chủ là nơi DUY NHẤT tính tiền:
+// Đơn giá ở config/pack-video.ts (21/11/2026: 2.000 đ / giờ; trước đó 1.500 đ), TÍNH THẲNG, không bậc. Máy chủ là nơi DUY NHẤT tính tiền:
 // trình duyệt chỉ gửi số giờ, máy chủ trả số tiền; số tiền trình duyệt gửi lên (nếu có) bị bỏ qua.
 // Cùng hàm này kiểm lại lúc tiền về: số tiền thu ≠ số giờ × đơn giá thì KHÔNG cộng giờ.
 // ============================================================

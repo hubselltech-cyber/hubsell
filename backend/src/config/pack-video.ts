@@ -62,11 +62,22 @@ export const PACK_VIDEO_PAGE_MAX = 100;
 // ---------- MUA GIỜ QUAY (docs/VIDEO-DONG-HANG-THIET-KE.md mục 16 + 19) ----------
 
 /**
- * ĐƠN GIÁ một giờ quay: 1.500 đ, TÍNH THẲNG, không bậc — anh Trung CHỐT 16/11 tối ("1.500 đ một giờ").
+ * ĐƠN GIÁ một giờ quay: 2.000 đ, TÍNH THẲNG, không bậc — anh Trung 21/11/2026: "Nâng giờ quay video lên 2000đ đi"
+ * (16/11 chốt 1.500 đ; giờ đã mua ở giá cũ giữ nguyên, không tính lại).
  * Trả trước, không thu theo tháng, giờ đã mua không hết hạn, không trừ VAT trong phép tính.
  * Máy chủ TỰ tính tiền = số giờ × đơn giá (lib/pack-video-hour-pricing.ts); không tin số tiền trình duyệt gửi.
+ * Mã QR lấy ở giá cũ mà trả SAU khi đổi giá: tiền về không khớp số giờ × giá mới → đơn thành MISMATCH, KHÔNG cộng
+ * giờ, HQ nhận thư để xử lý tay (services/gateway-checkout.ts) — mã QR chỉ sống vài chục phút nên hiếm.
  */
-export const PACK_VIDEO_HOUR_PRICE_VND = 1_500;
+export const PACK_VIDEO_HOUR_PRICE_VND = 2_000;
+
+/**
+ * TẶNG MỖI CHỦ SHOP 2 GIỜ QUAY MIỄN PHÍ, một lần — anh Trung 21/11/2026: "tặng cho mỗi khách hàng 2 giờ quay miễn
+ * phí". Tự cộng lần đầu tài khoản chạm vào Video đóng hàng (services/pack-video/hours.ts → ensureWelcomeHours),
+ * là một dòng GRANT trong sổ giờ; dùng như giờ mua, KHÔNG hết hạn (anh chưa nói hạn — mặc định em chọn).
+ * Đặt 0 = ngừng tặng cho tài khoản CHƯA nhận; ai đã nhận thì giữ.
+ */
+export const PACK_VIDEO_WELCOME_HOURS = 2;
 
 /**
  * Ba gói sẵn — chỉ là LỐI TẮT, cùng đơn giá, không giảm giá. 50 / 200 / 500 giờ là đề xuất của em 16/11
@@ -74,11 +85,11 @@ export const PACK_VIDEO_HOUR_PRICE_VND = 1_500;
  */
 export const PACK_VIDEO_HOUR_PRESETS: readonly number[] = [50, 200, 500];
 
-/** Mua tối thiểu 20 giờ = 30.000 đ. SỐ TỰ CHỌN (16/11): mỗi lần mua kéo theo một hóa đơn + phí cổng. */
+/** Mua tối thiểu 20 giờ = 40.000 đ (ở giá 2.000 đ). SỐ TỰ CHỌN (16/11): mỗi lần mua kéo theo một hóa đơn + phí cổng. */
 export const PACK_VIDEO_HOUR_MIN_PURCHASE = 20;
 
 /**
- * Mua tối đa một lần 10.000 giờ = 15.000.000 đ. SỐ TỰ CHỌN: chặn gõ nhầm thêm số 0 (shop 1.000 đơn/ngày
+ * Mua tối đa một lần 10.000 giờ = 20.000.000 đ (ở giá 2.000 đ). SỐ TỰ CHỌN: chặn gõ nhầm thêm số 0 (shop 1.000 đơn/ngày
  * dùng ≈ 500 giờ/tháng → 10.000 giờ ≈ 20 tháng). Không phải trần của payOS (em chưa có số hạn mức payOS).
  */
 export const PACK_VIDEO_HOUR_MAX_PURCHASE = 10_000;
