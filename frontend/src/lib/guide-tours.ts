@@ -975,7 +975,7 @@ export const STAFF_PLAN_TOUR: GuideTour = {
     {
       img: `${GT}/ns-plan.png`,
       title: "Gói dịch vụ: đang dùng bao nhiêu so với trần",
-      desc: "“Cấu hình” → “Gói dịch vụ”: gói hiện tại, kỳ hiệu lực, thanh đơn hàng tháng này so với trần gói, số gian và nhân viên. Vượt trần đơn vẫn đồng bộ đầy đủ — chỉ khóa tính năng nâng cao sau thời gian ân hạn nếu chưa nâng gói.",
+      desc: "“Cấu hình” → “Gói dịch vụ”: gói hiện tại, kỳ hiệu lực, thanh đơn hàng tháng này so với trần gói, số gian và nhân viên. Vượt số đơn của gói thì vẫn đồng bộ và dùng đủ mọi tính năng — phần vượt tính theo đơn giá của gói, thanh toán trước hết mùng 5 tháng sau.",
       target: { x: 58.89, y: 28.91, w: 77.78, h: 22.19 },
       zoom: 1.3,
     },

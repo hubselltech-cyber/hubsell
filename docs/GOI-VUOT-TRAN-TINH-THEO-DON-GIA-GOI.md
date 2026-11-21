@@ -209,7 +209,7 @@ tiền vẫn về → đơn MISMATCH + thư HQ, không ghi chứng từ. `waiveO
 | Việc | Đang đặt | Đổi ở |
 |---|---|---|
 | Scale vượt | sàn = giá công bố của gói tính theo đơn (65 ₫) | `overageFloorPrice()` trả null là bỏ sàn |
-| Khách đang trả tiền | gói thường tính từ tháng **12/2026**; gói tính theo đơn tính từ tháng mua | `OVERAGE_START_MONTH` |
+| Khách đang trả tiền | ~~gói thường tính từ tháng 12/2026~~ → **11/2026** (anh chốt 21/11, mục 10); gói tính theo đơn tính từ tháng mua | `OVERAGE_START_MONTH` |
 | Dùng thử vượt | giữ khóa mềm 120 % / 7 ngày | nhánh `overageEligible` trong `plan-enforcement.ts` |
 
 **CHƯA LÀM / CHƯA KIỂM**
@@ -222,6 +222,40 @@ tiền vẫn về → đơn MISMATCH + thư HQ, không ghi chứng từ. `waiveO
   (`plan-enforcement.ts`), cột "Đơn tháng này" ở HQ Gói dịch vụ. Hệ quả: khách có bán tại quầy thấy số đơn tháng
   THẤP hơn trước (không ai bị siết thêm).
 - Thông báo trước cho khách đang trả tiền về luật mới từ 12/2026 (chưa soạn).
+
+## 10. Gói thường tính phí vượt từ 11/2026 thay vì 12/2026 (anh chốt 21/11/2026 — sửa local, chưa push)
+
+**Ca mở đầu.** Khách Growth mua 12 tháng (2.189.000 ₫, payOS, 10:56 13/11/2026 → 13/11/2027) bị khóa "vượt trần đơn quá
+ân hạn" ngày 21/11 và xin trả phần vượt hằng tháng. Gốc: tháng 11 gói thường còn luật cũ, mà luật cũ đếm cả tháng dương
+lịch kể cả đơn lúc còn dùng thử — 1.211 đơn cả tháng, từ lúc trả tiền chỉ 463. Đúng lỗ hổng mục 4 đã nêu.
+
+**Anh chốt:** "áp dụng luôn cách tính thêm tiền cho tất cả các thuê bao đã trả tiền đi. sao phải đợi sang tháng 12" →
+`OVERAGE_START_MONTH` = **"2026-11"** (bản đầu em làm danh sách riêng từng chủ shop — đã gỡ). Dùng thử giữ khóa mềm.
+Bảng giá trong app tự bỏ chữ "(từ 12/2026)" (`/me.overageStartMonth` = null).
+
+**Đo prod bằng đúng phép tính sẽ chốt** (SQL chỉ đọc, 21/11 ~14:10; 36 chủ shop có kỳ đã trả nằm trong tháng 11):
+
+| Khách | Gói · kỳ đã trả trong tháng 11 | Trần tháng | Đơn | Vượt tới 21/11 |
+|---|---|---|---|---|
+| Duy Nguyễn đăng | Growth · 13/11 → 30/11 | 585 | 463 | chưa; ước cuối tháng ≈ 400–430 đơn ≈ 80–86 nghìn ₫ |
+| Huân Bùi | Starter · 13/11 → 30/11 | 175 | 175 | chưa (đang khóa oan theo luật cũ: cả tháng 411 / 300) |
+| Nguyễn Văn Dương | Growth · 01/11 → 26/11 | 854 | 1.174 | 320 × 199 = 63.680 ₫, còn tăng |
+| Nguyễn Văn Hiển | Starter · 01/11 → 06/11, ĐÃ HẾT gói | 54 | 217 | 163 × 330 = 53.790 ₫ |
+
+32 chủ shop còn lại dưới 70 % trần (QUANG VINH HỒ, Business mua 20/11: từ lúc trả tiền 360 đơn — luật cũ thì 9.286 /
+10.000 cả tháng và sắp khóa oan). Ba khoản 0 ₫ (nội bộ, demo, một gói tặng) cũng là kỳ đã trả; không ai vượt.
+
+**Vì sao trước đó để 12/2026 — những gì CHƯA làm và còn vướng (⏳ anh quyết):**
+- Quy chế (`hubsell-landing/src/app/quy-che/page.tsx:283–297`): "Không thu … phí theo đơn … ngoài giá gói"; đổi biểu giá
+  "thông báo qua email tối thiểu 30 ngày trước ngày áp dụng"; "gói đã thanh toán giữ nguyên mức phí đến hết kỳ"; vượt
+  120 % / 7 ngày thì khóa. Điều khoản (`terms/page.tsx:149, 152`) ghi cùng nội dung. Landing FAQ (`faq-cta.tsx:45`) + ô
+  cam kết bảng giá (`pricing.tsx:633–648`) ghi luật khóa. Chưa sửa chữ nào; chưa gửi thư báo khách nào.
+- Dương (mua 26/10) và Hiển (mua 06/10, hết gói 06/11) mua TRƯỚC ngày có luật phí vượt (11/11) — phiếu của họ là tính
+  cho đơn đã phát sinh dưới luật cũ. HQ `/admin/plans` có nút Miễn cho từng phiếu (bắt buộc lý do).
+- Khoản 0 ₫ (gói tặng) cũng bị coi là kỳ đã trả → nếu vượt sẽ ra phiếu. Chưa có ai dính.
+
+**Kiểm:** tsc backend sạch; vitest 9 tệp / 99 ca (`plan-overage` có ca mới "mua 13/11": trần 10 → 6, 9 đơn sau lúc mua,
+7 đơn lúc dùng thử không tính, chốt 02/12 ra phiếu 990 ₫). Chưa soi prod.
 
 ## 8. Anh chốt giúp 4 câu
 

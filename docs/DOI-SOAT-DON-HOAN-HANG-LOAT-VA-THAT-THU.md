@@ -409,7 +409,7 @@ Trigger sổ cái + worker chạy đúng: báo hỏng hôm nay, sổ đã có ng
 - (A, em đề xuất) Giữ theo ngày tạo đơn — mọi dòng khác của Báo cáo dòng tiền đều theo trục này, Lợi nhuận ròng của kỳ = kết quả các đơn tạo trong kỳ; chỉ sửa cho DỄ THẤY: chú thích của dòng ghi rõ "tính vào kỳ theo ngày tạo đơn", và lúc báo hỏng thông báo luôn "đã ghi X đ vào Thất thu, kỳ tháng …". Không đụng công thức.
 - (B) Đổi dòng này sang ngày báo hỏng — đúng chuẩn kế toán hơn, nhưng thành dòng duy nhất chạy trục thời gian khác; phải thêm mốc "ngày báo hỏng" (hiện không lưu riêng — `returnedAt` là mốc quét nhận), sửa 4 nơi đọc (Dòng tiền, Tổng quan, cầu nối Lãi/Lỗ, Trợ lý) + app, và đo quảng cáo trước / sau.
 
-## 17. Dòng Thất thu ghi theo NGÀY KHO BÁO HỎNG (20/11/2026 tối, anh Trung: "Đổi sang ngày báo hỏng") — đã code + kiểm local, CHƯA commit, CHƯA lên prod
+## 17. Dòng Thất thu ghi theo NGÀY KHO BÁO HỎNG (20/11/2026 tối, anh Trung: "Đổi sang ngày báo hỏng") — ✅ LÊN PROD 20/11 đêm (commit `6296b3bd`), đã soi prod ở mục 17.5
 
 **Luật mới:** kho báo hỏng ngày nào thì giá vốn hàng đó vào dòng "Thất thu hàng mất/hỏng" của ngày đó, bất kể đơn tạo khi nào. Đây là dòng DUY NHẤT của Báo cáo dòng tiền / Tổng quan chạy trục thời gian khác trục ngày tạo đơn. Chốt khiếu nại sau đó (Không được đền → xóa sổ) KHÔNG dời ngày; Đã được đền bù thì đơn ra khỏi dòng như cũ.
 
@@ -456,8 +456,28 @@ Trigger sổ cái + worker chạy đúng: báo hỏng hôm nay, sổ đã có ng
 
 1. **Trước khi push** phải dựng chỉ mục bằng tay ở Supabase SQL Editor (không thì migration tự dựng trong lúc giữ khóa bảng đơn → đứng ghi / đọc đơn suốt lúc quét bảng):
    `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_return_damaged_idx" ON "Order" ("channelId") WHERE "returnStatus" IN ('DAMAGED', 'WRITTEN_OFF');`
-   **✅ ĐÃ CHẠY 20/11 ~22:40** (anh: "Em chạy lệnh luôn đi" — em chạy qua Chrome của anh). Trước khi chạy: chưa có chỉ mục, bảng đơn 548 MB / ~1.003.000 dòng, không lượt dựng chỉ mục nào đang chạy, `statement_timeout` 2 phút. Lệnh xong trong < 10 giây. Sau khi chạy: `indisvalid = true`, `indisready = true`, cỡ 16 kB, cả hệ thống có 77 đơn Hàng hỏng / xóa sổ. EXPLAIN ANALYZE câu đọc mới (bản chưa có cột mốc, chủ shop nhiều đơn hỏng nhất, 42 đơn): phía bảng đơn đi `Order_return_damaged_idx`, phía sổ chỉ chạm 5 mảnh tháng; lần đầu (bộ đệm nguội) lập kế hoạch 162 ms + chạy 87 ms, lần hai phần nối ~2 ms, 308 khối đều từ bộ đệm.
+   **✅ ĐÃ CHẠY 20/11 tối, trước khi push** (anh: "Em chạy lệnh luôn đi" — em chạy qua Chrome của anh). Trước khi chạy: chưa có chỉ mục, bảng đơn 548 MB / ~1.003.000 dòng, không lượt dựng chỉ mục nào đang chạy, `statement_timeout` 2 phút. Lệnh xong trong < 10 giây. Sau khi chạy: `indisvalid = true`, `indisready = true`, cỡ 16 kB, cả hệ thống có 77 đơn Hàng hỏng / xóa sổ. EXPLAIN ANALYZE câu đọc mới (bản chưa có cột mốc, chủ shop nhiều đơn hỏng nhất, 42 đơn): phía bảng đơn đi `Order_return_damaged_idx`, phía sổ chỉ chạm 5 mảnh tháng; lần đầu (bộ đệm nguội) lập kế hoạch 162 ms + chạy 87 ms, lần hai phần nối ~2 ms, 308 khối đều từ bộ đệm.
 2. Push → Render chạy migration (thêm cột, lấy khóa có thử lại).
 3. **Sau deploy, kiểm:** kỳ Hôm nay của tài khoản Chủ Shop Hubsell; EXPLAIN câu đọc trên prod; Lợi nhuận ròng Dòng tiền = Tổng quan ở 2–3 kỳ.
-4. **Ba đơn anh báo hỏng 20/11 trên prod** (đã đọc mốc nhận kiện 20/11 tối): `261110022TCXBQ` + `261108QR5X6A1J` kho nhận 20/11 → tự rơi đúng 20/11 (257.000). `26102183NBVE4N` kho nhận 31/10, báo hỏng 20/11 nhưng lúc đó chưa lưu mốc → sẽ nằm ở **31/10** (130.000). Muốn về đúng 20/11 phải ghi tay mốc `returnDamagedAt` cho riêng đơn này — ⏳ anh quyết.
+4. **Ba đơn anh báo hỏng 20/11 trên prod** (đã đọc mốc nhận kiện 20/11 tối): `261110022TCXBQ` + `261108QR5X6A1J` kho nhận 20/11 → tự rơi đúng 20/11 (257.000). `26102183NBVE4N` kho nhận 31/10, báo hỏng 20/11 nhưng lúc đó chưa lưu mốc → sẽ nằm ở **31/10** (130.000). Muốn về đúng 20/11 phải ghi tay mốc `returnDamagedAt` cho riêng đơn này — anh chốt để nguyên (mục 17.5).
 5. Ba đơn thắt lưng cũ (23.000 mỗi đơn) rơi về ngày kho nhận: 01/10, 04/10, 04/10.
+
+### 17.5 Đã lên prod + đã soi (20/11/2026 đêm)
+
+Anh: "Commit…" rồi "em push đi" → commit `6296b3bd` (mã + tài liệu này) + `220a448a` (PROGRESS), push `5db5b35b..220a448a`. `/health` backend prod báo bản `220a448a` lúc ≤ 22:41 (đồng hồ máy anh). Migration thêm cột chạy êm (câu đọc mới đọc cột `returnDamagedAt` không lỗi).
+
+Soi bằng tài khoản Chủ Shop Hubsell, ba API thật, 6 kỳ:
+
+| Kỳ | Thất thu | Gồm |
+|---|---|---|
+| Hôm nay 20/11 | 257.000 | 126.000 + 131.000 (kho nhận 20/11) |
+| 7 ngày qua | 257.000 | như trên |
+| Ngày 31/10 | 130.000 | đơn `26102183NBVE4N` (kho nhận 31/10, báo hỏng 20/11 lúc chưa có mốc) |
+| Tháng 11 | 257.000 | |
+| Tháng 10 | 199.000 | 130.000 + 3 đơn thắt lưng 23.000 (kho nhận 01/10, 04/10, 04/10) |
+| 01/08 → 20/11 | 456.000 | bằng đúng tổng trước khi đổi trục |
+
+- Ở cả 6 kỳ: Σ các dòng = tổng cột Chi phí; Lợi nhuận ròng Dòng tiền = Tổng quan = đáy cầu nối Lãi/Lỗ từng đồng; phần "đã nằm trong giá vốn" = 0 (tài khoản này chưa có đơn xóa sổ).
+- Màn Báo cáo dòng tiền kỳ "Hôm nay" hiện dòng Thất thu 257.000 đ ở cuối cột Chi phí; kỳ "30 ngày qua" 387.000 đ (đủ 3 đơn anh hỏi). Chú thích dòng đã là câu mới.
+- **CHƯA kiểm trên prod:** báo hỏng một đơn MỚI sau bản này (mốc `returnDamagedAt` thật + bước tính nốt sổ) — mới kiểm ở local; trang Tổng quan + cầu nối mới so số qua API, chưa soi hình; câu mới ở bước cầu nối Lãi/Lỗ (web Vercel) chưa mở xem.
+- **✅ Anh chốt 20/11 đêm: "Như vậy được rồi. Từ nay chuẩn là được rồi" → đơn `26102183NBVE4N` ĐỂ NGUYÊN ở 31/10, không ghi tay mốc cho đơn báo hỏng trước bản này.**

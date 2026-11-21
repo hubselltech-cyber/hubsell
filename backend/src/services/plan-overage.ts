@@ -31,12 +31,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 
 /**
- * Gói THƯỜNG bắt đầu tính phí vượt từ tháng này (em tự chọn 11/11/2026, anh "Làm theo đề
- * xuất"): khách đang trả tiền đã mua theo luật cũ "vượt 120 % / 7 ngày thì khóa" — báo
- * trước rồi mới đổi. Trước tháng này gói thường giữ luật khóa cũ. Gói tính theo đơn
- * (Enterprise tự phục vụ) đã nói rõ phần vượt ngay lúc mua nên tính từ tháng mua.
+ * Gói THƯỜNG bắt đầu tính phí vượt từ tháng này. Ban đầu đặt 12/2026 (em tự chọn 11/11/2026
+ * để báo trước khách đang trả tiền); anh Trung chốt 21/11/2026: "áp dụng luôn cách tính thêm
+ * tiền cho tất cả các thuê bao đã trả tiền đi, sao phải đợi sang tháng 12" → 11/2026. Lý do
+ * thật: luật khóa cũ đếm cả tháng dương lịch nên khách mua giữa tháng bị khóa oan vì đơn lúc
+ * còn dùng thử. Từ tháng này mọi kỳ đã trả tiền đều vượt là tính tiền, không khóa.
  */
-export const OVERAGE_START_MONTH = "2026-12";
+export const OVERAGE_START_MONTH = "2026-11";
 
 /**
  * Tháng ĐẦU TIÊN có thể có phiếu (11/2026 = tháng Enterprise tự phục vụ lên sóng và khách

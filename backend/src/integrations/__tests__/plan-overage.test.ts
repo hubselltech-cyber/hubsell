@@ -5,7 +5,7 @@
 //   · Một câu SQL cho tạm tính lẫn chốt: trọn tháng, mua giữa tháng (trần chia theo phần
 //     tháng được phủ, chỉ đếm đơn trong kỳ đã trả), nâng gói giữa tháng (trần mới áp cả
 //     tháng), không vượt (dòng NONE), chạy lại không sinh trùng, đơn về sau lúc chốt
-//     không tính thêm, dùng thử không có phí, gói thường chưa tới tháng bắt đầu thì chưa tính.
+//     không tính thêm, dùng thử không có phí, gói thường tính từ 11/2026 (anh chốt 21/11/2026).
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -97,7 +97,7 @@ describe("lịch giờ Việt Nam", () => {
 // ---------------- DB dev ----------------
 
 const STAMP = Date.now();
-const MONTH = "2026-12"; // gói thường bắt đầu tính từ đây
+const MONTH = "2026-12"; // một tháng trọn vẹn sau mốc bắt đầu
 const owners: Record<string, { id: string; channelId: string }> = {};
 let planA = ""; // trần 10 đơn, 3.300 ₫/tháng → 330 ₫/đơn vượt
 let planB = ""; // trần 30 đơn, 6.000 ₫/tháng → 200 ₫/đơn vượt
@@ -137,7 +137,7 @@ const pay = (key: string, planId: string, cycle: "MONTHLY" | "QUARTERLY", occurr
 
 beforeAll(async () => {
   expect(MONTH >= OVERAGE_START_MONTH).toBe(true);
-  for (const k of ["full", "mid", "up", "ok", "trial"]) await makeOwner(k);
+  for (const k of ["full", "mid", "up", "ok", "trial", "early"]) await makeOwner(k);
   const mk = (code: string, price: number, cap: number) =>
     prisma.servicePlan.create({
       data: { code: `${code}${STAMP}`, name: `Test ${code}`, priceMonthly: price, priceQuarterly: price * 3, maxOrdersPerMonth: cap, isActive: false },
@@ -191,8 +191,31 @@ describe("một câu SQL cho tạm tính và chốt tháng", () => {
     expect(est).toMatchObject({ ordersCounted: 14, overOrders: 4, amount: 1_320 });
   });
 
-  it("gói thường trước tháng bắt đầu (11/2026) chưa tính phí vượt", async () => {
-    expect(await monthOverageFor(owners.full.id, { month: "2026-11", asOf: new Date("2026-11-30T10:00:00Z") })).toBeNull();
+  it("tháng 11/2026 gói thường ĐÃ tính (anh chốt 21/11): mua giữa tháng thì trần chia theo phần tháng đã trả, đơn lúc dùng thử không tính", async () => {
+    expect(OVERAGE_START_MONTH).toBe("2026-11");
+    // Ca thật 21/11/2026: mua 10:56 13/11 giờ VN → phủ 17,54 / 30 ngày của tháng 11 → trần 10 còn 6.
+    await pay("early", planA, "MONTHLY", "2026-11-13T03:56:16Z");
+    await makeOrders("early", 7, "2026-11-05T03:00:00Z", "trial"); // trước khi mua — không tính
+    await makeOrders("early", 9, "2026-11-20T03:00:00Z", "paid");
+    const asOf = new Date("2026-11-30T10:00:00Z");
+    expect(await monthOverageFor(owners.early.id, { month: "2026-11", asOf })).toMatchObject({
+      orderCap: 6,
+      ordersCounted: 9,
+      overOrders: 3,
+      unitPrice: 330,
+      amount: 990,
+    });
+    // Chốt đầu tháng 12 ra đúng phiếu đó.
+    const closed = await closeMonthOverage("2026-11", new Date("2026-12-01T23:00:00Z"), owners.early.id);
+    expect(closed.open).toHaveLength(1);
+    expect(closed.open[0]).toMatchObject({ overOrders: 3, amount: 990 });
+    // Mua 20/11 (10,58 / 30 ngày → trần 4), 3 đơn sau lúc mua → có dòng tạm tính, chưa vượt.
+    expect(await monthOverageFor(owners.full.id, { month: "2026-11", asOf })).toMatchObject({
+      orderCap: 4,
+      ordersCounted: 3,
+      overOrders: 0,
+      amount: 0,
+    });
   });
 
   it("chốt: sinh đúng một phiếu OPEN, hạn khóa 00:00 06/01 giờ VN; chạy lại không sinh thêm; đơn về sau không tính", async () => {
