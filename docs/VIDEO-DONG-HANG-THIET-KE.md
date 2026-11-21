@@ -1986,3 +1986,80 @@ trên màn quay của app; đừng đề xuất gói "chất lượng cao" khi a
 - **Đã kiểm:** `tsc` sạch; eslint cả `src` = 47 (mức nền), tệp vừa sửa không có lỗi. **CHƯA kiểm:** chưa chạy trên máy nào — bản
   TestFlight 43 trên máy anh VẪN còn các chip cũ; muốn có trên iPhone phải dựng bản mới. Anh chốt 20/11: "Để gộp bản sau" → không dựng bản 44 riêng, đi cùng bản dựng kế tiếp.
 - **Chưa làm:** máy chủ chưa từ chối tệp nặng bất thường (vẫn chỉ gắn cờ lệch ±40 %); máy không quay được 3:4 chưa có đường lùi 9:16.
+
+---
+
+## 26. Màn quay webcam làm GỌN: ô Lượt quay lên dưới khung hình + số giờ lên đầu + các khối thẳng hàng (21/11/2026 tối — dựng local → COMMIT + PUSH cùng tối, anh: "Em push lên đi")
+
+**Anh Trung 21/11 (kèm ảnh khoanh):** "trong video gói hàng cải thiện lại giao diện cho gọn. 1. chuyển lượt quay lên vùng anh khoanh →
+thiết kế dạng đếm số kiểu 10 (tải lên) / 12 (đã quay). 2. Phần thời gian còn lại để lên trên cho dễ nhìn." Trong lúc em dựng anh sửa
+thêm ba ý: (a) ô tem bên trái "có mỗi mã vận đơn, cho ngắn lại để nhường chỗ cho tab bên cạnh nhiều thông tin hơn… để khối bên trái nhỏ
+hơn khối bên phải"; (b) "các khối cho hàng lối thẳng nhau"; (c) "Camera đổi tên thành Camera toàn cảnh". Anh xem bản dựng ở khổ hẹp (ô
+Lượt quay xếp chồng: bộ đếm trên, danh sách dưới) và chốt: **"Như thế này ok"**. Em hỏi lại màn rộng có cho hai nửa đứng cạnh nhau
+không → **anh chốt "Luôn xếp chồng"**, lý do: **"Mục đích anh muốn mã đơn hàng luôn được hiển thị đầy đủ."**
+⛔ Đừng đưa lại thế "bộ đếm trái, danh sách phải"; ⛔ đừng rút gọn / cắt "…" mã tem trong danh sách.
+
+### 26.1 Bố cục mới (chỉ web, `/orders/videos/record`)
+
+- **Hàng đầu:** "← Về danh sách video" bên trái · **số giờ còn lại ghim mép phải** ("Còn 999 giờ 34 phút / 1.000 giờ" + thanh đã dùng) —
+  cùng một khối `HoursSummary` với hàng tab trang Video đóng hàng (tách ra từ `HoursBalanceBar`, `hours-balance.tsx`). Hết giờ thì khối
+  này nhường chỗ cho dải đỏ trọn bề ngang ngay bên dưới (chữ + nút "Mua thêm giờ quay" như cũ) — `record-hours.tsx`.
+- **Cột trái:** khung hình → (dải báo nếu có) → HÀNG [ô tem đang quay | ô Lượt quay này] tỉ lệ **1 : 2** (ô tem tối thiểu 11rem; mã tem
+  cỡ chữ `text-xl`, ô rộng từ 20rem mới lên `text-2xl`).
+- **Ô Lượt quay này** (`session-card.tsx`, tách khỏi `control-panel.tsx`):
+  - bộ đếm to **"tải lên / đã quay"**; "đã quay" = clip đã quay XONG (clip đang quay dở không tính — nó hiện ở ô tem + nhãn đồng hồ);
+    số "tải lên" xanh khi hai số bằng nhau, vàng khi còn clip chưa lên; góc phải là tổng thời lượng của lượt;
+  - một dòng luôn giữ chỗ: "N đang chờ lên · N lỗi · N video khui";
+  - danh sách 30 clip gần nhất (mới nhất ở trên): **mã tem ĐẦY ĐỦ** (không rút gọn, không cắt "…"; chật thì mã tự xuống dòng —
+    hàm `shortCode` đã gỡ) · thời lượng · trạng thái (`đang lưu / chờ tải lên / tải lên 45 % /
+    chờ thử lại / đã tải lên / lỗi + nút Thử lại`), cao cố định 100px, cuộn trong ô.
+  - **Luôn xếp chồng ở mọi cỡ màn:** bộ đếm TRÊN, danh sách DƯỚI — bản anh nhìn và duyệt. (Em từng thêm thế "bộ đếm trái, danh sách
+    phải" cho ô rộng từ 26rem; anh không chọn, đã gỡ.)
+  - Cả hai nửa cao cố định → ô không giật mỗi lần một clip lên xong (bản đầu của em chỉ hiện clip chưa lên, ô co giãn liên tục — bỏ).
+- **Cột phải** (cao bằng cột trái): cụm trên [Chế độ quay · **Camera toàn cảnh**] — ô Camera giãn (`flex-1`) lấp phần giữa; cụm dưới
+  [Tự cắt theo tem (thấp cố định 66px, một dòng mô tả cắt bằng "…") · nút lớn 56px] nằm sát đáy, đáy nút thẳng đáy hàng [ô tem | ô
+  Lượt quay]. Thứ tự anh duyệt 16/11 (Chế độ · Camera · Tự cắt · MỘT nút lớn) giữ nguyên.
+- Mọi ô của màn quay dùng đệm mỏng 16px (`[--card-spacing:--spacing(4)]`, bỏ `py-4` cộng thêm của `CardContent`).
+- Chữ "camera chính" trong các câu hướng dẫn của tùy chọn cận cảnh đổi thành "camera toàn cảnh".
+
+### 26.2 Số đo thẳng hàng — BẢN ĐẦU, lúc còn thế "hai nửa cạnh nhau" (giữ làm tư liệu; số của bản chốt ở 26.4)
+
+JS `getBoundingClientRect`, dữ liệu giả 1.196 / 1.200 clip, có clip lỗi + khui + "lượt trước".
+
+| Màn | đáy khung hình = đáy ô Camera | đỉnh hàng ô = đỉnh ô Tự cắt | đáy hai cột | ô Lượt quay |
+|---|---|---|---|---|
+| 1.700 | 596 = 596 | 608 = 608 | 742 = 742 | hai nửa cạnh nhau, 544 × 134 |
+| 1.920 (đang có dải báo camera) | — | 542 = 542 | 676 = 676 | cạnh nhau, 634 × 134 |
+| 1.536 (đang có dải báo camera) | — | 429 = 429 | 563 = 563 | cạnh nhau, 477 × 134; mã tem ở dòng có chip bị cắt "…" |
+| 1.440 (trước khi nâng ngưỡng lên 26rem) | 506 = 506 | 518 = 518 | 652 = 652 | nay xếp chồng ở cỡ này — CHƯA đo lại |
+| 1.280 | lệch (ô Camera dài hơn khung hình) | lệch 117px | 713 = 713 | xếp chồng, 371 × 251 |
+
+Không màn nào tràn ngang. Ở khổ xếp chồng chỉ ĐÁY hai cột bằng nhau (đỉnh hàng dưới lệch) — đúng bản anh duyệt.
+
+### 26.3 Đã kiểm / chưa kiểm
+
+- **Đã kiểm:** `tsc` frontend sạch; eslint `src/components/orders/videos` sạch; không lớp `dark:` nào; soi trên local (tài khoản thí
+  điểm DB local) ở sáng + tối, ba trạng thái: 0 / 0 · 1.196 / 1.200 (vàng, có lỗi) · 1.196 / 1.196 (xanh). Số liệu giả gài tạm qua
+  `?mode=demo` đã GỠ.
+- **CHƯA kiểm:** quay thật (trình duyệt trong app bị chặn camera → ô tem lúc đang quay, mã tem dài ở ô hẹp, bộ đếm nhảy theo clip thật
+  đều chưa nhìn); dải đỏ hết giờ ở vị trí mới (tài khoản local còn 999 giờ); màn dưới 1.024px (hai cột xếp dọc); chưa chạy bộ test
+  vitest (lượt này không đụng `lib/`).
+- **Đã commit + push 21/11 tối** (chỉ mã web; màn này trên prod vẫn chỉ mở cho tài khoản thí điểm). Anh bảo push khi chưa thử webcam thật trên local → thử thẳng trên prod. Tệp: `record/session-card.tsx` (mới), `record/record-hours.tsx` (mới), `record/control-panel.tsx`,
+  `record/camera-stage.tsx`, `record/record-screen.tsx`, `hours-balance.tsx`.
+- ⏳ Anh: thử webcam thật trên prod (`/orders/videos/record`).
+
+### 26.4 Bản chốt: luôn xếp chồng + mã tem hiện đủ — số đo lại (21/11 tối)
+
+Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm chip "Khui" + "lượt trước" + nút Thử lại), đã gỡ sau khi soi.
+
+| Màn | ô tem | ô Lượt quay | đáy ô tem = đáy ô Lượt quay = đáy nút lớn | mã bị cắt "…" | dòng tràn ngang |
+|---|---|---|---|---|---|
+| 1.280 | 186 × 251 | 371 × 251 | 813 = 813 = 813 | 0 | 0 |
+| 1.920 | 317 × 251 | 634 × 251 | 1.035 = 1.035 = 1.035 | 0 | 0 |
+
+- Ở 1.280: mã 17 ký tự (SPX) nằm một dòng; mã 23–24 ký tự xuống 2 dòng; dòng xấu nhất (chip Khui + mã 24 ký tự + chip "lượt
+  trước") cao 92px. Ở 1.920 mọi mã một dòng.
+- Hệ quả của xếp chồng: hàng dưới bên trái cao 251px, cụm [Tự cắt · nút lớn] bên phải 134px → chỉ ĐÁY hai cột thẳng nhau, đỉnh hàng
+  dưới không thẳng (ô Camera toàn cảnh dài quá đáy khung hình). Đây là bản anh nhìn và duyệt.
+- tsc + eslint sạch sau khi gỡ thế cạnh nhau và `shortCode`. CHƯA đo lại 1.440 / 1.536 / 1.700 và giao diện tối cho bản chốt (bố cục
+  xếp chồng đã soi tối ở 1.280 trước đó; lượt này chỉ đổi cách hiện mã).

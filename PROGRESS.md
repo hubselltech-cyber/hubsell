@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 21/11 tối — Màn quay video webcam làm GỌN (ô Lượt quay lên dưới khung hình, số giờ lên đầu, khối thẳng hàng) — PUSH 21/11 tối
+
+- **Anh bảo (kèm ảnh khoanh):** chuyển ô "Lượt quay này" lên vùng dưới khung hình, làm dạng đếm "10 (tải lên) / 12 (đã quay)"; đưa số giờ còn lại lên trên. Sửa thêm trong lúc dựng: ô tem bên trái rút NGẮN nhường chỗ cho ô Lượt quay (trái nhỏ hơn phải); các khối thẳng hàng thẳng lối; "Camera" → **"Camera toàn cảnh"**. Anh xem bản xếp chồng (bộ đếm trên, danh sách clip dưới) và chốt "Như thế này ok"; em hỏi màn rộng có cho hai nửa đứng cạnh nhau không → **anh chốt "Luôn xếp chồng"** vì "muốn mã đơn hàng luôn được hiển thị đầy đủ" → danh sách hiện mã tem ĐẦY ĐỦ (không rút gọn, không cắt "…", chật thì xuống dòng).
+- **Đã làm (chỉ web, 6 tệp frontend):** `record/session-card.tsx` + `record/record-hours.tsx` (mới), `control-panel.tsx`, `camera-stage.tsx`, `record-screen.tsx`, `hours-balance.tsx` (tách `HoursSummary` dùng chung với hàng tab). Ô Lượt quay = bộ đếm tải lên / đã quay + dòng "N chờ lên · N lỗi · N khui" + 30 clip gần nhất, cao cố định (không giật khi clip lên xong); ô tem : ô Lượt quay = 1 : 2; cột phải = [Chế độ · Camera toàn cảnh (giãn)] + [Tự cắt theo tem 66px · nút lớn 56px] cao bằng cột trái; số giờ ở hàng đầu mép phải, hết giờ thành dải đỏ trọn bề ngang.
+- **Đã kiểm:** tsc + eslint sạch; bản chốt đo bằng JS ở 1.280 và 1.920 với số liệu giả 1.196 / 1.200 + mã dài 24 ký tự — đáy ô tem = đáy ô Lượt quay = đáy nút lớn, không mã nào bị cắt, không tràn ngang; số liệu giả đã gỡ. (Bản đầu đã đo thêm 1.440 / 1.536 / 1.700, sáng + tối.)
+- **CHƯA kiểm:** quay bằng webcam thật (trình duyệt trong app bị chặn camera); dải đỏ hết giờ ở chỗ mới; màn < 1.024px; bản chốt chưa đo lại ở 1.440 / 1.536 / 1.700 và giao diện tối.
+- **Push:** anh bảo "Em push lên đi" khi chưa thử webcam thật trên local → commit chỉ mã web + tài liệu của lượt này (các mục PROGRESS / docs của phiên khác để nguyên, chưa commit); màn quay trên prod vẫn chỉ mở cho tài khoản thí điểm. ⏳ anh thử webcam thật trên prod.
+- Chi tiết + bảng số đo: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 26.
+
+---
 ## Phiên 21/11 chiều — Khách Growth 12 tháng bị khóa "vượt trần" xin trả phí vượt → anh chốt TÍNH PHÍ VƯỢT CHO MỌI THUÊ BAO ĐÃ TRẢ TIỀN TỪ 11/2026 — ĐÃ SỬA local, CHƯA commit / push
 
 - **Khách hỏi:** Duy Nguyễn đăng (mã `cmvyuloup11lmol36dl5lhvqe`). Prod: MỘT khoản — Growth 12 tháng 2.189.000 ₫ payOS 10:56 13/11/2026, kỳ tới 13/11/2027 (còn 357 ngày); chứng từ chụp trần 1.000 + đơn giá vượt 199 ₫. Bị khóa vì tháng 11 gói thường còn luật cũ (120 % / 7 ngày) và luật cũ đếm cả tháng dương lịch: 1.211 đơn, trong đó 749 đơn lúc còn dùng thử; từ lúc trả tiền 463 đơn.

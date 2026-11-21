@@ -66,6 +66,48 @@ export function remainingLabel(hours: PackVideoHours): string {
 }
 
 /**
+ * Khối chữ "Còn 999 giờ 44 phút / 1.000 giờ" + thanh đã dùng (vàng từ 80 %, đỏ khi hết). Dùng ở hàng tab trang
+ * Video đóng hàng và ở hàng đầu màn quay — một kiểu, một nguồn số. `className` quyết định `flex` / ẩn theo cỡ màn.
+ */
+export function HoursSummary({ hours, className }: { hours: PackVideoHours; className?: string }) {
+  const level = hoursLevel(hours.purchasedSeconds, hours.usedSeconds);
+  const usedPct =
+    hours.purchasedSeconds > 0
+      ? Math.min(100, Math.max(0, (hours.usedSeconds / hours.purchasedSeconds) * 100))
+      : 0;
+  return (
+    <div
+      className={cn("min-w-0 flex-col items-end", className)}
+      title={
+        hours.purchasedSeconds > 0
+          ? `Đã mua ${formatHoursBalance(hours.purchasedSeconds)} · đã quay ${formatHoursBalance(hours.usedSeconds)}`
+          : undefined
+      }
+    >
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-sm">
+        <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className={cn("font-semibold tabular-nums", LEVEL_TEXT[level])}>{remainingLabel(hours)}</span>
+        {hours.purchasedSeconds > 0 && (
+          <span className="text-muted-foreground tabular-nums">/ {formatHoursBalance(hours.purchasedSeconds)}</span>
+        )}
+      </p>
+      {hours.purchasedSeconds > 0 && (
+        <div
+          className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="Phần giờ quay đã dùng"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(usedPct)}
+        >
+          <div className={cn("h-full rounded-full", LEVEL_BAR[level])} style={{ width: `${usedPct}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Khối gọn ghim mép phải hàng tab: "Còn 999 giờ 44 phút / 1.000 giờ" + thanh đã dùng + nút
  * "Mua thêm giờ quay". Hiện ở MỌI tab để khách luôn thấy mình còn bao nhiêu giờ.
  */
@@ -74,46 +116,9 @@ export function HoursBalanceBar() {
   const hours = q.data;
 
   // Chưa có số thì giữ chỗ bằng đúng nút mua — không nhảy bố cục khi số về.
-  const level = hours ? hoursLevel(hours.purchasedSeconds, hours.usedSeconds) : "none";
-  const usedPct =
-    hours && hours.purchasedSeconds > 0
-      ? Math.min(100, Math.max(0, (hours.usedSeconds / hours.purchasedSeconds) * 100))
-      : 0;
-
   return (
     <div className="flex items-center gap-3 pb-1.5">
-      {hours && (
-        <div
-          className="hidden min-w-0 flex-col items-end sm:flex"
-          title={
-            hours.purchasedSeconds > 0
-              ? `Đã mua ${formatHoursBalance(hours.purchasedSeconds)} · đã quay ${formatHoursBalance(hours.usedSeconds)}`
-              : undefined
-          }
-        >
-          <p className="flex items-center gap-1.5 whitespace-nowrap text-sm">
-            <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className={cn("font-semibold tabular-nums", LEVEL_TEXT[level])}>{remainingLabel(hours)}</span>
-            {hours.purchasedSeconds > 0 && (
-              <span className="text-muted-foreground tabular-nums">
-                / {formatHoursBalance(hours.purchasedSeconds)}
-              </span>
-            )}
-          </p>
-          {hours.purchasedSeconds > 0 && (
-            <div
-              className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-label="Phần giờ quay đã dùng"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(usedPct)}
-            >
-              <div className={cn("h-full rounded-full", LEVEL_BAR[level])} style={{ width: `${usedPct}%` }} />
-            </div>
-          )}
-        </div>
-      )}
+      {hours && <HoursSummary hours={hours} className="hidden sm:flex" />}
       <BuyHoursButton hours={hours ?? null} resumeFromUrl />
     </div>
   );

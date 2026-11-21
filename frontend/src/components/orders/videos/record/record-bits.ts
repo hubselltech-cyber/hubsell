@@ -25,11 +25,6 @@ export function useElapsedSeconds(sinceMs: number | null): number {
   return sinceMs === null ? 0 : Math.max(0, (now - sinceMs) / 1000);
 }
 
-/** Mã tem dài rút gọn còn phần đuôi (phần phân biệt các tem với nhau) cho danh sách hẹp. */
-export function shortCode(code: string, keep = 10): string {
-  return code.length > keep + 1 ? `…${code.slice(-keep)}` : code;
-}
-
 /**
  * MÀU NHẤN THEO CHẾ ĐỘ QUAY — để liếc màn hình là biết đang đóng hàng hay khui hàng hoàn, không quay nhầm loại
  * (anh Trung 16/11/2026: "phải làm sao để khi quay video khui hàng không bị trùng mã đơn hàng với video đóng hàng").

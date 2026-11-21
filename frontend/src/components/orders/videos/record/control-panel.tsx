@@ -1,23 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Camera, Clock, Focus, Move, Package, PackageOpen, Play, RotateCcw, Scissors, Square } from "lucide-react";
+import { Camera, Focus, Move, Package, PackageOpen, Play, Scissors, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { formatHoursBalance } from "@/lib/pack-video";
 import { PIP_DEFAULT, PIP_LIMITS, type PipSettings } from "@/lib/pack-video-recorder/pip-layout";
 import type { RecorderState } from "@/lib/pack-video-recorder/recorder";
-import { retrySessionClip, type SessionClip } from "@/lib/pack-video-recorder/session";
 import type { ClipKind } from "@/lib/pack-video-recorder/types";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-import { BuyHoursButton, remainingLabel, usePackVideoHours } from "../hours-balance";
-import { KIND_ACCENT, formatElapsed, shortCode, useElapsedSeconds } from "./record-bits";
+import { KIND_ACCENT } from "./record-bits";
+import { useOutOfHours } from "./record-hours";
 
 function OnOffLabel({ on, onText, offText }: { on: boolean; onText: string; offText: string }) {
   return (
@@ -43,8 +41,8 @@ function ModeCard({ state, onChange }: { state: RecorderState; onChange: (kind: 
   const recording = state.phase === "recording";
   const unbox = state.kind === "UNBOX";
   return (
-    <Card className={cn(unbox && "border-violet-300")}>
-      <CardContent className="space-y-2 py-4">
+    <Card className={cn("[--card-spacing:--spacing(4)]", unbox && "border-violet-300")}>
+      <CardContent className="space-y-2">
         <div
           aria-disabled={recording}
           title={recording ? "Dừng clip đang quay rồi mới đổi chế độ" : undefined}
@@ -120,7 +118,7 @@ function CloseupSection({ state, controls }: { state: RecorderState; controls: C
             <p className={TEXT_SUB}>
               {mainOn
                 ? "Chưa thấy webcam thứ hai — cắm thêm một webcam vào cổng USB khác trên máy (không qua ổ chia)."
-                : "Bật camera chính trước, rồi chọn webcam thứ hai ở đây."}
+                : "Bật camera toàn cảnh trước, rồi chọn webcam thứ hai ở đây."}
             </p>
           ) : (
             <NativeSelect
@@ -148,14 +146,14 @@ function CloseupSection({ state, controls }: { state: RecorderState; controls: C
               <span className="block truncate" title={`${closeup.label} · ${closeup.width}×${closeup.height}`}>
                 {closeup.label} · {closeup.width}×{closeup.height}
               </span>
-              Giơ tem cho camera chính để bắt đầu quay, rồi đặt tem dưới camera cận cảnh.
+              Giơ tem cho camera toàn cảnh để bắt đầu quay, rồi đặt tem dưới camera cận cảnh.
             </p>
           ) : closeup.phase === "opening" ? (
             <p className={TEXT_SUB}>Đang bật camera cận cảnh…</p>
           ) : (
             choices.length > 0 && (
               <p className={TEXT_SUB}>
-                {mainOn ? "Chọn webcam soi tem ở ô trên." : "Camera cận cảnh bật cùng lúc với camera chính."}
+                {mainOn ? "Chọn webcam soi tem ở ô trên." : "Camera cận cảnh bật cùng lúc với camera toàn cảnh."}
               </p>
             )
           )}
@@ -207,7 +205,11 @@ function CloseupSection({ state, controls }: { state: RecorderState; controls: C
   );
 }
 
-/** Ô CAMERA: bật / tắt một chạm, tên camera + khổ hình, chọn camera khi máy có nhiều cái; dưới cùng là tùy chọn cận cảnh. */
+/**
+ * Ô CAMERA TOÀN CẢNH (anh Trung 21/11/2026 đổi tên từ "Camera" cho rõ cặp với "Camera cận cảnh"): bật / tắt một chạm,
+ * tên camera + khổ hình, chọn camera khi máy có nhiều cái; dưới cùng là tùy chọn cận cảnh.
+ * flex-1: ô này giãn cho đáy bằng đáy khung hình bên trái.
+ */
 function CameraCard({
   state,
   closeup,
@@ -222,12 +224,12 @@ function CameraCard({
   const on = state.phase === "ready" || state.phase === "recording";
   const opening = state.phase === "opening";
   return (
-    <Card>
-      <CardContent className="space-y-2 py-4">
+    <Card className="flex-1 [--card-spacing:--spacing(4)]">
+      <CardContent className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2 text-base font-semibold">
             <Camera className="size-5 text-muted-foreground" aria-hidden />
-            Camera
+            Camera toàn cảnh
           </span>
           <span className="flex items-center gap-2">
             <OnOffLabel on={on} onText="Đang bật" offText={opening ? "Đang bật…" : "Đang tắt"} />
@@ -235,7 +237,7 @@ function CameraCard({
               checked={on || opening}
               disabled={opening}
               onCheckedChange={onToggle}
-              aria-label={on ? "Tắt camera" : "Bật camera"}
+              aria-label={on ? "Tắt camera toàn cảnh" : "Bật camera toàn cảnh"}
             />
           </span>
         </div>
@@ -250,14 +252,14 @@ function CameraCard({
         {/* Máy bàn đóng hàng thường có 1–4 camera → ô chọn gốc của trình duyệt là đủ. */}
         {state.devices.length > 1 && (
           <NativeSelect
-            aria-label="Chọn camera"
+            aria-label="Chọn camera toàn cảnh"
             value={state.camera?.deviceId ?? ""}
             disabled={opening}
             onChange={(event) => {
               if (event.target.value) onSelect(event.target.value);
             }}
           >
-            {!state.camera && <option value="">Chọn camera…</option>}
+            {!state.camera && <option value="">Chọn camera toàn cảnh…</option>}
             {state.devices.map((d) => (
               <option key={d.deviceId} value={d.deviceId}>
                 {d.label}
@@ -271,12 +273,18 @@ function CameraCard({
   );
 }
 
-/** Ô TỰ CẮT THEO TEM: công tắc + một dòng nói cách dùng. */
+/**
+ * Ô TỰ CẮT THEO TEM: công tắc + một dòng nói cách dùng (dài thì cắt "…", rê chuột xem đủ). Ô thấp cố định 66px,
+ * nằm sát trên nút lớn ở đáy cột.
+ */
 function AutoCutCard({ state, onChange }: { state: RecorderState; onChange: (on: boolean) => void }) {
   const on = state.autoCut && state.scanAvailable;
+  const hint = state.scanAvailable
+    ? "Giơ tem vào camera là quay, tem khác là cắt clip."
+    : "Máy này không đọc được mã tem — chỉ quay bằng nút Bắt đầu quay.";
   return (
-    <Card>
-      <CardContent className="space-y-2 py-4">
+    <Card className="h-[66px] shrink-0 justify-center py-0 [--card-spacing:--spacing(4)]">
+      <CardContent>
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2 text-base font-semibold">
             <Scissors className="size-5 text-muted-foreground" aria-hidden />
@@ -292,175 +300,29 @@ function AutoCutCard({ state, onChange }: { state: RecorderState; onChange: (on:
             />
           </span>
         </div>
-        <p className={TEXT_SUB}>
-          {state.scanAvailable
-            ? "Giơ tem vào camera là quay, tem khác là cắt clip."
-            : "Máy này không đọc được mã tem — chỉ quay bằng nút Bắt đầu quay."}
+        <p className={cn(TEXT_SUB, "truncate")} title={hint}>
+          {hint}
         </p>
       </CardContent>
     </Card>
   );
-}
-
-const STATUS_TEXT: Record<SessionClip["status"], string> = {
-  recording: "đang quay",
-  saving: "đang lưu",
-  queued: "chờ tải lên",
-  uploading: "đang tải lên",
-  stored: "đã lưu",
-  failed: "lỗi",
-};
-
-function ClipLine({ clip }: { clip: SessionClip }) {
-  const elapsed = useElapsedSeconds(clip.status === "recording" ? clip.startedAtMs : null);
-  const duration = clip.status === "recording" ? elapsed : (clip.durationSec ?? 0);
-  const label = clip.manual ? "Quay tay" : shortCode(clip.code);
-  // Clip đang chờ sau một lần gửi hỏng: nói rõ là máy đang TỰ thử lại (không cần bấm gì).
-  const retrying = clip.status === "queued" && !!clip.error;
-  return (
-    <li className="flex items-center justify-between gap-2 border-t py-1.5 text-sm">
-      <span className="flex min-w-0 items-center gap-1.5">
-        {clip.kind === "UNBOX" && (
-          <span className={cn("shrink-0 rounded px-1.5 py-px text-[11px] font-medium", KIND_ACCENT.UNBOX.chip)}>Khui</span>
-        )}
-        <span className={cn("min-w-0 truncate", !clip.manual && "font-mono")} title={clip.code}>
-          {label}
-        </span>
-        {clip.restored && (
-          <span
-            className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[11px] font-medium text-slate-600"
-            title="Quay từ lượt trước, lúc đó chưa gửi được — đang gửi tiếp"
-          >
-            lượt trước
-          </span>
-        )}
-      </span>
-      <span className="flex shrink-0 items-center gap-2 tabular-nums">
-        <span className="text-muted-foreground">{formatElapsed(duration)}</span>
-        {clip.status === "failed" ? (
-          <>
-            <span className="font-medium text-rose-600" title={clip.error ?? undefined}>
-              lỗi
-            </span>
-            {clip.sizeBytes !== null && (
-              <Button variant="outline" size="xs" onClick={() => retrySessionClip(clip.localId)}>
-                <RotateCcw className="size-3" />
-                Thử lại
-              </Button>
-            )}
-          </>
-        ) : (
-          <span
-            className={cn(
-              "font-medium",
-              clip.status === "stored" && "text-emerald-600",
-              clip.status === "recording" && "text-rose-600",
-              (clip.status === "uploading" || clip.status === "queued" || clip.status === "saving") && "text-amber-600"
-            )}
-            title={clip.error ?? undefined}
-          >
-            {clip.status === "uploading"
-              ? `đang tải lên ${Math.round(clip.progress * 100)} %`
-              : retrying
-                ? "chờ thử lại"
-                : STATUS_TEXT[clip.status]}
-          </span>
-        )}
-      </span>
-    </li>
-  );
-}
-
-/** Ô LƯỢT QUAY NÀY: số video TO + tổng thời gian + các clip gần nhất kèm trạng thái tải lên. */
-function SessionCard({ clips }: { clips: SessionClip[] }) {
-  const recording = clips.find((c) => c.status === "recording") ?? null;
-  const live = useElapsedSeconds(recording?.startedAtMs ?? null);
-  const total = clips.reduce((sum, c) => sum + (c.durationSec ?? 0), 0) + live;
-  const waiting = clips.filter((c) => c.status === "queued" || c.status === "uploading" || c.status === "saving").length;
-  const failed = clips.filter((c) => c.status === "failed").length;
-  const unboxCount = clips.filter((c) => c.kind === "UNBOX").length;
-  return (
-    <Card>
-      <CardContent className="py-4">
-        <p className={TEXT_SUB}>Lượt quay này</p>
-        <div className="mt-1 flex items-end justify-between gap-3">
-          <p className="text-3xl font-semibold leading-none tabular-nums">
-            {clips.length.toLocaleString("vi-VN")} <span className="text-xl">video</span>
-          </p>
-          <p className="text-sm text-muted-foreground tabular-nums">{formatHoursBalance(total)}</p>
-        </div>
-        {unboxCount > 0 && (
-          <p className={cn("mt-1 text-xs font-medium", KIND_ACCENT.UNBOX.text)}>
-            trong đó {unboxCount.toLocaleString("vi-VN")} video khui
-          </p>
-        )}
-        {(waiting > 0 || failed > 0) && (
-          <p className="mt-1 text-xs">
-            {waiting > 0 && <span className="text-amber-600">{waiting} clip chưa tải lên xong</span>}
-            {waiting > 0 && failed > 0 && " · "}
-            {failed > 0 && <span className="text-rose-600">{failed} clip lỗi</span>}
-          </p>
-        )}
-        {clips.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">Chưa quay video nào trong lượt này.</p>
-        ) : (
-          <ul className="mt-3 max-h-56 overflow-y-auto pr-1">
-            {clips.slice(0, 30).map((clip) => (
-              <ClipLine key={clip.localId} clip={clip} />
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * Số giờ quay còn lại — cùng nguồn với trang Video đóng hàng. HẾT GIỜ (số dư ≤ 0) thì thành hộp đỏ "Hết giờ
- * quay" kèm nút mua: không mở được video mới, video đang quay dở vẫn quay nốt (anh chốt 14/11).
- */
-function HoursLine() {
-  const hours = usePackVideoHours().data;
-  if (!hours) return null;
-  if (hours.remainingSeconds <= 0) {
-    return (
-      <div role="alert" className="space-y-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-rose-700">
-          <Clock className="size-4" aria-hidden />
-          {hours.purchasedSeconds > 0 || hours.usedSeconds > 0 ? "Hết giờ quay" : "Chưa có giờ quay"}
-          {hours.remainingSeconds < 0 && (
-            <span className="font-normal">· vượt gói {formatHoursBalance(hours.remainingSeconds)}</span>
-          )}
-        </p>
-        <p className="text-sm text-rose-700">
-          Không mở được video mới. Video đang quay dở vẫn quay nốt; phần thời gian vượt gói sẽ khấu trừ vào lần
-          thanh toán tiếp theo.
-        </p>
-        <BuyHoursButton hours={hours} />
-      </div>
-    );
-  }
-  return (
-    <p className="flex items-center gap-1.5 px-1 text-sm text-muted-foreground">
-      <Clock className="size-4" aria-hidden />
-      <span className="font-medium text-foreground">{remainingLabel(hours)}</span>
-      {hours.purchasedSeconds > 0 && <span>/ {formatHoursBalance(hours.purchasedSeconds)}</span>}
-    </p>
-  );
-}
-
-function useOutOfHours(): boolean {
-  const hours = usePackVideoHours().data;
-  return !!hours && hours.remainingSeconds <= 0;
 }
 
 /**
  * CỘT ĐIỀU KHIỂN bên phải (bố cục anh Trung duyệt 16/11): Chế độ quay · Camera · Tự cắt theo tem · MỘT nút lớn đổi vai
- * Bắt đầu quay ↔ Dừng (không bao giờ có hai nút cạnh nhau để bấm nhầm) · Lượt quay này · giờ còn lại.
+ * Bắt đầu quay ↔ Dừng (không bao giờ có hai nút cạnh nhau để bấm nhầm).
+ *
+ * 21/11/2026 anh Trung "cải thiện lại giao diện cho gọn": ô Lượt quay này dời sang cạnh ô "Đang quay cho tem" dưới
+ * khung hình (session-card.tsx), số giờ còn lại dời lên hàng đầu màn quay (record-hours.tsx) → cột này kết thúc ở
+ * nút lớn, không còn rơi khỏi màn.
+ *
+ * THẲNG HÀNG (anh Trung 21/11: "các khối cho hàng lối thẳng nhau"): cột này cao bằng cột trái — đỉnh thẳng đỉnh khung
+ * hình, đáy nút lớn thẳng đáy hàng [ô tem | ô Lượt quay này]. Ô Camera toàn cảnh giãn (flex-1) để lấp phần giữa; cụm
+ * [Tự cắt theo tem · nút lớn] luôn nằm sát đáy. Khi cột này tự nhiên cao hơn cột trái (đang mở tùy chọn cận cảnh)
+ * thì hàng ô bên trái giãn theo — đáy hai cột vẫn bằng nhau. Đây là bản anh nhìn và duyệt ("Như thế này ok").
  */
 export function ControlPanel({
   state,
-  clips,
   diskFull,
   closeup,
   onKind,
@@ -470,7 +332,6 @@ export function ControlPanel({
   onPrimary,
 }: {
   state: RecorderState;
-  clips: SessionClip[];
   /** Tùy chọn camera cận cảnh (webcam thứ hai soi tem). */
   closeup: CloseupControls;
   /** Ổ đĩa đã ghi hỏng thật → không mở video mới (dải báo phía trên nói lý do). */
@@ -486,16 +347,19 @@ export function ControlPanel({
   // Hết giờ / ổ đĩa đầy: chỉ khóa nút khi CHƯA quay — đang quay thì nút là "Dừng", luôn bấm được.
   const blocked = state.phase === "opening" || state.phase === "lost" || (!recording && (outOfHours || diskFull));
   return (
-    <div className="min-w-0 space-y-3">
-      <ModeCard state={state} onChange={onKind} />
-      <CameraCard state={state} closeup={closeup} onToggle={onToggleCamera} onSelect={onSelectCamera} />
+    <div className="flex min-w-0 flex-col gap-3">
+      {/* Cụm trên giãn (ô Camera toàn cảnh lấp phần giữa); ô Tự cắt + nút lớn nằm sát đáy, bằng đáy cột trái. */}
+      <div className="flex flex-1 flex-col gap-3">
+        <ModeCard state={state} onChange={onKind} />
+        <CameraCard state={state} closeup={closeup} onToggle={onToggleCamera} onSelect={onSelectCamera} />
+      </div>
       <AutoCutCard state={state} onChange={onAutoCut} />
       <button
         type="button"
         onClick={onPrimary}
         disabled={blocked}
         className={cn(
-          "flex h-14 w-full items-center justify-center gap-2 rounded-xl text-lg font-semibold text-white transition-colors",
+          "flex h-14 w-full shrink-0 items-center justify-center gap-2 rounded-xl text-lg font-semibold text-white transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50",
           recording ? "bg-rose-600 hover:bg-rose-700" : KIND_ACCENT[state.kind].startButton
         )}
@@ -503,8 +367,6 @@ export function ControlPanel({
         {recording ? <Square className="size-5 fill-current" aria-hidden /> : <Play className="size-5 fill-current" aria-hidden />}
         {recording ? "Dừng" : state.kind === "UNBOX" ? "Bắt đầu quay khui" : "Bắt đầu quay"}
       </button>
-      <HoursLine />
-      <SessionCard clips={clips} />
     </div>
   );
 }

@@ -12,6 +12,8 @@ import { CameraStage } from "./camera-stage";
 import { ControlPanel } from "./control-panel";
 import { JournalPanel } from "./journal-panel";
 import { QueueNotice } from "./queue-notice";
+import { OutOfHoursNotice, RecordHoursSummary } from "./record-hours";
+import { SessionCard } from "./session-card";
 import { usePackRecorder } from "./use-pack-recorder";
 
 /**
@@ -19,7 +21,9 @@ import { usePackRecorder } from "./use-pack-recorder";
  *
  * Bố cục anh Trung duyệt bằng phác thảo 16/11/2026 ("Được, dựng đi"): trái là khung camera to có nhãn
  * trạng thái và ô "Đang quay cho tem"; phải là cột điều khiển (Camera · Tự cắt theo tem · một nút lớn
- * Bắt đầu quay ↔ Dừng · Lượt quay này); dưới cùng là Nhật ký (anh dặn thêm: "giữ lại cả nhật ký… khá cần").
+ * Bắt đầu quay ↔ Dừng); dưới cùng là Nhật ký (anh dặn thêm: "giữ lại cả nhật ký… khá cần").
+ * 21/11/2026 anh bảo làm gọn: ô "Lượt quay này" thành bộ đếm "tải lên / đã quay" nằm dưới khung hình, cạnh ô
+ * "Đang quay cho tem"; số giờ còn lại lên hàng đầu, ghim mép phải (docs mục 26).
  * Không có thứ gì của người thử (độ phân giải, bitrate, năm cửa) — các số đó cố định ở lib/pack-video-recorder/config.ts.
  *
  * Tệp này chỉ được nạp phía trình duyệt (videos-page.tsx nạp động, không dựng phía máy chủ).
@@ -40,10 +44,16 @@ export function RecordScreen() {
 
   return (
     <div className="space-y-5">
-      <Link href={PACK_VIDEOS_PATH} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-        <ArrowLeft className="size-4" />
-        Về danh sách video
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Link href={PACK_VIDEOS_PATH} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <ArrowLeft className="size-4" />
+          Về danh sách video
+        </Link>
+        <RecordHoursSummary />
+      </div>
+
+      {/* Hết giờ quay: dải đỏ + nút mua (còn giờ thì không hiện gì). */}
+      <OutOfHoursNotice />
 
       {/* Tình trạng hàng chờ gửi (mất mạng, mạng chậm, ổ đĩa đầy) — tự mất khi hết; vẫn quay bình thường. */}
       <QueueNotice queue={recorder.queue} onRetryNow={recorder.retryQueueNow} />
@@ -56,6 +66,7 @@ export function RecordScreen() {
           boxRef={recorder.boxRef}
           closeupVideoRef={recorder.closeupVideoRef}
           adjustingPip={adjusting}
+          session={<SessionCard clips={recorder.clips} />}
           onPip={recorder.setPip}
           onTurnOn={() => void recorder.toggleCamera()}
           onSwitchToUnbox={recorder.switchCurrentToUnbox}
@@ -63,7 +74,6 @@ export function RecordScreen() {
         />
         <ControlPanel
           state={recorder.state}
-          clips={recorder.clips}
           diskFull={recorder.queue.disk === "full"}
           closeup={{
             adjusting,

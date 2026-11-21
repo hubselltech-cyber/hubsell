@@ -157,7 +157,8 @@ function TemSubline({ clip }: { clip: SessionClip }) {
 }
 
 /**
- * NỬA TRÁI của màn quay: khung xem trước camera + nhãn trạng thái + dải báo sự cố + ô "Đang quay cho tem".
+ * NỬA TRÁI của màn quay: khung xem trước camera + nhãn trạng thái + dải báo sự cố + hàng [ô "Đang quay cho tem" |
+ * ô "Lượt quay này"].
  * Thẻ <video> và lớp phủ vẽ khung bao mã do bộ quay (PackRecorder) điều khiển qua hai ref.
  *
  * RÀO CHỐNG CHỌN NHẦM CHẾ ĐỘ nằm ngay dưới khung hình (cảnh báo, không khóa cứng):
@@ -171,11 +172,14 @@ export function CameraStage({
   boxRef,
   closeupVideoRef,
   adjustingPip,
+  session,
   onPip,
   onTurnOn,
   onSwitchToUnbox,
   onKeepPack,
 }: {
+  /** Ô "Lượt quay này" (bộ đếm tải lên / đã quay) — đứng cạnh ô "Đang quay cho tem" dưới khung hình. */
+  session: React.ReactNode;
   /** Thẻ <video> của ô cận cảnh (camera thứ hai, tùy chọn) — bộ quay gắn luồng hình vào. */
   closeupVideoRef: (video: HTMLVideoElement | null) => void;
   /** Đang ở chế độ "Chỉnh vị trí" ô cận cảnh. */
@@ -215,8 +219,8 @@ export function CameraStage({
   const stampLines = current && !current.manual ? stampCodeLines(current.code, matchedOrderCode) : [];
 
   return (
-    <div className="min-w-0 space-y-3">
-      <div className={cn("relative aspect-video overflow-hidden rounded-xl bg-black", KIND_ACCENT[kind].frame)}>
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className={cn("relative aspect-video shrink-0 overflow-hidden rounded-xl bg-black", KIND_ACCENT[kind].frame)}>
         <video ref={videoRef} className="size-full object-contain" autoPlay muted playsInline />
         <canvas ref={boxRef} className="pointer-events-none absolute inset-0 size-full object-contain" aria-hidden />
         {!cameraOn && (
@@ -283,33 +287,42 @@ export function CameraStage({
         </p>
       )}
 
-      <Card>
-        <CardContent className="space-y-1 py-4">
-          <p className={cn(TEXT_SUB, state.current && unbox && cn("font-semibold", KIND_ACCENT.UNBOX.text))}>
-            {state.current ? (unbox ? "Đang quay KHUI cho tem" : "Đang quay cho tem") : "Chưa quay"}
-          </p>
-          {state.current ? (
-            <>
-              <p className="break-all font-mono text-2xl font-semibold leading-tight">
-                {state.current.manual ? (unbox ? "Khui · quay tay" : "Quay tay") : state.current.code}
-              </p>
-              {currentClip && <TemSubline clip={currentClip} />}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {cameraOn
-                ? state.autoCut && state.scanAvailable
-                  ? unbox
-                    ? "Giơ tem của kiện hoàn thẳng vào camera để bắt đầu, hoặc bấm Bắt đầu quay khui."
-                    : "Giơ tem thẳng vào camera để bắt đầu, hoặc bấm Bắt đầu quay."
-                  : unbox
-                    ? "Bấm Bắt đầu quay khui để quay."
-                    : "Bấm Bắt đầu quay để quay."
-                : "Bật camera để bắt đầu."}
+      {/*
+        HÀNG DƯỚI khung hình: ô tem đang quay (NGẮN — anh Trung 21/11: "phần này có mỗi mã vận đơn, cho ngắn lại để
+        nhường chỗ cho tab bên cạnh nhiều thông tin hơn") + ô Lượt quay này (rộng gấp đôi, bộ
+        đếm trên + danh sách clip dưới). Đáy hàng này thẳng đáy nút lớn ở cột phải (control-panel.tsx); flex-1: cột phải
+        mà cao hơn thì hàng này giãn theo cho bằng đáy.
+      */}
+      <div className="grid flex-1 gap-3 sm:grid-cols-[minmax(11rem,1fr)_minmax(0,2fr)]">
+        <Card className="[--card-spacing:--spacing(4)]">
+          <CardContent className="@container space-y-1">
+            <p className={cn(TEXT_SUB, state.current && unbox && cn("font-semibold", KIND_ACCENT.UNBOX.text))}>
+              {state.current ? (unbox ? "Đang quay KHUI cho tem" : "Đang quay cho tem") : "Chưa quay"}
             </p>
-          )}
-        </CardContent>
-      </Card>
+            {state.current ? (
+              <>
+                <p className="break-all font-mono text-xl font-semibold leading-tight @xs:text-2xl">
+                  {state.current.manual ? (unbox ? "Khui · quay tay" : "Quay tay") : state.current.code}
+                </p>
+                {currentClip && <TemSubline clip={currentClip} />}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {cameraOn
+                  ? state.autoCut && state.scanAvailable
+                    ? unbox
+                      ? "Giơ tem của kiện hoàn thẳng vào camera để bắt đầu, hoặc bấm Bắt đầu quay khui."
+                      : "Giơ tem thẳng vào camera để bắt đầu, hoặc bấm Bắt đầu quay."
+                    : unbox
+                      ? "Bấm Bắt đầu quay khui để quay."
+                      : "Bấm Bắt đầu quay để quay."
+                  : "Bật camera để bắt đầu."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        {session}
+      </div>
     </div>
   );
 }
