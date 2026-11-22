@@ -5,6 +5,22 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 22/11 — Tổng quan: dải trạng thái đơn bấm sang đúng tab của Xử lý đơn hàng — PUSH 22/11
+
+- **Anh bảo:** khoanh 4 ô Chờ xác nhận · Đang xử lý · Đang giao · Thành công ở Tổng quan, "để link tới cùng trạng thái trong Xử lý đơn hàng".
+- **Đã làm (web):** `frontend/src/app/page.tsx` — mỗi ô của `PipelineStrip` là link `/orders?tab=pending | processed | shipping | delivered`; hai ô Hoàn / Trả hàng và Đơn hủy cùng về `tab=cancelled` (trang đơn gộp hai loại vào một tab). Link mang theo sàn / gian đang lọc ở Tổng quan (`channelName`, `channelId`); `frontend/src/app/orders/page.tsx` đọc hai tham số này rồi xóa khỏi URL như `tab` / `q`, tên sàn lạ thì bỏ qua. Tài khoản không có quyền `orders` thì ô vẫn chỉ để xem. Rê chuột nền `bg-muted`, không lớp `dark:`.
+- **Đã kiểm (local, tài khoản thử):** tsc + eslint sạch; bấm Chờ xác nhận → tab Chờ xử lý, Đang xử lý → Đã xử lý; `?tab=cancelled&channelName=SHOPEE` → đúng tab, ô sàn = Shopee, bảng chỉ đơn Shopee; tên sàn bịa → bỏ lọc sàn, vẫn đúng tab; soi giao diện tối.
+- **CHƯA làm / lưu ý:** số ở Tổng quan đếm đơn TẠO TRONG KỲ đang chọn, còn tab bên Xử lý đơn hàng đếm MỌI đơn đang ở trạng thái đó (trang đơn không có lọc ngày) → hai số có thể khác nhau (local: 2 so với 28). Nhãn hai nơi cũng khác chữ (Chờ xác nhận ↔ Chờ xử lý, Đang xử lý ↔ Đã xử lý, Thành công ↔ Đã giao thành công) — chưa đổi, ⏳ anh quyết. App mobile chưa đụng.
+
+---
+## Phiên 22/11 sáng — Thư tới khách đăng ký bằng Apple bị dội → khai `hubsell.vn` với Apple
+
+- **Gốc:** tóm tắt thư 22/11 có thư dội `550 5.1.1 <no-reply@hubsell.vn>: unauthorized sender` — thư chào khách mới Hải Xuân Lê (đăng ký bằng Apple, email ẩn `@privaterelay.appleid.com`). Relay Apple chỉ nhận thư từ nguồn đã khai trong Apple Developer; Hubsell chưa khai nguồn nào → MỌI thư (chào mừng, quên mật khẩu, gia hạn) tới khách Apple ẩn email đều dội từ trước tới nay.
+- **Anh bảo "Làm luôn đi em":** kiểm DNS `hubsell.vn` (SPF `include:zohomail.com`, DKIM `zmail`, DMARC có) → qua Chrome anh khai **tên miền `hubsell.vn`** ở Services → Sign in with Apple for Email Communication → Apple báo đăng ký xong, trạng thái **SPF xanh**. Không sửa mã, không đụng env.
+- **CHƯA kiểm:** chưa có thư thật nào tới địa chỉ relay sau khi khai. Thư chào Hải Xuân Lê 22/11 KHÔNG gửi lại — local không có SMTP, gõ lệnh vào Render Shell prod bị công cụ chặn; **anh chốt "cứ vậy đã, từ khách sau gửi được là được"**. Kiểm thật = khách Apple ẩn email kế tiếp không có thư dội trong tóm tắt thư.
+- Chi tiết: `docs/CHUYEN-TEN-MIEN-HUBSELL-VN.md` mục Apple.
+
+---
 ## Phiên 21/11 tối (2) — Giờ quay video 1.500 → 2.000 đ + tặng mỗi chủ shop 2 giờ quay miễn phí — PUSH 21/11 tối
 
 - **Anh bảo:** "Nâng giờ quay video lên 2000đ đi. Và tặng cho mỗi khách hàng 2 giờ quay miễn phí."
@@ -15,6 +31,7 @@
 - **⚠️ 2 ca đỏ SẴN** ở `retention-db.test.ts` (đỏ cả trên mã gốc, không do lượt này) — chưa tìm gốc.
 - **CHƯA kiểm:** mua thật qua payOS ở giá mới; tài khoản mới tinh qua cửa HTTP thật; app điện thoại; prod.
 - **Push:** anh bảo "Push luôn" → commit backend + web + tài liệu của lượt này; không migration. Render dựng lại web + worker.
+- **✅ Commit `f2773da9`, push 22:42; 22:44:18 `/health` backend prod báo `f2773da9`; 22:44:50 gói mã công khai trang Video đóng hàng trên `app.hubsell.tech` đã có chữ "Hubsell tặng"** (dò không đăng nhập). Chưa đăng nhập prod nhìn số dư + dòng tặng của tài khoản thí điểm; chưa mua thử ở giá mới; chưa xem worker Render đã lên bản mới chưa (worker không tính tiền giờ quay).
 - Chi tiết: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 27.
 
 ---
@@ -29,7 +46,13 @@
 - Chi tiết + bảng số đo: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 26.
 
 ---
-## Phiên 21/11 chiều — Khách Growth 12 tháng bị khóa "vượt trần" xin trả phí vượt → anh chốt TÍNH PHÍ VƯỢT CHO MỌI THUÊ BAO ĐÃ TRẢ TIỀN TỪ 11/2026 — ĐÃ SỬA local, CHƯA commit / push
+## Phiên 21/11 21:01 (lịch tự chạy) — Đo băng thông sau lát 1: ❌ KHÔNG ĐO ĐƯỢC, Claude in Chrome không nối
+
+- Lịch `hubsell-do-bang-thong-sau-lat-1-21-11` chạy lúc 21:01; Chrome báo "not connected" hai lần → dừng theo luật lượt đo (không đường vòng). Cả 5 việc (biểu đồ + Billing Render, chênh `pg_stat_statements` 60 phút, `order_ledger_audit` 21/11 03:00, so bản kê trước / sau deploy, log worker) **CHƯA kiểm**. Chi tiết `docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md` mục 8.11. Không sửa mã, không commit.
+- ⏳ Anh mở Chrome + đăng nhập tiện ích Claude rồi chạy lại lịch / bảo em đo tay; biểu đồ 7 ngày còn giữ được mốc trước deploy tới ~27/11.
+
+---
+## Phiên 21/11 chiều — Khách Growth 12 tháng bị khóa "vượt trần" xin trả phí vượt → anh chốt TÍNH PHÍ VƯỢT CHO MỌI THUÊ BAO ĐÃ TRẢ TIỀN TỪ 11/2026 — ✅ LÊN PROD 21/11 14:17 (`ceba88f2`)
 
 - **Khách hỏi:** Duy Nguyễn đăng (mã `cmvyuloup11lmol36dl5lhvqe`). Prod: MỘT khoản — Growth 12 tháng 2.189.000 ₫ payOS 10:56 13/11/2026, kỳ tới 13/11/2027 (còn 357 ngày); chứng từ chụp trần 1.000 + đơn giá vượt 199 ₫. Bị khóa vì tháng 11 gói thường còn luật cũ (120 % / 7 ngày) và luật cũ đếm cả tháng dương lịch: 1.211 đơn, trong đó 749 đơn lúc còn dùng thử; từ lúc trả tiền 463 đơn.
 - **Lượt 1 (đã thay):** em làm danh sách riêng "chủ shop xin tính sớm". **★ Anh: "áp dụng luôn cách tính thêm tiền cho tất cả các thuê bao đã trả tiền đi. sao phải đợi sang tháng 12"** → gỡ danh sách, đổi `OVERAGE_START_MONTH` "2026-12" → **"2026-11"** (`backend/src/services/plan-overage.ts`, một hằng số). Mọi kỳ đã trả tiền của tháng 11: vượt là tính tiền, hết khóa 120 % / 7 ngày; dùng thử giữ khóa mềm. Bảng giá trong app tự bỏ chữ "(từ 12/2026)". Sửa kèm câu hướng dẫn `frontend/src/lib/guide-tours.ts` (còn ghi "khóa sau ân hạn").
@@ -39,7 +62,9 @@
   - 32 chủ shop còn lại dưới 70 % trần. Ba khoản 0 ₫ (tài khoản nội bộ, demo, một gói tặng) cũng là "kỳ đã trả" nhưng không ai vượt.
   - Ước cuối tháng: Duy ≈ 1.000 đơn → vượt ≈ 400–430 × 199 ≈ 80–86 nghìn ₫; từ tháng 12 ≈ 140 nghìn ₫ / tháng (đà 57 đơn / ngày).
 - **Đã kiểm:** tsc backend sạch; vitest 9 tệp / 99 ca xanh (`plan-overage`, `overage-checkout`, `plan-enforcement`, `per-order-plan`, `subscription-payment`, `pack-videos-http-db`, `hq-auto-invoice-db`, `auto-arrange-lane-db`, `pack-video/access`); ca mới: mua 13/11 → trần chia phần tháng, đơn lúc dùng thử không tính, chốt 02/12 ra đúng phiếu.
-- **CHƯA kiểm:** màn của khách trên prod sau deploy (tsc frontend đã chạy, sạch).
+- **✅ Push + deploy (anh: "em push lên đi"):** commit `ceba88f2`, push `220a448a..ceba88f2`; `/health` web prod báo `ceba88f2`. Soi prod bằng tài khoản quản trị: bảng giá `/settings/plan` trước deploy còn "· vượt 199 ₫/đơn (từ 12/2026)", sau deploy hết chữ "(từ 12/2026)" ở cả 5 gói. Lần push đầu của em bị lớp kiểm quyền chặn ("lộ thông tin nhạy cảm" — em đoán vì tên khách + số tiền trong PROGRESS / docs); anh bảo "Không cần đổi", push lại thì qua.
+- **CHƯA kiểm:** màn của chính khách (em không có đăng nhập của khách; dòng `subscriptions` của Duy / Huân Bùi chưa đổi vì họ chưa mở app sau deploy — mở là tự tính lại); worker Render đã lên bản mới chưa (việc của worker là chốt phiếu 02/12). tsc frontend đã chạy, sạch.
+- **Thấy thêm:** mô tả gói Starter trên prod (dữ liệu HQ) còn câu "vượt trần cần nâng gói cao hơn" — sửa ở HQ → Gói dịch vụ, chưa sửa.
 - **⚠️ CHƯA LÀM, vướng cam kết đã công bố (⏳ anh quyết):**
   - Điều khoản (`hubsell-landing/src/app/terms/page.tsx:149, 152`) và Quy chế (`quy-che/page.tsx:283, 286, 297`) đang ghi: vượt 120 % / 7 ngày thì khóa; "Không thu … phí theo đơn … ngoài giá gói"; đổi biểu giá báo email trước 30 ngày; "gói đã thanh toán giữ nguyên mức phí đến hết kỳ". Landing FAQ + ô cam kết bảng giá cũng ghi luật khóa. Chưa sửa chữ nào, chưa gửi thư báo khách nào.
   - Hai phiếu hồi tố: Dương (mua 26/10) và Hiển (mua 06/10, đã hết gói) đều mua TRƯỚC ngày có luật phí vượt (11/11). HQ có nút Miễn cho từng phiếu.

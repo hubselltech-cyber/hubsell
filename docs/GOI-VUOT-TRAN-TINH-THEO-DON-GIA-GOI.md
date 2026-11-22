@@ -223,7 +223,7 @@ tiền vẫn về → đơn MISMATCH + thư HQ, không ghi chứng từ. `waiveO
   THẤP hơn trước (không ai bị siết thêm).
 - Thông báo trước cho khách đang trả tiền về luật mới từ 12/2026 (chưa soạn).
 
-## 10. Gói thường tính phí vượt từ 11/2026 thay vì 12/2026 (anh chốt 21/11/2026 — sửa local, chưa push)
+## 10. Gói thường tính phí vượt từ 11/2026 thay vì 12/2026 (anh chốt 21/11/2026 — ✅ lên prod 21/11 14:17, `ceba88f2`)
 
 **Ca mở đầu.** Khách Growth mua 12 tháng (2.189.000 ₫, payOS, 10:56 13/11/2026 → 13/11/2027) bị khóa "vượt trần đơn quá
 ân hạn" ngày 21/11 và xin trả phần vượt hằng tháng. Gốc: tháng 11 gói thường còn luật cũ, mà luật cũ đếm cả tháng dương
@@ -255,7 +255,12 @@ Bảng giá trong app tự bỏ chữ "(từ 12/2026)" (`/me.overageStartMonth` 
 - Khoản 0 ₫ (gói tặng) cũng bị coi là kỳ đã trả → nếu vượt sẽ ra phiếu. Chưa có ai dính.
 
 **Kiểm:** tsc backend sạch; vitest 9 tệp / 99 ca (`plan-overage` có ca mới "mua 13/11": trần 10 → 6, 9 đơn sau lúc mua,
-7 đơn lúc dùng thử không tính, chốt 02/12 ra phiếu 990 ₫). Chưa soi prod.
+7 đơn lúc dùng thử không tính, chốt 02/12 ra phiếu 990 ₫).
+
+**Sau deploy (21/11 14:17):** `/health` web = `ceba88f2`; bảng giá `/settings/plan` (tài khoản quản trị) hết chữ
+"(từ 12/2026)" ở cả 5 gói. CHƯA thấy tận mắt màn của khách bị khóa (không có đăng nhập của khách; dòng
+`subscriptions` chỉ tính lại khi họ mở app). CHƯA kiểm worker đã lên bản mới. Mô tả gói Starter (dữ liệu HQ) còn câu
+"vượt trần cần nâng gói cao hơn" — chưa sửa.
 
 ## 8. Anh chốt giúp 4 câu
 

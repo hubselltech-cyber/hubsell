@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Package,
@@ -60,7 +61,7 @@ import {
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery } from "@/lib/use-api-query";
-import { canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
+import { can, canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
 import {
   ALL_CHANNELS,
   ChannelFilter,
@@ -206,18 +207,23 @@ function DeltaChip({
   );
 }
 
-/** Một ô trạng thái trong phễu — thuần hiển thị để liếc nhanh, không bấm được. */
+/**
+ * Một ô trạng thái trong phễu. Có `href` thì cả ô là link sang đúng tab của
+ * trang Xử lý đơn hàng (anh Trung 22/11/2026); không có thì thuần hiển thị.
+ */
 function PipelineStep({
   label,
   count,
   countClassName,
+  href,
 }: {
   label: string;
   count: number;
   countClassName?: string;
+  href?: string;
 }) {
-  return (
-    <div className="flex min-w-24 flex-col items-center gap-0.5 px-3 py-2">
+  const body = (
+    <>
       <span
         className={cn(
           "text-lg font-semibold text-slate-900",
@@ -227,21 +233,54 @@ function PipelineStep({
         {formatNumber(count)}
       </span>
       <span className={cn(TEXT_SUB, "whitespace-nowrap")}>{label}</span>
-    </div>
+    </>
+  );
+  const box = "flex min-w-24 flex-col items-center gap-0.5 rounded-lg px-3 py-2";
+  if (!href) return <div className={box}>{body}</div>;
+  return (
+    <Link
+      href={href}
+      title={`Mở ${label.toLowerCase()} ở Xử lý đơn hàng`}
+      className={cn(
+        box,
+        "transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      )}
+    >
+      {body}
+    </Link>
   );
 }
 
 /**
  * PHỄU VẬN HÀNH ĐƠN HÀNG — đọc từ trái sang phải theo vòng đời đơn,
  * hai ô cảnh báo (hoàn / hủy) tách riêng bên phải.
+ *
+ * Mỗi ô dẫn sang tab cùng trạng thái của /orders, mang theo sàn / gian đang lọc.
+ * `tab` là khóa TABS của app/orders/page.tsx — đổi khóa bên đó thì sửa ở đây.
+ * Tài khoản không có quyền Đơn hàng (`linked` = false) thì ô chỉ để xem.
  */
-function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }) {
+function PipelineStrip({
+  pipeline,
+  channel,
+  linked,
+}: {
+  pipeline: AnalyticsResponse["pipeline"];
+  channel: ChannelFilterValue;
+  linked: boolean;
+}) {
   const steps = [
-    { key: "PENDING", label: "Chờ xác nhận" },
-    { key: "PROCESSED", label: "Đang xử lý" },
-    { key: "SHIPPING", label: "Đang giao" },
-    { key: "DELIVERED", label: "Thành công" },
+    { key: "PENDING", label: "Chờ xác nhận", tab: "pending" },
+    { key: "PROCESSED", label: "Đang xử lý", tab: "processed" },
+    { key: "SHIPPING", label: "Đang giao", tab: "shipping" },
+    { key: "DELIVERED", label: "Thành công", tab: "delivered" },
   ] as const;
+  const hrefOf = (tab: string) => {
+    if (!linked) return undefined;
+    const qs = new URLSearchParams({ tab });
+    if (channel.channelName) qs.set("channelName", channel.channelName);
+    if (channel.channelId) qs.set("channelId", channel.channelId);
+    return `/orders?${qs.toString()}`;
+  };
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center gap-x-1 gap-y-2 p-3">
@@ -250,21 +289,28 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
             {i > 0 && (
               <ChevronRight className="size-4 shrink-0 text-slate-300" />
             )}
-            <PipelineStep label={st.label} count={pipeline[st.key]} />
+            <PipelineStep
+              label={st.label}
+              count={pipeline[st.key]}
+              href={hrefOf(st.tab)}
+            />
           </div>
         ))}
 
-        {/* Nhóm cảnh báo — chỉ nhuộm màu khi thật sự có đơn cần xử lý */}
+        {/* Nhóm cảnh báo — chỉ nhuộm màu khi thật sự có đơn cần xử lý.
+            Trang đơn gộp hủy và hoàn vào một tab nên hai ô cùng về tab đó. */}
         <div className="ml-auto flex items-center gap-1 border-l border-slate-200 pl-2">
           <PipelineStep
             label="Hoàn / Trả hàng"
             count={pipeline.RETURNING}
             countClassName={pipeline.RETURNING > 0 ? "text-amber-600" : ""}
+            href={hrefOf("cancelled")}
           />
           <PipelineStep
             label="Đơn hủy"
             count={pipeline.CANCELLED}
             countClassName={pipeline.CANCELLED > 0 ? "text-red-500" : ""}
+            href={hrefOf("cancelled")}
           />
         </div>
       </CardContent>
@@ -753,7 +799,11 @@ export default function DashboardPage() {
         {/* ===== TẦNG 2: PHỄU VẬN HÀNH ĐƠN HÀNG ===== */}
         {analytics && (
           <Refreshing active={loading}>
-            <PipelineStrip pipeline={analytics.pipeline} />
+            <PipelineStrip
+              pipeline={analytics.pipeline}
+              channel={channel}
+              linked={can(getStoredUser(), "orders")}
+            />
           </Refreshing>
         )}
 

@@ -544,8 +544,24 @@ export default function OrdersPage() {
       setTab(tabParam);
       params.delete("tab");
     }
+    // /orders?tab=…&channelName=…&channelId=… — ô trạng thái ở Tổng quan mang
+    // theo sàn / gian đang lọc bên đó (22/11/2026)
+    const chName = params.get("channelName");
+    const chId = params.get("channelId");
+    const hasChannel = chName !== null || chId !== null;
+    if (hasChannel) {
+      // Tên sàn lạ (link gõ tay) thì bỏ cả cặp — không lọc theo gian mồ côi
+      if (chName && chName in CHANNEL_META) {
+        setChannelFilter({
+          channelName: chName as keyof typeof CHANNEL_META,
+          channelId: chId ?? "",
+        });
+      }
+      params.delete("channelName");
+      params.delete("channelId");
+    }
     if (!q) {
-      if (cr === null && tabParam === null) return;
+      if (cr === null && tabParam === null && !hasChannel) return;
       const rest0 = params.toString();
       window.history.replaceState(null, "", `${window.location.pathname}${rest0 ? `?${rest0}` : ""}`);
       return;

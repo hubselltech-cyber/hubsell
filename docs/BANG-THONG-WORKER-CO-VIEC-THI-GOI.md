@@ -270,6 +270,12 @@ chuỗi `QUEUE_DATABASE_URL`), gom tín hiệu dồn dập trong 100 ms, listene
 - **`pg_stat_statements` SAU deploy (21:58:21 → 22:02:55, 4,6 phút — quãng NGẮN, chỉ đủ xác nhận cơ chế):** upsert `tiktok_order_settlements` **7 lượt** trong khi SELECT cùng bảng 227 lượt → 0,03 lượt ghi / lượt đọc (trước deploy 0,63). Tổng 10.401 lượt, 9,9 MB chữ (quy ra ≈ 137 nghìn lượt / giờ, 130 MB / giờ so với 474 nghìn và 449 MB trước deploy) — **CHƯA dùng con số quy đổi này làm kết quả**: sau khi worker khởi động lại các gian chạy dồn một đợt rồi thưa, quãng 4,6 phút rơi vào lúc thưa (8.3 đã ghi mẫu ngắn lệch nhiều).
 - **CÒN PHẢI ĐO (chưa làm):** chênh `pg_stat_statements` trọn ≥ 1 giờ (một vòng đối soát đủ mọi gian); biểu đồ Outbound Bandwidth worker sau 24–48 giờ (mốc 300–400 MB / giờ); `order_ledger_audit` đêm 21/11 03:00 trở đi vẫn 0 lệch; số Lãi/Lỗ một gian TikTok không đổi.
 
+**8.11. Lượt đo theo lịch 21/11 21:01 VN (`hubsell-do-bang-thong-sau-lat-1-21-11`) — KHÔNG đo được gì.**
+- Claude in Chrome báo "not connected" hai lần liền (Chrome đóng hoặc tiện ích bị đăng xuất). Theo luật của lượt đo: không tìm đường vòng (không dùng trình duyệt khác, không gọi API trực tiếp), dừng.
+- **Đã kiểm:** không có gì mới. Mốc trước deploy và kết quả 4,6 phút sau deploy vẫn là số ở 8.10.
+- **CHƯA kiểm (cả 5 việc):** (1) biểu đồ Outbound Bandwidth worker trước / sau 21:53 20/11, "Usage this month", Billing (Included Bandwidth, Unbilled Charges); (2) chênh `pg_stat_statements` ≥ 60 phút; (3) `order_ledger_audit` lượt 21/11 03:00; (4) so tỷ lệ lệch `actualPayout` ↔ `settlementAmount` hai nhóm trước / sau deploy; (5) log worker "giữ nguyên" + `Lỗi đối soát` 24 giờ. Chưa có bảng trước / sau, chưa ước được tiền tháng theo đà mới.
+- Đo lại: mở Chrome + đăng nhập tiện ích Claude, rồi chạy lại lịch (hoặc bảo em đo tay). Biểu đồ Render 7 ngày vẫn còn đủ quãng trước / sau deploy tới khoảng 27/11.
+
 ## 7. Nhật ký
 
 - 12/10/2026 sáng: lập kế hoạch bản 1 (NOTIFY cho lưới quét); đã bỏ cờ 2 thư
