@@ -36,7 +36,7 @@
   sớm" khi tính năng còn mở dần), ghi chú đầu trang, nhiều khối thêm (`extras`), dải kêu gọi riêng; `feature-illus/pack-video.tsx` 5 hình
   kết hợp; giữ khối nguồn chính thức của sàn + bảng giá; hỏi đáp 11 → 7 câu; bỏ `PACK_VIDEO_PAGE_UPDATED_AT` (ngày về `lib/features.ts`).
   Soi 1366 / 390 / 360 px không tràn. IndexNow 200 + Search Console yêu cầu lập chỉ mục lại.
-- **Chưa / chờ anh:** ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app thật (tháng 9); trang chủ đang nhắm "trợ lý quảng cáo đa sàn"
+- **Chưa / chờ anh:** ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app thật (tháng 9) — anh 22/11: **"Để sau"**, đừng tự đổi; trang chủ đang nhắm "trợ lý quảng cáo đa sàn"
   (0 gợi ý tìm kiếm) — đụng định vị 15/10.
 
 ---
