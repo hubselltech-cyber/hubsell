@@ -5,6 +5,37 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 22/11 tối — Landing: 7 trang tính năng riêng, khuôn chuẩn quốc tế, hình KẾT HỢP — PUSH + lên hubsell.vn
+
+- **Anh bảo:** mọi tính năng có trang riêng chuẩn SEO như trang video, trình bày theo chuẩn quốc tế, ngắn chữ, hình minh họa khoa học là
+  chính. Giữa chừng: "thích sự trừu tượng hơn là show hết những gì bên trong sản phẩm" → bỏ ảnh chụp app thật (đã chụp 5 ảnh bằng Edge
+  + script, đã XÓA, không commit), vẽ minh họa HTML/SVG.
+- **Nghiên cứu (2 tiến trình phụ):** 11 trang tính năng quốc tế (Linear, Stripe, Ramp, Triple Whale, Jungle Scout…) + từ khóa 7 trang
+  (~260 cụm gợi ý Google). Toàn bộ ở `docs/marketing/SEO-TRANG-TINH-NANG.md`.
+- **Đã dựng (repo `hubsell-landing`, LOCAL):** `src/lib/features.ts` (danh mục 8 trang, cờ live), `src/components/landing/feature-kit.tsx`
+  (khuôn: Hero, AnswerBlock, BeforeAfter, FlowSteps, FeatureBlock, FeatureFaq, RelatedFeatures, JSON-LD), `feature-illus/primitives.tsx`
+  + `feature-illus/ads.tsx` (6 hình: thước ROAS, danh sách chiến dịch, biểu đồ biên lãi → ROAS tối thiểu, ma trận 2×2, luồng diễn tập,
+  lưới video GMV Max), trang mẫu `/quan-ly-quang-cao-shopee`. tsc sạch; soi Edge 1366 + 390 px, không tràn ngang.
+- Dữ liệu demo "Sunny Closet" trên DB local đã seed lại (dùng để thử chụp, nay không cần).
+- **Anh "Duyệt, làm tiếp" → đã dựng LOCAL (chưa commit):** khuôn chung `src/components/landing/feature-page.tsx` (cấu hình → trang,
+  dải kêu gọi chung), 6 trang `/tinh-loi-nhuan-shopee`, `/quan-ly-hang-hoan`, `/doi-soat-phi-van-chuyen`, `/xuat-hoa-don-dien-tu-shopee`,
+  `/dong-bo-ton-kho`, `/quan-ly-don-hang` + hình `feature-illus/{profit,returns,shipping,invoice,inventory,orders}.tsx`; trang quảng cáo
+  chuyển sang khuôn chung; menu Tính năng 8 mục (lưới 2 × 4) trỏ thẳng trang con; tour trang chủ / Tính năng: link "Xem chi tiết tính
+  năng →", thẻ nhỏ + sơ đồ trỏ trang con; lưới vệ tinh Tồn kho / Đơn hàng có link; chân trang liệt kê đủ trang; sitemap lấy từ
+  `lib/features.ts`. tsc sạch; soi Edge 1366 + 360 + 390 px: không trang nào tràn ngang (bảng có cuộn trong khung là cố ý); 650–830 chữ / trang.
+- **Anh hỏi giữa chừng: "Phong cách trừu tượng này đã là chuẩn mực mới nhất chưa? Em cần khảo sát trước"** → DỪNG nhân trang / commit,
+  đang khảo sát riêng xu hướng hình trừu tượng vs ảnh thật (12–15 trang SaaS 2025–2026 + bài viết + bằng chứng chuyển đổi).
+- **Khảo sát 13 trang SaaS (docs SEO-TRANG-TINH-NANG mục 3b):** trừu tượng thuần KHÔNG phải chuẩn mới nhất; SaaS nhiều số liệu dùng thẻ
+  giao diện trông như thật + dữ liệu giả, trừu tượng làm lớp phụ. Anh chốt **"Chuyển sang kết hợp"** → `feature-illus/primitives.tsx`
+  thêm `FAKE` (tên hàng chung chung, mã đơn `261122xxxxABC`, mã vận đơn `SPXVN0123456…` rõ là giả) + `Sub` + `vnd`; đổi hình số liệu
+  của cả 7 trang sang thẻ có chữ / số đọc được; ma trận, thước, luồng diễn tập, 3 bước giữ trừu tượng.
+- **Lên prod:** landing `7660504` (7 trang + khuôn + menu 8 mục + chân trang + sitemap 19 URL); bot ChatGPT nhận 200 cả 7; IndexNow 9 URL
+  → 200; Search Console (dev@hubsell.vn): "Yêu cầu lập chỉ mục" đủ 7 trang. Soi Edge 1366 / 390 / 360 px không tràn (sửa 2 chỗ: bảng
+  kiểm kê + hình đầu trang quảng cáo; khuôn khối thêm `grid-cols-1 min-w-0`).
+- **Chưa / chờ anh:** trang video có làm lại theo khuôn ngắn chữ không; ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app thật
+  (tháng 9); trang chủ đang nhắm "trợ lý quảng cáo đa sàn" (0 gợi ý tìm kiếm) — đụng định vị 15/10.
+
+---
 ## Phiên 22/11 chiều — Landing: trang con `/quay-video-dong-hang` chuẩn SEO + AI search + sửa Chính sách bảo mật — PUSH 22/11
 
 - **Anh chốt "Sửa cả hai rồi đăng":** đăng trang ở chế độ "Đăng ký dùng sớm" + sửa Chính sách bảo mật (bản 22/11/2026): mục 2 (video là
