@@ -1032,7 +1032,7 @@ sàn thành hàng kho độc lập**, không tạo liên kết, sản phẩm tr�
 - **Chưa làm / để anh chốt sau:** sao chép NHIỀU sản phẩm một lượt (hộp hiện chọn một — mỗi sản phẩm phải soi mã trước khi lưu);
   nút ngược "Nối với gian nguồn ngay" sau khi lưu (anh chốt nối là việc sau, làm ở Sản phẩm trên sàn).
 
-## 35. Nguồn Shopee có phân loại: TikTok từ chối "sales_attributes", Shopee lên bài MẤT phân loại (22/11/2026, anh chuyển ảnh đợt BL007) — GỐC: đọc nhóm phân loại nhầm API — ĐÃ SỬA, test local, CHƯA chạy gian thật, CHƯA push
+## 35. Nguồn Shopee có phân loại: TikTok từ chối "sales_attributes", Shopee lên bài MẤT phân loại (22/11/2026, anh chuyển ảnh đợt BL007) — GỐC: đọc nhóm phân loại nhầm API — ĐÃ SỬA, LÊN PROD 22/11 đêm (`aa8f291f`), CHƯA có lượt thật trên gian
 
 Anh: *"lúc điền thì đủ thông tin và đạt yêu cầu nhưng lúc đăng cứ báo lỗi này dù không biết lỗi gì. Và khi sao chép sản phẩm
 tiktok nếu không đặt SKU thì sao chép được còn nếu sản phẩm nguồn có đặt SKU thì không sao chép được."* Ảnh: Shopee ANO Official
@@ -1098,6 +1098,9 @@ có mã vẫn lên (VDT002-…, TC047, 3ong…); nguồn TikTok lỗi là do b�
   (3) → listing + listing-copy **72 / 72**; 3 tệp test có mock `getModelList` 29 / 29; tsc backend sạch.
 
 ### 35.4 Chưa kiểm / còn mở
+
+- **Deploy:** commit `aa8f291f` push master 22/11 ~23:10; `/health` backend web trả đúng commit sau ~2 phút. Worker (chạy
+  việc `listing.copy`) không có `/health` công khai → chưa xác nhận bản worker, lượt Đăng lại đầu tiên là phép thử.
 
 - **Chưa chạy trên gian thật** (local không có token sàn): hình dạng `response.tier_variation` của get_model_list lấy theo
   tài liệu Shopee, chưa có mẫu thật trong repo (trang tài liệu Shopee không mở được qua Chrome lúc sửa). Nếu sàn không trả →

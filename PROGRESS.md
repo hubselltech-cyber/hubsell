@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 22/11 đêm — Sao chép sản phẩm: nguồn Shopee có phân loại không lên TikTok / lên Shopee mất phân loại — ĐÃ SỬA local, CHƯA push
+## Phiên 22/11 đêm — Sao chép sản phẩm: nguồn Shopee có phân loại không lên TikTok / lên Shopee mất phân loại — LÊN PROD 22/11 đêm (`aa8f291f`), CHƯA có lượt thật
 
 - **Anh báo (ảnh đợt BL007, ANO Official Store → and.not.or):** điền đủ, "Đủ điều kiện" mà đăng vẫn lỗi TikTok 12052241
   `skus[].sales_attributes[]`, câu tiếng Việt bảo điền thuộc tính danh mục; "nguồn có SKU thì không chép được".
@@ -17,8 +17,11 @@
   tên nhóm, khỏi tách chuỗi "38/39"); worker tự chữa bản chụp cũ khi Đăng lại (`repair-options.ts`) + rào không đăng thiếu phân
   loại; TikTok gửi `size_chart.image.uri`; hai câu lỗi dịch lại cho đúng.
 - **Kiểm:** vitest listing + listing-copy 72 / 72, 3 tệp mock getModelList 29 / 29, tsc backend sạch. **CHƯA chạy gian thật**
-  (local không có token sàn), **CHƯA commit / push**. Sau deploy: đợt BL007 bấm Đăng lại, xem log `đã chữa (đọc lại từ gian nguồn)`.
-- **⏳ Anh quyết:** push; cách báo 2 khách có bài Shopee lên thiếu phân loại.
+  (local không có token sàn).
+- **Anh: "em commit và push nhé" → commit `aa8f291f`, push master 22/11 ~23:10;** `/health` backend web trả đúng `aa8f291f` sau ~2 phút.
+  Worker (nơi chạy việc đăng) không có `/health` công khai → CHƯA xác nhận bản worker. ⏳ anh mở đợt BL007 bấm Đăng lại gian
+  and.not.or = lượt thật đầu tiên; log worker phải có `đã chữa (đọc lại từ gian nguồn)`.
+- **⏳ Anh quyết:** cách báo 2 khách có bài Shopee lên thiếu phân loại.
 
 ---
 ## Phiên 22/11 tối — Landing: 7 trang tính năng riêng, khuôn chuẩn quốc tế, hình KẾT HỢP — PUSH + lên hubsell.vn
