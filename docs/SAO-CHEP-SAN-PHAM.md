@@ -1031,3 +1031,79 @@ sàn thành hàng kho độc lập**, không tạo liên kết, sản phẩm tr�
   cùng hàm), ảnh sàn là URL ngoài (Product.imageUrl trỏ CDN sàn như Nối SKU nhanh vẫn làm).
 - **Chưa làm / để anh chốt sau:** sao chép NHIỀU sản phẩm một lượt (hộp hiện chọn một — mỗi sản phẩm phải soi mã trước khi lưu);
   nút ngược "Nối với gian nguồn ngay" sau khi lưu (anh chốt nối là việc sau, làm ở Sản phẩm trên sàn).
+
+## 35. Nguồn Shopee có phân loại: TikTok từ chối "sales_attributes", Shopee lên bài MẤT phân loại (22/11/2026, anh chuyển ảnh đợt BL007) — GỐC: đọc nhóm phân loại nhầm API — ĐÃ SỬA, test local, CHƯA chạy gian thật, CHƯA push
+
+Anh: *"lúc điền thì đủ thông tin và đạt yêu cầu nhưng lúc đăng cứ báo lỗi này dù không biết lỗi gì. Và khi sao chép sản phẩm
+tiktok nếu không đặt SKU thì sao chép được còn nếu sản phẩm nguồn có đặt SKU thì không sao chép được."* Ảnh: Shopee ANO Official
+Store → TikTok and.not.or, "Đủ điều kiện" nhưng Lỗi: `TikTok API lỗi (code 12052241) … skus[].sales_attributes[] … must include
+either name … or id`, dòng tiếng Việt lại bảo "Còn thuộc tính bắt buộc của danh mục chưa điền".
+
+### 35.1 Số thật trên prod (Supabase SQL chỉ đọc, 22/11 tối)
+
+- Bản chụp job BL007: `options: []` dù có 2 phân loại "Xám", "Đen" (ảnh phân loại cũng `null`).
+- Gom mọi lượt đã chạy theo nguồn → đích (nguồn gian, trạng thái LISTED / PENDING_REVIEW / FAILED):
+
+| Nguồn → đích | Loại | Kết quả |
+|---|---|---|
+| Shopee → TikTok | có phân loại | **20 / 20 lỗi 12052241** (4 shop), 0 lượt lên |
+| Shopee → TikTok | sản phẩm đơn | 3 lên, 1 lỗi khác |
+| Shopee → Shopee | có phân loại | **7 lên nhưng KHÔNG có phân loại** (bản chụp `options` rỗng), 1 lỗi tải ảnh |
+| TikTok → TikTok | có phân loại | 5 lên; 4 lỗi `size_chart_image is required` (1 shop), nguồn CÓ ảnh bảng size |
+| TikTok → Shopee | có phân loại | 13 lên; lỗi còn lại là Shopee đòi bảng size (mục 31, 32) |
+
+- 28 / 28 bản chụp nguồn Shopee có phân loại đều `options` rỗng; nguồn TikTok thì luôn có nhóm.
+- **7 bài Shopee đã lên thiếu phân loại (phải sửa tay trên Kênh Người Bán, Hubsell không tự sửa được bài đã đăng):** shop
+  thangpv202 — Giày Dép GB → GB Shoes: item 46221712771 (24 phân loại), 56821632746 (36), 52421670595 (20); shop trucxanhq122 —
+  Khô Đậu Nành… → phối trộn thức ăn chăn nuôi: 49121712759 (3), 48221725716 (3); admin — ANO Official Store → DarkMan Store:
+  40886861252 (2) + bài BL007 ngày 19/11 (2).
+
+### 35.2 Gốc
+
+1. **`shopee-listing-adapter.fetchListing` đọc `tier_variation` từ `get_item_base_info` — API này KHÔNG trả trường đó.** Nhóm
+   phân loại nằm ở `get_model_list` (`response.tier_variation`), mà `getModelList` chỉ lấy `response.model`, bỏ phần còn lại.
+   Mã viết 29/10 theo giả định, mục 18 ghi "chiều Shopee → TikTok chưa kiểm" — từ đó chưa lượt nào chạy đúng.
+2. Hệ quả theo sàn đích: TikTok nhận nhiều SKU không có `sales_attributes` → 12052241; Shopee rơi vào nhánh "sản phẩm đơn"
+   (`options.length > 0` sai) → add_item giá / tồn phân loại đầu, **không gọi init_tier_variation, không báo gì**.
+3. `error-text.ts` khớp chữ "attribute" → dịch thành "thuộc tính bắt buộc của danh mục" → khách điền đủ vẫn lỗi, không biết sửa gì.
+4. **TikTok đích không gửi bảng size:** nguồn có `sizeChartImageUrl` nhưng `createListing` TikTok không gửi `size_chart` →
+   12052673; câu tiếng Việt lại lấy nguyên câu của Shopee ("Kênh Người Bán Shopee › Quản lý bảng size") cho gian TikTok.
+
+**Về "nguồn có SKU thì không chép được":** số liệu không ủng hộ. Mã SKU không quyết định; cái quyết định là sản phẩm **có phân
+loại hay không** (Shopee: sản phẩm đơn thường không đặt mã, sản phẩm có phân loại thường có mã → trông như do SKU). Nguồn TikTok
+có mã vẫn lên (VDT002-…, TC047, 3ong…); nguồn TikTok lỗi là do bảng size (ý 4).
+
+### 35.3 Đã sửa
+
+- `shopee/client.ts`: `getModelListWithTiers` trả `{ models, tierVariation }`; `getModelList` giữ chữ ký cũ (5 nơi gọi khác).
+- `shopee/listing-api.ts` `getItemDetail`: trả thêm `tierVariation`; item `has_model` mà get_model_list lỗi → **ném** (trước đây
+  nuốt lỗi → coi là sản phẩm đơn).
+- `shopee-listing-adapter.ts`: hàm thuần `shopeeTierListing(tiers, models)` → `options` + từng model `{ values, imageUrl }`;
+  tên nhóm trống → "Phân loại N"; sàn không trả nhóm mà có nhiều phân loại → `inferOptions` (suy từ tên).
+- **`ListingVariant.optionValues`** (`{ "Màu": "Đen/Trắng", "Size": "38/39" }`, theo TÊN nhóm) do adapter nguồn Shopee + TikTok
+  ghi; `variant-map.variantValues` ưu tiên trường này, thiếu thì tách chuỗi tên như cũ. Lý do: `splitVariantValues` tách theo
+  `, / | ;` nên giá trị "38/39" bị xẻ đôi — trước đây nguồn Shopee chưa từng tới được bước này. `tierIndexes`, `variantPairs`,
+  `effectiveOptions` dùng chung hàm mới.
+- **Đợt cũ đã chụp hỏng** (`services/listing-copy/repair-options.ts`): worker gọi `ensureListingOptions` trước khi đăng — bản
+  chụp nhiều phân loại mà `options` rỗng → đọc lại nhóm từ gian nguồn (`mergeFreshOptions`: GIỮ giá / tồn / mã / bỏ phân loại
+  khách đã sửa, chỉ thêm nhóm + ảnh phân loại còn trống), không đọc được thì suy từ tên; ghi lại vào job. 2 call sàn, chỉ với
+  bản chụp hỏng. → 20 lượt TikTok đang Lỗi + các lượt Chờ đăng chỉ cần bấm **Đăng lại**.
+- **Rào cuối ở worker:** còn nhiều phân loại mà không có nhóm → FAILED kèm câu rõ, không đăng thiếu phân loại nữa.
+- `tiktok-listing-adapter.createListing`: nguồn có ảnh bảng size + danh mục không báo `is_supported: false` → tải lên
+  (use_case `SIZE_CHART_IMAGE`) gửi `size_chart.image.uri`. Tài liệu Create Product 202309 (đọc 22/11 bằng trình duyệt): danh
+  mục không hỗ trợ thì sàn bỏ qua, không lỗi; có cả mẫu lẫn ảnh thì mẫu được ưu tiên.
+- `error-text.ts`: luật mới `sales_attributes` → "Lỗi ở phía Hubsell khi gửi nhóm phân loại… bấm Đăng lại"; câu bảng size
+  theo sàn (TikTok: thêm ảnh bảng size cho sản phẩm nguồn / chọn danh mục khác).
+- Test: `shopee-tier-listing.test.ts` (4), `repair-options.test.ts` (6), thêm vào `variant-map.test.ts` (3) + `error-text.test.ts`
+  (3) → listing + listing-copy **72 / 72**; 3 tệp test có mock `getModelList` 29 / 29; tsc backend sạch.
+
+### 35.4 Chưa kiểm / còn mở
+
+- **Chưa chạy trên gian thật** (local không có token sàn): hình dạng `response.tier_variation` của get_model_list lấy theo
+  tài liệu Shopee, chưa có mẫu thật trong repo (trang tài liệu Shopee không mở được qua Chrome lúc sửa). Nếu sàn không trả →
+  vẫn có nhóm "Phân loại N" nhờ `inferOptions`. Sau deploy: mở đợt BL007 bấm Đăng lại gian and.not.or, xem log worker
+  `[listing-copy] job … đã chữa (đọc lại từ gian nguồn): Màu sắc×2`.
+- Bảng size TikTok: trường theo tài liệu, **chưa có lượt thật** (4 lượt lỗi của một shop khách là ca thử sau deploy).
+- 7 bài Shopee đã lên thiếu phân loại: chưa báo khách (thangpv202, trucxanhq122) — ⏳ anh quyết cách báo.
+- Lazada đích dùng `variantPairs` → hưởng cùng sửa, chưa có lượt thật.
+- Giao diện không đổi → không có ảnh chụp.

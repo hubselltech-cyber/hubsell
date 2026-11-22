@@ -21,9 +21,23 @@ export function splitVariantValues(name: string | null): string[] {
     });
 }
 
+/**
+ * Giá trị của một phân loại theo từng nhóm. Ưu tiên `optionValues` (chính xác, adapter nguồn
+ * ghi sẵn theo TÊN nhóm nên không lệch khi nhóm bị đảo thứ tự / rút bớt); thiếu tên nhóm nào
+ * thì quay về tách chuỗi tên theo vị trí như cũ.
+ */
+export function variantValues(variant: ListingVariant, options: ListingOption[]): (string | undefined)[] {
+  const exact = variant.optionValues;
+  if (exact && options.length > 0 && options.every((o) => typeof exact[o.name] === "string")) {
+    return options.map((o) => exact[o.name]);
+  }
+  const split = splitVariantValues(variant.name);
+  return options.map((_, i) => split[i]);
+}
+
 /** Chỉ số option của một phân loại theo từng nhóm; thiếu → -1. */
 export function tierIndexes(variant: ListingVariant, options: ListingOption[]): number[] {
-  const values = splitVariantValues(variant.name);
+  const values = variantValues(variant, options);
   return options.map((opt, i) => {
     const v = values[i];
     if (v === undefined) return -1;
@@ -77,7 +91,7 @@ export function reorderOptionsForImages(options: ListingOption[], variants: List
 
 /** Cặp tên nhóm → giá trị cho một phân loại (TikTok sales_attributes / Lazada saleProp). */
 export function variantPairs(variant: ListingVariant, options: ListingOption[]): { name: string; value: string }[] {
-  const values = splitVariantValues(variant.name);
+  const values = variantValues(variant, options);
   return options
     .map((opt, i) => ({ name: opt.name, value: values[i] ?? "" }))
     .filter((p) => p.value);

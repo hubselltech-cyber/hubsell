@@ -16,6 +16,7 @@ import { getListingAdapter } from "../../marketplace/listing/registry";
 import { activeVariants, adjustPrice, effectiveOptions } from "../../marketplace/listing/rules";
 import type { ListingDraft, NormalizedListing } from "../../marketplace/listing/types";
 import { asListing, targetState } from "./json-fields";
+import { ensureListingOptions } from "./repair-options";
 import { productIdsBySku, sourceSkuToProductId } from "./source";
 
 /** Payload việc listing.copy. */
@@ -64,10 +65,28 @@ export async function processTarget(targetId: string): Promise<void> {
     where: { id: t.id },
     data: { status: "RUNNING", attempts: { increment: 1 } },
   });
-  const stored = asListing(t.job.source);
+  // Bản chụp trước 22/11/2026 từ nguồn Shopee thiếu nhóm phân loại → chữa trước khi đăng (repair-options.ts).
+  const stored = await ensureListingOptions(t.job, asListing(t.job.source)).catch((err) => {
+    console.warn(`[listing-copy] job ${t.jobId}: chữa nhóm phân loại lỗi (${(err as Error).message.slice(0, 160)}) — đăng theo bản chụp cũ`);
+    return asListing(t.job.source);
+  });
   // Chỉ phân loại khách GIỮ mới lên sàn; nhóm phân loại rút theo (giá trị không còn ai dùng thì bỏ).
   const active = activeVariants(stored);
   const listing: NormalizedListing = { ...stored, options: effectiveOptions(stored), variants: active };
+  // Nhiều phân loại mà không có nhóm nào → adapter không dựng được phân loại: Shopee sẽ lên bài
+  // KHÔNG phân loại (7 bài thật 15–19/11/2026), TikTok từ chối. Dừng ở đây, nói rõ, không đăng thiếu.
+  if (active.length > 1 && listing.options.length === 0) {
+    await prisma.listingCopyTarget.update({
+      where: { id: t.id },
+      data: {
+        status: "FAILED",
+        error: `Sản phẩm có ${active.length} phân loại nhưng không xác định được nhóm phân loại (màu / size…) nên chưa đăng — đặt tên cho từng phân loại ở sản phẩm nguồn rồi tạo lại lượt sao chép; nguồn đã có tên phân loại mà vẫn báo thế này thì báo Hubsell.`,
+      },
+    });
+    console.warn(`[listing-copy] ${channel.shopName} (${channel.channelName}): job ${t.jobId} có ${active.length} phân loại nhưng không có nhóm phân loại — không đăng`);
+    await rollupJob(t.jobId);
+    return;
+  }
   const state = targetState(t);
   const draft: ListingDraft = {
     listing,

@@ -18,11 +18,12 @@ import {
   callShopPost,
   ensureOk,
   getItemBaseInfo,
-  getModelList,
+  getModelListWithTiers,
   signShop,
   type ShopeeEnvelope,
   type ShopeeItemBaseInfo,
   type ShopeeModel,
+  type ShopeeTierVariation,
 } from "./client";
 import { getShopeeConfig, type ShopeeConfig } from "./config";
 
@@ -413,16 +414,27 @@ export async function initTierVariation(
   return d.response?.model ?? [];
 }
 
-/** Chi tiết item + model để dựng listing nguồn. */
+/**
+ * Chi tiết item + model + nhóm phân loại để dựng listing nguồn. tier_variation lấy từ
+ * get_model_list (base_info không có). Item CÓ phân loại mà get_model_list lỗi → ném, không
+ * lặng lẽ coi là sản phẩm đơn (trước 22/11/2026 nuốt lỗi → bài lên gian đích mất phân loại).
+ */
 export async function getItemDetail(
   accessToken: string,
   shopId: string,
   itemId: number,
   cfg = getShopeeConfig()
-): Promise<{ item: ShopeeItemBaseInfo | null; models: ShopeeModel[] }> {
-  const [items, models] = await Promise.all([
+): Promise<{ item: ShopeeItemBaseInfo | null; models: ShopeeModel[]; tierVariation: ShopeeTierVariation[] }> {
+  const [items, modelResult] = await Promise.all([
     getItemBaseInfo(accessToken, shopId, [itemId], cfg),
-    getModelList(accessToken, shopId, itemId, cfg).catch(() => [] as ShopeeModel[]),
+    getModelListWithTiers(accessToken, shopId, itemId, cfg).catch((err: unknown) => ({ error: err as Error })),
   ]);
-  return { item: items[0] ?? null, models };
+  const item = items[0] ?? null;
+  if ("error" in modelResult) {
+    if (item?.has_model) {
+      throw new Error(`Không đọc được phân loại của sản phẩm nguồn trên Shopee (${modelResult.error.message.slice(0, 160)}) — thử lại sau ít phút.`);
+    }
+    return { item, models: [], tierVariation: [] };
+  }
+  return { item, models: modelResult.models, tierVariation: modelResult.tierVariation };
 }

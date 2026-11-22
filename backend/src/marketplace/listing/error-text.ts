@@ -40,12 +40,18 @@ export function listingErrorContext(err: unknown): ListingErrorContext {
 
 interface Rule {
   test: RegExp;
-  /** Câu cho người bán: nói rõ ô nào, sửa thế nào. Hàm khi câu cần ngữ cảnh (tên danh mục…). */
-  text: string | ((ctx: ListingErrorContext) => string);
+  /** Câu cho người bán: nói rõ ô nào, sửa thế nào. Hàm khi câu cần ngữ cảnh (tên danh mục, sàn đích…). */
+  text: string | ((ctx: ListingErrorContext, platform: ChannelName) => string);
 }
 
 /** Câu Bảng size: nêu đích danh danh mục vì mẫu bảng size Shopee gắn với danh mục lúc tạo — mẫu giày nữ không dùng được cho giày nam (sự cố 05/11). */
-function sizeChartRequiredText(ctx: ListingErrorContext): string {
+function sizeChartRequiredText(ctx: ListingErrorContext, platform: ChannelName): string {
+  // TikTok (12052673 "`size_chart_image` is required", lỗi thật 16–19/11/2026): Hubsell gửi kèm ảnh
+  // bảng size của nguồn; còn lỗi nghĩa là nguồn không có ảnh / ảnh không tải được. Trước 22/11 câu
+  // này nói "Shopee… Kênh Người Bán Shopee" cho cả gian TikTok.
+  if (platform !== "SHOPEE") {
+    return `Danh mục này ${PLATFORM_LABEL[platform]} bắt buộc có ảnh Bảng size (Size Chart) mà sản phẩm nguồn không có ảnh bảng size (hoặc ảnh không tải lên được) — thêm ảnh bảng size cho sản phẩm nguồn trên sàn rồi tạo lại lượt sao chép, hoặc chọn danh mục khác không bắt bảng size.`;
+  }
   const path = ctx.categoryPath?.trim();
   const leaf = path ? path.split(">").pop()?.trim() || path : null;
   const which = path ? `Danh mục «${path}»` : "Danh mục này";
@@ -83,6 +89,13 @@ const RULES: Rule[] = [
   {
     test: /not required for this request|Unexpected identifier|invalid_signature|sign (is )?invalid|app_key|unsupported api|api not found/i,
     text: "Lỗi ở phía Hubsell khi gọi sàn (tham số API), không phải do bài đăng — báo Hubsell kèm dòng chi tiết bên dưới; Hubsell sửa xong thì bấm Đăng lại.",
+  },
+  // --- TikTok từ chối nhóm phân loại (12052241 "skus[].sales_attributes[] … must include either name … or id",
+  //     lỗi thật 20 lượt tới 19/11/2026): bài có nhiều phân loại mà Hubsell gửi thiếu nhóm — lỗi Hubsell,
+  //     KHÔNG phải thuộc tính danh mục (trước 22/11 rơi vào luật "thuộc tính bắt buộc" vì có chữ attribute). ---
+  {
+    test: /sales_attributes|sales attribute/i,
+    text: "Lỗi ở phía Hubsell khi gửi nhóm phân loại (màu / size…) lên sàn, không phải do bài đăng — bấm Đăng lại, Hubsell tự đọc lại nhóm phân loại từ sản phẩm nguồn; vẫn lỗi thì báo Hubsell kèm dòng chi tiết bên dưới.",
   },
   // --- Shopee gian nhiều kho đòi mã kho ---
   {
@@ -198,7 +211,7 @@ export function humanizeListingError(platform: ChannelName, raw: string, ctx: Li
   // từng bị gán nhầm thành "Sàn không nhận ảnh" chỉ vì đường dẫn chứa chữ image.
   const haystack = original.replace(/https?:\/\/\S+/gi, "");
   const rule = RULES.find((r) => r.test.test(haystack));
-  if (rule) return `${PLATFORM_LABEL[platform]} từ chối: ${typeof rule.text === "function" ? rule.text(ctx) : rule.text}\n${original}`;
+  if (rule) return `${PLATFORM_LABEL[platform]} từ chối: ${typeof rule.text === "function" ? rule.text(ctx, platform) : rule.text}\n${original}`;
   // Bỏ tiền tố "Shopee add_item lỗi:" / "TikTok API lỗi (code 1):" của client Hubsell rồi mới
   // xét: phần còn lại có dấu tiếng Việt = câu Hubsell tự viết → giữ nguyên.
   const body = original.replace(/^(Shopee|TikTok|Lazada)\b[^:]*:\s*/i, "");

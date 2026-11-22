@@ -1026,8 +1026,36 @@ export interface ShopeeModel {
   stock_info_v2?: ShopeeStockInfoV2;
 }
 
+/** Một nhóm phân loại (tier) của item: tên nhóm + các giá trị, ảnh chỉ có ở tier đầu. */
+export interface ShopeeTierVariation {
+  name?: string;
+  option_list?: { option?: string; image?: { image_url?: string } }[];
+}
+
 export interface ShopeeModelData extends ShopeeEnvelope {
-  response?: { model?: ShopeeModel[] };
+  response?: { model?: ShopeeModel[]; tier_variation?: ShopeeTierVariation[] };
+}
+
+/**
+ * get_model_list đầy đủ: model + tier_variation. ★ Nhóm phân loại CHỈ có ở API này —
+ * get_item_base_info KHÔNG trả tier_variation (kiểm prod 22/11/2026: 28/28 bản chụp nguồn
+ * Shopee có phân loại đều ra options rỗng vì đọc nhầm chỗ, docs SAO-CHEP-SAN-PHAM mục 35).
+ */
+export async function getModelListWithTiers(
+  accessToken: string,
+  shopId: string,
+  itemId: number,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<{ models: ShopeeModel[]; tierVariation: ShopeeTierVariation[] }> {
+  const data = await callShopGet<ShopeeModelData>(
+    SHOPEE_PATHS.modelList,
+    accessToken,
+    shopId,
+    [["item_id", itemId]],
+    "get_model_list",
+    cfg
+  );
+  return { models: data.response?.model ?? [], tierVariation: data.response?.tier_variation ?? [] };
 }
 
 /** Lấy danh sách phân loại (model) của một item — SKU thật thường ở cấp model. */
@@ -1037,15 +1065,7 @@ export async function getModelList(
   itemId: number,
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeModel[]> {
-  const data = await callShopGet<ShopeeModelData>(
-    SHOPEE_PATHS.modelList,
-    accessToken,
-    shopId,
-    [["item_id", itemId]],
-    "get_model_list",
-    cfg
-  );
-  return data.response?.model ?? [];
+  return (await getModelListWithTiers(accessToken, shopId, itemId, cfg)).models;
 }
 
 // ---------- Cập nhật tồn kho lên sàn ----------

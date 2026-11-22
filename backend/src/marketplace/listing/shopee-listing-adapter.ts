@@ -12,12 +12,13 @@ import type { Channel } from "@prisma/client";
 import type { FetchedImage } from "../../lib/image-fetch";
 import { SHOPEE_IMAGE } from "../../lib/image-normalize";
 import { prisma } from "../../lib/prisma";
-import type { ShopeeItemBaseInfo, ShopeeModel } from "../../integrations/shopee/client";
+import type { ShopeeItemBaseInfo, ShopeeModel, ShopeeTierVariation } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
 import { mergeUsedBrands, rankBrands } from "./brand-search";
 import { attachListingErrorContext, isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "./error-text";
+import { inferOptions } from "./infer-options";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -127,7 +128,39 @@ interface BaseInfoExtra {
   weight?: number | string;
   dimension?: { package_length?: number; package_width?: number; package_height?: number };
   brand?: { brand_id?: number; original_brand_name?: string };
-  tier_variation?: { name?: string; option_list?: { option?: string; image?: { image_url?: string } }[] }[];
+}
+
+/**
+ * Nhóm phân loại + giá trị / ảnh của TỪNG model, dựng từ get_model_list (thuần, có test).
+ * `perModel[i]` ứng với `models[i]`: `values` = giá trị chính xác theo tên nhóm (null khi
+ * tier_index của model không khớp tier — khi đó adapter đích tách theo model_name), `imageUrl`
+ * = ảnh của giá trị tier ĐẦU (Shopee chỉ có ảnh ở tier 1).
+ */
+export function shopeeTierListing(
+  tiers: ShopeeTierVariation[],
+  models: Pick<ShopeeModel, "tier_index">[]
+): { options: ListingOption[]; perModel: { values: Record<string, string> | null; imageUrl: string | null }[] } {
+  const seen = new Set<string>();
+  const groups = tiers.map((t, i) => {
+    let name = t.name?.trim() || `Phân loại ${i + 1}`;
+    // Tên nhóm là khóa của optionValues → không để trùng.
+    while (seen.has(name.toLowerCase())) name = `${name} ${i + 1}`;
+    seen.add(name.toLowerCase());
+    return { name, values: (t.option_list ?? []).map((o) => o.option?.trim() ?? "") };
+  });
+  const tier0Images = (tiers[0]?.option_list ?? []).map((o) => o.image?.image_url ?? null);
+  const perModel = models.map((m) => {
+    const idx = m.tier_index ?? [];
+    const first = idx[0];
+    const imageUrl = typeof first === "number" ? (tier0Images[first] ?? null) : null;
+    const picked = groups.map((g, gi) => g.values[idx[gi] ?? -1] ?? "");
+    const ok = groups.length > 0 && idx.length === groups.length && picked.every(Boolean);
+    return { values: ok ? Object.fromEntries(groups.map((g, gi) => [g.name, picked[gi]])) : null, imageUrl };
+  });
+  return {
+    options: groups.map((g) => ({ name: g.name, values: g.values.filter(Boolean) })).filter((g) => g.values.length > 0),
+    perModel,
+  };
 }
 
 /** Tên giá trị thuộc tính — get_attribute_tree trả `display_name`/`name`, bản cũ get_attributes trả `display_value_name`/`original_value_name`; nhận cả hai. */
@@ -200,7 +233,7 @@ export const shopeeListingAdapter: ListingAdapter = {
 
   async fetchListing(channel: Channel, itemId: string): Promise<NormalizedListing | null> {
     const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-    const { item, models } = await api.getItemDetail(accessToken, shopId, Number(itemId));
+    const { item, models, tierVariation } = await api.getItemDetail(accessToken, shopId, Number(itemId));
     if (!item) return null;
     const extra = item as ShopeeItemBaseInfo & BaseInfoExtra;
     // Mô tả mở rộng = dãy ô text/image; chữ gom lại, ảnh tách sang descriptionImages.
@@ -217,28 +250,26 @@ export const shopeeListingAdapter: ListingAdapter = {
       .filter((f) => f.field_type === "image")
       .map((f) => f.image_info?.image_url ?? "")
       .filter(Boolean);
-    const options: ListingOption[] = (extra.tier_variation ?? []).map((t) => ({
-      name: t.name ?? "Phân loại",
-      values: (t.option_list ?? []).map((o) => o.option ?? "").filter(Boolean),
-    }));
-    // Ảnh phân loại Shopee nằm ở tier 1 (option_list[].image) — ghép sang model theo tier_index[0].
-    const tier0Images = (extra.tier_variation?.[0]?.option_list ?? []).map((o) => o.image?.image_url ?? null);
-    const modelImage = (m: ShopeeModel) => {
-      const i = m.tier_index?.[0];
-      return typeof i === "number" ? (tier0Images[i] ?? null) : null;
-    };
+    // Nhóm phân loại + ảnh phân loại (tier 1) đọc từ get_model_list — base_info KHÔNG có tier_variation.
+    const tiered = shopeeTierListing(tierVariation, models);
     const price = (p?: { current_price?: number; original_price?: number }[]) => Number(p?.[0]?.original_price ?? p?.[0]?.current_price ?? 0);
     const stockOf = (s?: { summary_info?: { total_available_stock?: number } }) => Number(s?.summary_info?.total_available_stock ?? 0);
     const variants: ListingVariant[] =
       models.length > 0
-        ? models.map((m) => ({
-            sku: m.model_sku?.trim() || "",
-            name: m.model_name ?? null,
-            price: price(m.price_info),
-            stock: stockOf(m.stock_info_v2 as { summary_info?: { total_available_stock?: number } }),
-            imageUrl: modelImage(m),
-          }))
+        ? models.map((m, i) => {
+            const exact = tiered.perModel[i]?.values ?? null;
+            return {
+              sku: m.model_sku?.trim() || "",
+              name: m.model_name?.trim() || (exact ? Object.values(exact).join(", ") : null),
+              price: price(m.price_info),
+              stock: stockOf(m.stock_info_v2 as { summary_info?: { total_available_stock?: number } }),
+              imageUrl: tiered.perModel[i]?.imageUrl ?? null,
+              ...(exact ? { optionValues: exact } : {}),
+            };
+          })
         : [{ sku: item.item_sku?.trim() || "", name: null, price: price(item.price_info), stock: stockOf(item.stock_info_v2 as never), imageUrl: null }];
+    // Sàn không trả nhóm (hiếm) mà có nhiều phân loại → suy nhóm từ tên, để gian đích vẫn có phân loại.
+    const options: ListingOption[] = tiered.options.length > 0 || variants.length <= 1 ? tiered.options : inferOptions(variants);
     const categories = await api.getCategories(accessToken, shopId).catch(() => [] as api.ShopeeCategory[]);
     return {
       title: item.item_name ?? "",

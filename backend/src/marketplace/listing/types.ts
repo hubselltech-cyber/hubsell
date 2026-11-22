@@ -18,6 +18,13 @@ export interface ListingVariant {
   stock: number;
   imageUrl: string | null;
   /**
+   * Giá trị CHÍNH XÁC của phân loại theo TÊN nhóm ({ "Màu": "Đen/Trắng", "Size": "38/39" }) —
+   * adapter nguồn ghi sẵn (22/11/2026). Có thì dùng thay cho việc tách chuỗi `name`, vì tách
+   * theo dấu , / sẽ sai với giá trị có sẵn dấu đó. Tùy chọn: nguồn kho / "Tạo mới" / bản chụp
+   * cũ không có → tách `name` (variant-map.variantValues).
+   */
+  optionValues?: Record<string, string>;
+  /**
    * Khách BỎ phân loại này khỏi bài đăng (30/10/2026: sản phẩm 17 màu × 3 = 51 phân loại
    * vượt trần 50 của Shopee → bỏ bớt mới đăng được). Vẫn giữ trong source để bật lại.
    */

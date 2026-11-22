@@ -157,11 +157,13 @@ export async function getBrands(
  * multipart/form-data → gọi signRequest với body undefined.
  * ★ KHÔNG gửi shop_cipher: images/upload là API cấp app, gian thật ANO 29/10 trả
  * code 36009004 "The 'shop_cipher' query parameter is not required for this request".
+ * use_case SIZE_CHART_IMAGE: ảnh bảng size cho Create Product `size_chart.image.uri` (docs
+ * Create Product 202309, đọc 22/11/2026).
  */
 export async function uploadProductImage(
   ctx: Ctx,
   file: { buffer: Buffer; filename: string; mime: string },
-  useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE" = "MAIN_IMAGE",
+  useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE" | "SIZE_CHART_IMAGE" = "MAIN_IMAGE",
   cfg: TikTokConfig = getTikTokConfig()
 ): Promise<{ uri: string; url?: string }> {
   const path = "/product/202309/images/upload";
@@ -202,6 +204,11 @@ export interface TikTokCreateProductBody {
   package_weight: { value: string; unit: "KILOGRAM" | "GRAM" };
   package_dimensions?: { length: string; width: string; height: string; unit: "CENTIMETER" };
   product_attributes?: { id: string; values: { id?: string; name?: string }[] }[];
+  /**
+   * Bảng size (docs Create Product 202309, đọc 22/11/2026): ảnh (uri từ images/upload use_case
+   * SIZE_CHART_IMAGE) HOẶC mẫu của gian; danh mục không hỗ trợ thì sàn bỏ qua, không lỗi.
+   */
+  size_chart?: { image?: { uri: string }; template?: { id: string } };
   is_cod_allowed?: boolean;
 }
 

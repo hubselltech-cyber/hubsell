@@ -110,6 +110,7 @@ export const tiktokListingAdapter: ListingAdapter = {
         price: Number(s.price?.sale_price ?? s.price?.tax_exclusive_price ?? 0),
         stock: (s.inventory ?? []).reduce((sum, i) => sum + (i.quantity ?? 0), 0),
         imageUrl: pickUrl((s.sales_attributes ?? []).find((a) => a.sku_img)?.sku_img),
+        ...(pairs.length ? { optionValues: Object.fromEntries(pairs.map((a) => [a.name!, a.value_name!])) } : {}),
       };
     });
     const options: ListingOption[] = [...optionMap.entries()].map(([name, values]) => ({ name, values: [...values] }));
@@ -199,7 +200,7 @@ export const tiktokListingAdapter: ListingAdapter = {
 
   async createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult> {
     const ctx = await ctxOf(channel);
-    const upload = (useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE") => (img: FetchedImage) => api.uploadProductImage(ctx, img, useCase);
+    const upload = (useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE" | "SIZE_CHART_IMAGE") => (img: FetchedImage) => api.uploadProductImage(ctx, img, useCase);
     const main_images = (await uploadImages(draft.listing.images.slice(0, 9), TIKTOK_IMAGE, upload("MAIN_IMAGE"))).map((up) => ({ uri: up.uri }));
     if (main_images.length === 0) throw new Error("Không tải được ảnh nào lên TikTok");
     // Ảnh chèn trong mô tả: upload use_case DESCRIPTION_IMAGE, lấy url trả về ghép <img> cuối mô tả.
@@ -237,6 +238,21 @@ export const tiktokListingAdapter: ListingAdapter = {
         console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);
       }
     }
+    // Ảnh bảng size của nguồn → gửi kèm (TikTok bắt buộc ở nhiều danh mục thời trang/giày: lỗi thật
+    // 12052673 "`size_chart_image` is required", 5 lượt 16–19/11/2026 dù nguồn CÓ ảnh bảng size mà
+    // adapter không gửi). Danh mục không hỗ trợ thì khỏi tải; ảnh hỏng thì bỏ, để sàn tự báo nếu bắt buộc.
+    let sizeChartUri: string | null = null;
+    if (draft.listing.sizeChartImageUrl) {
+      const rules = await api.getCategoryRules(ctx, draft.categoryId).catch(() => ({}) as api.TikTokCategoryRules);
+      if (rules.size_chart?.is_supported !== false) {
+        try {
+          sizeChartUri = (await upload("SIZE_CHART_IMAGE")(await prepareImage(draft.listing.sizeChartImageUrl, TIKTOK_IMAGE))).uri;
+        } catch (err) {
+          console.warn(`[listing-copy] ${channel.shopName}: ảnh bảng size nguồn không tải lên TikTok được (${(err as Error).message}) — đăng không kèm bảng size`);
+        }
+      }
+    }
+
     const skus: api.TikTokCreateProductBody["skus"] = draft.variants.map((v) => ({
       ...(options.length
         ? {
@@ -265,6 +281,7 @@ export const tiktokListingAdapter: ListingAdapter = {
         ? { package_dimensions: { length: String(draft.dimensionsCm.length), width: String(draft.dimensionsCm.width), height: String(draft.dimensionsCm.height), unit: "CENTIMETER" } }
         : {}),
       ...(product_attributes.length ? { product_attributes } : {}),
+      ...(sizeChartUri ? { size_chart: { image: { uri: sizeChartUri } } } : {}),
     };
     const r = await api.createProduct(ctx, body);
     const variants = (r.skus ?? []).map((s) => ({ sku: s.seller_sku ?? "", remoteId: `${r.product_id}-${s.id}` }));

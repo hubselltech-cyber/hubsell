@@ -44,6 +44,7 @@ import {
   textToHtml,
   tierIndexes,
   variantPairs,
+  variantValues,
   vndInt,
 } from "../variant-map";
 
@@ -93,5 +94,38 @@ describe("đổi đơn vị + mô tả", () => {
   it("text ↔ html giữ xuống dòng, escape thẻ", () => {
     expect(textToHtml("a <b>\n\nc\nd")).toBe("<p>a &lt;b&gt;</p><p>c<br>d</p>");
     expect(htmlToText("<p>a</p><p>c<br>d</p>&amp;")).toBe("a\nc\nd\n&");
+  });
+});
+
+// 22/11/2026 (docs mục 35): giá trị phân loại có sẵn dấu "/" hoặc "," — tách chuỗi tên sẽ sai,
+// adapter nguồn ghi optionValues theo TÊN nhóm để adapter đích khỏi phải tách.
+describe("variantValues — optionValues chính xác thay cho tách chuỗi tên", () => {
+  const opts: ListingOption[] = [
+    { name: "Màu", values: ["Đen/Trắng", "Kem, be"] },
+    { name: "Size", values: ["36/37", "38/39"] },
+  ];
+  const exact: ListingVariant = { sku: "a", name: "Kem, be,38/39", price: 1, stock: 1, imageUrl: null, optionValues: { Màu: "Kem, be", Size: "38/39" } };
+  const legacy: ListingVariant = { sku: "b", name: "Đen, M", price: 1, stock: 1, imageUrl: null };
+
+  it("có optionValues → lấy đúng giá trị dù tên chứa dấu , và /", () => {
+    expect(variantValues(exact, opts)).toEqual(["Kem, be", "38/39"]);
+    expect(tierIndexes(exact, opts)).toEqual([1, 1]);
+    expect(variantPairs(exact, opts)).toEqual([
+      { name: "Màu", value: "Kem, be" },
+      { name: "Size", value: "38/39" },
+    ]);
+  });
+  it("nhóm bị đảo thứ tự (nhóm ảnh lên đầu) hoặc rút bớt → vẫn đúng vì tra theo tên nhóm", () => {
+    expect(tierIndexes(exact, [opts[1], opts[0]])).toEqual([1, 1]);
+    expect(variantPairs(exact, [opts[1]])).toEqual([{ name: "Size", value: "38/39" }]);
+  });
+  it("không có optionValues (nguồn kho / bản chụp cũ) hoặc thiếu tên nhóm → tách chuỗi tên như cũ", () => {
+    const o = [
+      { name: "Màu", values: ["Đen"] },
+      { name: "Size", values: ["M"] },
+    ];
+    expect(variantValues(legacy, o)).toEqual(["Đen", "M"]);
+    expect(variantValues({ ...legacy, optionValues: { "Nhóm khác": "x" } }, o)).toEqual(["Đen", "M"]);
+    expect(variantPairs({ ...legacy, name: null }, o)).toEqual([]);
   });
 });

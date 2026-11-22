@@ -111,3 +111,24 @@ describe("lỗi thật 30/10 Bunchar: Shopee không whitelist ảnh mô tả + U
     expect(split(humanizeListingError("SHOPEE", raw)).text).toMatch(/Sàn không nhận ảnh/);
   });
 });
+
+// 22/11/2026 (docs mục 35) — hai lỗi thật TikTok trước đây dịch sai, khách đọc không biết sửa gì.
+describe("TikTok: nhóm phân loại + bảng size", () => {
+  it("12052241 sales_attributes → lỗi phía Hubsell, KHÔNG bảo khách điền thuộc tính danh mục", () => {
+    const raw =
+      "TikTok API lỗi (code 12052241): Invalid Parameter. Parameter `skus[].sales_attributes[]` is invalid because each sales attribute must include either `name` for a custom attribute or `id` for a built-in attribute. Provide either `name` or `id` for every sales attribute and retry.";
+    const out = humanizeListingError("TIKTOK", raw);
+    expect(out).toMatch(/^TikTok Shop từ chối: Lỗi ở phía Hubsell khi gửi nhóm phân loại/);
+    expect(out).not.toMatch(/thuộc tính bắt buộc/);
+    expect(out.split("\n")[1]).toBe(raw);
+  });
+  it("12052673 size_chart_image → câu của TikTok, không nhắc Kênh Người Bán Shopee", () => {
+    const out = humanizeListingError("TIKTOK", "TikTok API lỗi (code 12052673): Missing Parameter. `size_chart_image` is required. Please provide it and retry.");
+    expect(out).toMatch(/^TikTok Shop từ chối: Danh mục này TikTok Shop bắt buộc có ảnh Bảng size/);
+    expect(out.split("\n")[0]).not.toMatch(/Shopee/);
+  });
+  it("Shopee đòi bảng size → vẫn câu hướng dẫn tạo mẫu trên Shopee như cũ", () => {
+    const out = humanizeListingError("SHOPEE", "Shopee add_item lỗi: product.error_busi — Size Chart is required for selected category. Please fill in it or change the category.");
+    expect(out).toMatch(/Kênh Người Bán Shopee › Quản lý bảng size/);
+  });
+});

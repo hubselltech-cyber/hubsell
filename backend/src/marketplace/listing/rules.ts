@@ -8,7 +8,7 @@
 
 import { ChannelName } from "@prisma/client";
 import type { CategoryRequirements, ListingOption, ListingVariant, NormalizedListing } from "./types";
-import { splitVariantValues } from "./variant-map";
+import { variantValues } from "./variant-map";
 
 type PlatformRules = Omit<CategoryRequirements, "attributes">;
 
@@ -156,7 +156,9 @@ export function effectiveOptions(listing: NormalizedListing): ListingOption[] {
   if (!listing.variants.some((v) => v.excluded)) return listing.options;
   const used = listing.options.map(() => new Set<string>());
   for (const v of activeVariants(listing)) {
-    splitVariantValues(v.name).forEach((val, i) => used[i]?.add(val.toLowerCase()));
+    variantValues(v, listing.options).forEach((val, i) => {
+      if (val !== undefined) used[i]?.add(val.toLowerCase());
+    });
   }
   return listing.options
     .map((o, i) => ({ name: o.name, values: o.values.filter((val) => used[i].has(val.toLowerCase())) }))
