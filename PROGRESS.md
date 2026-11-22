@@ -5,6 +5,37 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 22/11 chiều — Landing: trang con `/quay-video-dong-hang` chuẩn SEO + AI search + sửa Chính sách bảo mật — PUSH 22/11
+
+- **Anh chốt "Sửa cả hai rồi đăng":** đăng trang ở chế độ "Đăng ký dùng sớm" + sửa Chính sách bảo mật (bản 22/11/2026): mục 2 (video là
+  dữ liệu Hubsell xử lý thay shop), mục 3 (thêm "Video đóng hàng", không thu âm; quyền Camera: chỉ video chủ động quay mới tải lên), mục 5
+  (kho lưu video ngoài Việt Nam), mục 7 (đường dẫn xem vài phút), mục 8 (lưu theo trạng thái đơn rồi tự xóa, xóa cùng tài khoản), mục 15
+  a/d (Cloudflare). Trang Xóa tài khoản thêm dòng video + nhắc tải video trước khi xóa. `PRIVACY_VERSION` → `2026-11-22`
+  (`backend/src/lib/legal.ts`, chỉ là nhãn ghi log đồng ý — KHÔNG có màn bắt khách đồng ý lại).
+- ⚠️ **Mục 8 chính sách nay hứa video tự xóa + xóa cùng tài khoản**, nhưng `PACK_VIDEO_DELETE_ENABLED` và `PACK_VIDEO_ACCOUNT_PURGE` vẫn TẮT
+  (chạy bóng). Đang đúng vì chỉ tài khoản của Hubsell có video; PHẢI bật cả hai trước khi mở tính năng cho khách (đã có ở THIET-KE mục 8,
+  điều 1 + 4). Mục 13 chính sách hứa xin đồng ý lại khi thêm bên nhận dữ liệu — chưa có cơ chế; lúc mở cho khách cần bước đồng ý ở cửa
+  tính năng.
+
+- **Anh bảo:** đưa "Quay video gói hàng" lên landing bằng một trang con + dẫn link; viết chuẩn SEO, nhất là để ChatGPT / Claude / Gemini
+  trả đúng link. Giữa chừng anh dặn thêm: phải có camera toàn cảnh + camera cận cảnh mã vận đơn.
+- **Nghiên cứu (2 tiến trình phụ):** từ khóa qua gợi ý Google ("đóng hàng" hơn hẳn "đóng gói" / "gói hàng"), 19 trang đối thủ, nguồn chính
+  thức Shopee + TikTok; chuẩn bot AI của OpenAI / Anthropic / Perplexity / Google / Bing. Toàn bộ ở
+  `docs/marketing/SEO-TRANG-QUAY-VIDEO-DONG-HANG.md` (kể cả cái KHÔNG làm: llms.txt, HowTo).
+- **Đã làm (repo `hubsell-landing`):** `src/app/quay-video-dong-hang/page.tsx` + `src/components/landing/pack-video.tsx` — câu trả lời đầu
+  trang, bảng 8 dòng tóm tắt, khung video minh họa vẽ CSS (ngày giờ + mã vận đơn + mã đơn góc trái trên, ô cận cảnh góc phải dưới), 4 bước,
+  yêu cầu 3 sàn có dẫn nguồn, bảng so điện thoại / camera an ninh / Hubsell, lưu video + khui hàng hoàn, bảng giá 2.000 đ / giờ, 11 câu FAQ
+  luôn mở; JSON-LD WebApplication + BreadcrumbList + FAQPage; `layout.tsx` thêm Organization + WebSite cho mọi trang; sitemap thêm trang
+  (có `lastModified`); link vào: ô "Quay video đóng hàng" ở lưới tính năng (trang chủ + /tinh-nang) + chân trang cột Sản phẩm.
+- **Đã kiểm:** tsc sạch; soi 1366 / 1440 / 390 px (trang không tràn ngang, bảng so cuộn trong khung, cột Hubsell đứng đầu); nút "Đăng ký
+  dùng sớm" mở form tư vấn; 5 khối JSON-LD có trong HTML; hubsell.vn hiện trả 200 cho OAI-SearchBot / Claude-SearchBot / PerplexityBot /
+  GPTBot / ClaudeBot / bingbot. Landing chỉ có giao diện sáng (không có chế độ tối).
+- `next build` qua: `/quay-video-dong-hang` dựng tĩnh (○).
+- **CHƯA:** gửi Search Console + Bing Webmaster (cần anh đăng nhập). ⚠️ Chrome cài trên máy (bản 99) không vẽ được nút cam
+  gradient của Tailwind v4 — lỗi cũ toàn site với trình duyệt < 111, không do trang mới.
+- Mở tính năng cho mọi khách thì đổi `AVAILABILITY` → `"open"` trong `src/app/quay-video-dong-hang/page.tsx`.
+
+---
 ## Phiên 22/11 — Tổng quan: dải trạng thái đơn bấm sang đúng tab của Xử lý đơn hàng — PUSH 22/11
 
 - **Anh bảo:** khoanh 4 ô Chờ xác nhận · Đang xử lý · Đang giao · Thành công ở Tổng quan, "để link tới cùng trạng thái trong Xử lý đơn hàng".

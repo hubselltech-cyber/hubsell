@@ -11,7 +11,8 @@
  * nào, lúc nào, từ đâu. Đó là lý do có bảng log thay vì một cờ boolean.
  */
 export const TERMS_VERSION = "2026-09-19";
-export const PRIVACY_VERSION = "2026-10-15";
+// 22/11/2026: thêm video đóng hàng (dữ liệu, quyền Camera, kho lưu video ngoài VN, thời hạn lưu).
+export const PRIVACY_VERSION = "2026-11-22";
 
 /** Nguồn đồng ý — phân biệt tick tay với đồng ý ngầm qua nút Google. */
 export type TermsAcceptanceSource =

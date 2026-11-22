@@ -95,7 +95,7 @@
 ## Landing, marketing, store
 - [DANG-KY-TU-QUANG-CAO-TIKTOK.md](DANG-KY-TU-QUANG-CAO-TIKTOK.md) — 12/11/2026 đăng ký cho khách đến từ TikTok: ẩn Google trong trình duyệt nhúng + nút sao chép link, form 7 → 4 ô, câu hỏi mức chi quảng cáo/tháng lưu `User.adSpendBand`, hiện ở HQ
 - [LANDING-KE-CHUYEN.md](LANDING-KE-CHUYEN.md) · [LANDING-NHAN-VAT-THUONG-HIEU.md](LANDING-NHAN-VAT-THUONG-HIEU.md) · `landing-persona/`
-- `marketing/` — định vị lại (DINH-VI-LAI-HUBSELL-QUANG-CAO), thư khách hiện có, quy trình video, bài Facebook
+- `marketing/` — định vị lại (DINH-VI-LAI-HUBSELL-QUANG-CAO), thư khách hiện có, quy trình video, bài Facebook, [SEO-TRANG-QUAY-VIDEO-DONG-HANG.md](marketing/SEO-TRANG-QUAY-VIDEO-DONG-HANG.md) (22/11/2026: từ khóa, đối thủ, nguồn sàn, chuẩn cho AI search của trang landing `/quay-video-dong-hang`)
 - Việc marketing mới (từ 17/10/2026) làm ở thư mục riêng [`../hubsell-marketing/`](../hubsell-marketing/README.md): bối cảnh sản phẩm, skill marketing, SQL số khách, chiến lược
 - `store/` — [DUA-APP-LEN-CH-PLAY-APP-STORE.md](DUA-APP-LEN-CH-PLAY-APP-STORE.md), LISTING, thư trả Apple REPLY-1…7, ảnh/feature graphic (script dựng ở `../tools/do-hoa/`)
 
