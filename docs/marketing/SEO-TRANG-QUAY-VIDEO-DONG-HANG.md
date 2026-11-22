@@ -66,10 +66,19 @@ Chưa đọc được (trang cần JavaScript / đăng nhập): banhang.shopee.v
 
 ## 5. Việc sau khi đăng (chưa làm — cần anh)
 
-1. **Google Search Console:** gửi lại sitemap + "Yêu cầu lập chỉ mục" cho `/quay-video-dong-hang`.
-2. **Bing Webmaster Tools:** nhập site từ Search Console (một nút). Bing nuôi Copilot và một phần ChatGPT; có báo cáo "AI Performance" đếm số
-   lần Copilot trích trang [C]. Chưa biết hubsell.vn đã có tài khoản Bing chưa.
-3. **IndexNow** (Bing, Yandex, Naver…; Google không tham gia): tệp khóa + gọi khi deploy. Làm sau, không gấp.
+1. ✅ **Google Search Console** (22/11, tài khoản `dev@hubsell.vn`, thuộc tính Miền `hubsell.vn`): sitemap `https://hubsell.vn/sitemap.xml`
+   gửi LẦN ĐẦU (trước đó chưa từng gửi) → **Thành công, 12 trang**; "Yêu cầu lập chỉ mục" `/quay-video-dong-hang` → đã vào hàng ưu tiên
+   (lượt đầu Google báo lỗi tạm, bấm lại thì qua). Lúc gửi, trang "chưa được lập chỉ mục — đã phát hiện qua sitemap". Search Console cho
+   tổng 315 lượt nhấp từ trước tới nay.
+2. ✅ **Bing Webmaster Tools** (22/11): đăng nhập bằng Google `dev@hubsell.vn`, nhập site từ Search Console → `https://hubsell.vn/` (quyền
+   Administrator, không phải xác minh lại); cấp cho bing.com quyền CHỈ XEM Search Console (gỡ được ở myaccount.google.com → Bảo mật → Ứng
+   dụng bên thứ ba). Gửi tay sitemap → "Submitted / Processing". Cookie Bing: chọn Reject. Có báo cáo **AI Performance** (Copilot trích trang)
+   ở menu trái — xem sau ~1–2 tuần.
+3. ✅ **IndexNow** (Bing, Yandex, Naver…; Google không tham gia) — LÀM 22/11: tệp khóa `public/9aeb7a0d2f9e99bdd2201e0318aae53e.txt`
+   (khóa công khai theo thiết kế, không phải bí mật) + `scripts/indexnow.mjs`. Đã báo 5 trang (mới, /privacy, /xoa-tai-khoan, /, /tinh-nang)
+   → **200 OK**. Lần sau sửa trang thật thì chạy `node scripts/indexnow.mjs /duong-dan` từ PowerShell (Git Bash phải đặt
+   `MSYS_NO_PATHCONV=1`, không thì "/privacy" thành "C:/Program Files/Git/privacy" — lượt đầu 22/11 đã gửi nhầm như vậy, script nay chặn).
+   Search Console (mục 1) chỉ vào được bằng **dev@hubsell.vn** — thuộc tính Miền hubsell.vn xác minh TXT từ 01/10; Gmail của anh không có quyền.
 4. **Video YouTube hướng dẫn** có chữ "Hubsell" + "quay video đóng hàng" ở tiêu đề / mô tả / lời nói, rồi nhúng vào trang (thêm VideoObject).
    Ahrefs: nhắc tên trên YouTube tương quan mạnh nhất với việc AI nhắc thương hiệu (≈ 0,74) [NC, tương quan chứ không phải nhân quả].
    Đây là việc đáng làm nhất ngoài trang.

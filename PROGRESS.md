@@ -31,7 +31,11 @@
   dùng sớm" mở form tư vấn; 5 khối JSON-LD có trong HTML; hubsell.vn hiện trả 200 cho OAI-SearchBot / Claude-SearchBot / PerplexityBot /
   GPTBot / ClaudeBot / bingbot. Landing chỉ có giao diện sáng (không có chế độ tối).
 - `next build` qua: `/quay-video-dong-hang` dựng tĩnh (○).
-- **CHƯA:** gửi Search Console + Bing Webmaster (cần anh đăng nhập). ⚠️ Chrome cài trên máy (bản 99) không vẽ được nút cam
+- **Anh "Em làm nốt đi em":** IndexNow gắn cho landing (`public/<khóa>.txt` + `scripts/indexnow.mjs`, commit `08562d0`), đã báo 5 trang
+  → 200 OK (Bing / Copilot). Search Console chỉ vào được bằng `dev@hubsell.vn` (Chrome đang đăng nhập Gmail của anh → "không có quyền");
+  anh đăng nhập dev@ → **Search Console:** sitemap gửi lần đầu → Thành công 12 trang; yêu cầu lập chỉ mục `/quay-video-dong-hang` → đã vào
+  hàng ưu tiên. **Bing Webmaster:** đăng nhập Google dev@, nhập site từ Search Console (cấp bing.com quyền chỉ xem Search Console), gửi
+  sitemap → Processing. Xem báo cáo Search Console + Bing "AI Performance" sau ~1–2 tuần. ⚠️ Chrome cài trên máy (bản 99) không vẽ được nút cam
   gradient của Tailwind v4 — lỗi cũ toàn site với trình duyệt < 111, không do trang mới.
 - Mở tính năng cho mọi khách thì đổi `AVAILABILITY` → `"open"` trong `src/app/quay-video-dong-hang/page.tsx`.
 
