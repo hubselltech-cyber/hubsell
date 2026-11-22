@@ -35,7 +35,10 @@
   → 200 OK (Bing / Copilot). Search Console chỉ vào được bằng `dev@hubsell.vn` (Chrome đang đăng nhập Gmail của anh → "không có quyền");
   anh đăng nhập dev@ → **Search Console:** sitemap gửi lần đầu → Thành công 12 trang; yêu cầu lập chỉ mục `/quay-video-dong-hang` → đã vào
   hàng ưu tiên. **Bing Webmaster:** đăng nhập Google dev@, nhập site từ Search Console (cấp bing.com quyền chỉ xem Search Console), gửi
-  sitemap → Processing. Xem báo cáo Search Console + Bing "AI Performance" sau ~1–2 tuần. ⚠️ Chrome cài trên máy (bản 99) không vẽ được nút cam
+  sitemap → Processing. Xem báo cáo Search Console + Bing "AI Performance" sau ~1–2 tuần.
+- **Anh hỏi "đã bổ sung vào mục tính năng chưa":** chưa → menu xổ "Tính năng" ở đầu trang thêm mục 06 "Quay video đóng hàng" (lưới 2 × 3
+  kín; không thêm vào sơ đồ 5 chốt); khung menu căn mép trái thay vì căn giữa (trước tràn mép trái ở 1024–1366px). Landing `d307e0e`, đã lên
+  hubsell.vn (trang chủ có 3 link sang trang con). ⚠️ Chrome cài trên máy (bản 99) không vẽ được nút cam
   gradient của Tailwind v4 — lỗi cũ toàn site với trình duyệt < 111, không do trang mới.
 - Mở tính năng cho mọi khách thì đổi `AVAILABILITY` → `"open"` trong `src/app/quay-video-dong-hang/page.tsx`.
 
