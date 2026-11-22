@@ -32,8 +32,12 @@
 - **Lên prod:** landing `7660504` (7 trang + khuôn + menu 8 mục + chân trang + sitemap 19 URL); bot ChatGPT nhận 200 cả 7; IndexNow 9 URL
   → 200; Search Console (dev@hubsell.vn): "Yêu cầu lập chỉ mục" đủ 7 trang. Soi Edge 1366 / 390 / 360 px không tràn (sửa 2 chỗ: bảng
   kiểm kê + hình đầu trang quảng cáo; khuôn khối thêm `grid-cols-1 min-w-0`).
-- **Chưa / chờ anh:** trang video có làm lại theo khuôn ngắn chữ không; ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app thật
-  (tháng 9); trang chủ đang nhắm "trợ lý quảng cáo đa sàn" (0 gợi ý tìm kiếm) — đụng định vị 15/10.
+- **Anh "Làm lại cho đồng bộ" → trang video theo khuôn chung (landing `645c4b1`, LIVE):** khuôn thêm nút chính tùy biến ("Đăng ký dùng
+  sớm" khi tính năng còn mở dần), ghi chú đầu trang, nhiều khối thêm (`extras`), dải kêu gọi riêng; `feature-illus/pack-video.tsx` 5 hình
+  kết hợp; giữ khối nguồn chính thức của sàn + bảng giá; hỏi đáp 11 → 7 câu; bỏ `PACK_VIDEO_PAGE_UPDATED_AT` (ngày về `lib/features.ts`).
+  Soi 1366 / 390 / 360 px không tràn. IndexNow 200 + Search Console yêu cầu lập chỉ mục lại.
+- **Chưa / chờ anh:** ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app thật (tháng 9); trang chủ đang nhắm "trợ lý quảng cáo đa sàn"
+  (0 gợi ý tìm kiếm) — đụng định vị 15/10.
 
 ---
 ## Phiên 22/11 chiều — Landing: trang con `/quay-video-dong-hang` chuẩn SEO + AI search + sửa Chính sách bảo mật — PUSH 22/11

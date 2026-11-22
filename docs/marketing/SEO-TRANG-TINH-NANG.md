@@ -126,4 +126,6 @@ mỏng), "quản lý bán hàng đa kênh" (10 gợi ý nhưng lẫn phần mề
 - Đã gửi: IndexNow 9 URL (200) + Search Console "Yêu cầu lập chỉ mục" đủ 7 trang (dev@hubsell.vn). Xem lại báo cáo sau 1–2 tuần.
 - Thêm trang mới: thêm vào `FEATURE_PAGES`, tạo `src/app/<đường-dẫn>/page.tsx` khai `FeaturePageConfig`, hình vào `feature-illus/`; sửa
   chữ thật thì đổi `updatedAt` của trang rồi chạy `node scripts/indexnow.mjs /<đường-dẫn>`.
-- Chưa làm: trang video chưa theo khuôn mới (anh chưa trả lời); ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app tháng 9.
+- 22/11 khuya: trang video làm lại theo khuôn (anh: "Làm lại cho đồng bộ", landing `645c4b1`) — khuôn có `hero.primaryNode`, `hero.note`,
+  `extras[]`, `cta` cho trang cần nút / câu riêng. Cả 8 trang tính năng giờ chung một khuôn.
+- Chưa làm: ảnh tour trang chủ / Tính năng vẫn là ảnh chụp app tháng 9 (trái luật hình kết hợp) — chờ anh.

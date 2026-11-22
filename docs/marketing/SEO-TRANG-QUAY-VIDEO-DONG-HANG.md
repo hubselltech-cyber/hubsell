@@ -4,8 +4,8 @@
 và đặc biệt phải chuẩn SEO tìm kiếm trên các phần mềm AI… khách vào chatGPT, Claude, gemini… tìm được đúng link web mình." Sau đó anh dặn
 thêm: "Phần này sẽ có camera toàn cảnh và camera cận cảnh mã vận đơn".
 
-Mã nguồn (repo `hubsell-landing`): `src/app/quay-video-dong-hang/page.tsx` (nội dung + JSON-LD) · `src/components/landing/pack-video.tsx`
-(khung minh họa, bảng, FAQ luôn mở) · `src/lib/site.ts` `PACK_VIDEO_PAGE_UPDATED_AT` · `src/app/sitemap.ts` · `src/app/layout.tsx`
+Mã nguồn (repo `hubsell-landing`, 22/11 khuya đã chuyển sang khuôn chung — xem SEO-TRANG-TINH-NANG.md): `src/app/quay-video-dong-hang/page.tsx`
+(cấu hình trang) · `src/components/landing/pack-video.tsx` (khung video đầu trang) · `feature-illus/pack-video.tsx` · ngày sửa ở `src/lib/features.ts` · `src/app/sitemap.ts` · `src/app/layout.tsx`
 (JSON-LD Organization + WebSite cho mọi trang) · link vào: ô "Quay video đóng hàng" ở lưới tính năng (`tour.tsx`, hiện ở trang chủ và
 /tinh-nang) + cột Sản phẩm ở chân trang.
 
