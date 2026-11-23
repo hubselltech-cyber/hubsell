@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), commit `c3d6ec3a` CHƯA push
+## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), PUSH master 23/11 (`c3d6ec3a`)
 
 - **Anh báo (ảnh nhân viên Nguyệt `admin/nguyet`, tick đủ 8 nhóm quyền):** "Nhân viên anh cấp full quyền nhưng vào thì lại không đủ."
 - **Gốc (đọc mã, không phải lỗi dữ liệu):** app chia màn theo VAI — `homePathFor` đưa mọi nhân viên vào khu `(warehouse)` cố định
@@ -22,7 +22,8 @@
   `8e004117` (từ master), runtime 1.4.3 group `69e3fbda` (nhánh local `ota/1.4.3-ten-khong-cat` → `19157be9`, cherry-pick gộp sạch;
   kiểm kiểu + 7 ca test + chạy giả lập web từ nhánh đó trước khi đẩy; KHÔNG thử kênh preview trên máy thật). Hệ quả đã báo anh trước:
   nhân viên có quyền Đơn hàng của MỌI shop thấy thêm tab Đơn hàng; có quyền Tổng quan / Dòng tiền / Quảng cáo thấy tab Trang chủ.
-- **⏳ Anh:** `git push` (commit mã + commit docs); bảo Nguyệt tắt hẳn app mở lại 2 lần rồi báo em thấy đủ tab chưa. Rút OTA: docs mục 6.
+- **Anh: "Em commit và push đi" →** push master 23/11 (mã `c3d6ec3a` + docs). Chỉ đụng `hubsell-mobile` + tài liệu nên Render không deploy lại.
+- **⏳ Anh:** bảo Nguyệt tắt hẳn app mở lại 2 lần rồi báo em thấy đủ tab chưa. Rút OTA: docs mục 6.
 - **Điểm lệch còn lại (docs mục 7):** chỉ có Báo cáo dòng tiền mà không có Tổng quan thì trang Tài chính thiếu 2 khối (cửa
   `/api/analytics` gác bằng Tổng quan); chỉ có Giá vốn / Thu chi vận hành thì chưa có lối vào; nhân viên không nhận tin đẩy.
 

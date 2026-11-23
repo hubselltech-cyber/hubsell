@@ -1,6 +1,6 @@
 # App mobile — nhân viên thấy đúng những gì đã được tick quyền (23/11/2026)
 
-> Trạng thái: **ĐÃ TỚI KHÁCH bằng OTA 23/11/2026** (anh: "Duyệt, commit + OTA") — commit `c3d6ec3a` trên master (chưa push),
+> Trạng thái: **ĐÃ TỚI KHÁCH bằng OTA 23/11/2026** (anh: "Duyệt, commit + OTA") — commit `c3d6ec3a` trên master (đã push 23/11),
 > OTA kênh production cho cả runtime 1.5.0 và 1.4.3 (mục 6). CHƯA thử trên máy thật.
 > Không đổi backend, không thêm thư viện gốc.
 
