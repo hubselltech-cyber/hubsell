@@ -4,8 +4,8 @@
 > nại nhất định. Thời gian đó bắt đầu khi nào, kết thúc khi nào là điều quan trọng nhất để nhắc khách 'hạn khiếu nại'.
 > Đầu tiên hãy kiểm tra nội dung mới nhất về quy định của các sàn để lên phương án thêm cột 'Hạn khiếu nại'."
 >
-> Trạng thái: đã tra quy định (mục 1), kiểm API bằng dữ liệu thật (mục 6–7), **lát 1 máy chủ đã code trên local, chưa
-> commit / chưa lên prod (mục 8)**. Chưa có giao diện. Hai câu ở mục 5 vẫn chờ anh.
+> Trạng thái: đã tra quy định (mục 1), kiểm API bằng dữ liệu thật (mục 6–7), **lát 1 máy chủ LÊN PROD 23/11 ~15:25
+> (`9d131697`, mục 8–9)**. Chưa có giao diện. Hai câu ở mục 5 vẫn chờ anh.
 >
 > Tra trước đó (13/11, `DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md` mục 8.3) đã có số Shopee / TikTok; lần này đọc lại trang
 > chính thức, có thêm Lazada (lần trước không đọc được) và các trường hạn trong API.
@@ -221,7 +221,7 @@ chưa in giá trị).
 - Việc phụ có thể làm cùng lát: sửa `returnDeliveredAt` Shopee = hạn − 48 giờ cho chính xác — **đụng cột Lãi/Lỗ đang đọc, phải đo
   trước**, không gộp vào lát cột hạn.
 
-## 8. Lát 1 đã code trên local (23/11 chiều) — CHƯA commit, CHƯA lên prod
+## 8. Lát 1 máy chủ (23/11 chiều) — commit `9d131697`, lên prod mục 9
 
 Anh: "Duyệt, làm lát 1". Phạm vi: máy chủ LƯU hạn sàn trả + hàm tính hạn để lát giao diện đọc. Không có giao diện, không
 đụng sổ cái / Lãi/Lỗ / quảng cáo, **0 call sàn thêm**.
@@ -263,3 +263,27 @@ chạy lại 3 tệp trong số đó trên mã CHƯA sửa vẫn trượt y hệ
 - Đơn hoàn có từ trước: không điền lại; yêu cầu nào còn biến động thì lượt đồng bộ kế tiếp tự ghi (Shopee quét 7 ngày biến động).
 - Chưa có chỉ mục, chưa có API / cột giao diện (lát 2), chưa có chuông (lát 3).
 - Mốc `returnDeliveredAt` Shopee trễ 1–2 giờ: KHÔNG sửa trong lát này.
+
+## 9. Lên prod 23/11 (anh: "Push đi")
+
+**Deploy:** worker áp migration lúc 15:15:24 → 15:15:41 (17 giây, phải chờ khóa bảng đơn) và lên bản mới. Web chạy
+`prisma migrate deploy` CÙNG LÚC → chờ khóa cố vấn của Prisma quá 10 giây (`P1002 … advisory lock`) → exit 1 → Render đánh
+"Deploy failed", web giữ bản cũ `e359d47` (chạy bình thường với hai cột thêm). Không phải lỗi mã. Em bấm Manual Deploy → Deploy
+latest commit cho web; `/health` báo `9d131697` lúc ~15:25. Bẫy đã ghi vào memory gotcha migration.
+
+**Soi database prod ~15:27 (≈ 10 phút sau khi worker lên, SQL chỉ đọc):**
+
+| Sàn | Đơn có hạn | Số gian | Hạn tạm | Hạn khớp đúng mốc kiện về + 48 giờ (± 1 giờ) | Kho đã quét | Đã quá hạn mà kho chưa quét | Còn ≤ 24 giờ |
+|---|---|---|---|---|---|---|---|
+| Shopee | 100 | 9 | 18 (cả 18 rơi 23:59 giờ VN) | 35 / 80 đơn hạn chốt có mốc kiện về | 0 | 48 | 23 |
+| TikTok | 107 | 14 | 0 | 106 / 107 | 3 | 7 | 50 |
+
+- TikTok khớp gần trọn (106 / 107) — đúng như thiết kế.
+- Shopee: hạn tạm đúng 18 / 18. Hạn chốt chỉ 35 / 80 khớp `returnDeliveredAt` + 48 giờ → mốc kiện về Shopee Hubsell đang lưu lệch
+  nhiều hơn "1–2 giờ" đã thấy ở mục 7 (mốc lấy `update_time` lúc đọc chi tiết, có thể trễ cả ngày). Hạn hiển thị KHÔNG bị ảnh
+  hưởng vì lấy thẳng của sàn; chỉ Lãi/Lỗ đọc mốc kiện về — chưa đo, không sửa trong lát này.
+- 48 đơn Shopee + 7 đơn TikTok đã quá hạn mà kho chưa quét: shop không dùng màn quét kho, hoặc lỡ hạn thật — chưa phân biệt được.
+- Mới 9 gian Shopee / 14 gian TikTok có hạn: lượt quét hoàn chạy theo lịch từng gian, các gian còn lại sẽ có dần. Đơn kho đã quét
+  từ trước (vd gian chạy thử mục 7) chưa thấy hạn — đợi lượt quét của gian đó rồi kiểm lại.
+
+**Chưa làm:** soi lại sau vài giờ (đủ gian, đơn kho đã quét có hạn chưa); lát 2 giao diện chờ anh chốt 2 câu mục 5.

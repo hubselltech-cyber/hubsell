@@ -35,7 +35,12 @@
   hoàn tiền thì xóa; hàm thuần `lib/return-complaint-due.ts` (`complaintDueOf`: hạn sàn trả → luật → ước tính từ giờ kho quét). 0 call
   sàn thêm, không đụng sổ cái. Test mới 23 + 15 + 1 ca database, tsc sạch; cả bộ backend 2.947 qua / 24 trượt ở 12 tệp sổ cái, xóa
   gian, giữ video — 3 tệp chạy lại trên mã chưa sửa vẫn trượt y hệt (dòng sổ bẩn trong database local), có từ trước.
-- **⏳ Chờ anh:** duyệt commit + push lát 1; 2 câu ở mục 5 tài liệu (ô hiện hạn nào, đặt cột ở đâu).
+- **Anh: "Push đi" → LÊN PROD `9d131697`** (docs mục 9). Worker áp migration 17 giây (chờ khóa Order); web cùng lúc chờ khóa cố vấn
+  Prisma quá 10 giây (P1002) → Render "Deploy failed", web giữ bản cũ → em Manual Deploy lại web, `/health` đúng bản ~15:25.
+  Soi prod ~15:27: Shopee 100 đơn có hạn / 9 gian (18 hạn tạm, đúng 23:59 giờ VN), TikTok 107 / 14 gian (106 khớp mốc kiện về +
+  48 giờ). Shopee hạn chốt chỉ 35 / 80 khớp `returnDeliveredAt` + 48 giờ → mốc kiện về Shopee lưu lệch nhiều (chỉ Lãi/Lỗ đọc, chưa
+  sửa). 48 + 7 đơn đã quá hạn mà kho chưa quét. ⏳ soi lại sau vài giờ khi đủ gian.
+- **⏳ Chờ anh:** 2 câu ở mục 5 tài liệu (ô hiện hạn nào, đặt cột ở đâu) rồi mới làm lát 2 giao diện.
 
 ---
 ## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA, LÊN PROD 23/11 ~10:50 (`64563bc2`)
