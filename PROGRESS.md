@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA + commit, CHƯA push
+## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA, LÊN PROD 23/11 ~10:50 (`64563bc2`)
 
 - **Anh báo:** trên TikTok hoàn thành công / ship trả hàng thành công, Hubsell vẫn chờ; khách vừa quét nhận.
 - **Số prod (SQL chỉ đọc 10:19):** kho `RECEIVED` 09:31 (Đã nhận · chờ nhập kho — CHƯA nhập kho, `stockRestoredAt` trống);
@@ -31,7 +31,10 @@
   `returnDeliveredAt` ngay khi kiện về (trước: chờ `_COMPLETE`, muộn ~2 ngày). 0 call thêm, không đổi schema / giao diện. tsc sạch,
   vitest 6 tệp 50 / 50. Lãi/Lỗ thực hiện: vốn kiện đã về mà kho chưa quét được thu hồi sớm ≤ 48 giờ, số cuối không đổi; CHƯA mô
   phỏng từng chiến dịch quảng cáo — chờ anh duyệt đẩy.
-- Chi tiết: docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18 (payload 18.7, bản sửa 18.8).
+- **Anh: "Push đi" → LÊN PROD 23/11 ~10:50 (`64563bc2`).** Soi database 11:00: đơn anh báo có mốc sàn 22/11 09:07:27; gian đó 56 /
+  110 đơn "khách đã gửi, kho chưa quét" đã có mốc kiện về (đều trong 48 giờ gần nhất, không cái nào quá 49 giờ); toàn hệ thống
+  144 đơn / 16 gian và còn tăng theo lượt quét. CHƯA mở màn của khách để nhìn cột; chưa mô phỏng quảng cáo.
+- Chi tiết: docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18 (payload 18.7, bản sửa 18.8, soi prod 18.9).
 
 ---
 ## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), PUSH master 23/11 (`c3d6ec3a`)

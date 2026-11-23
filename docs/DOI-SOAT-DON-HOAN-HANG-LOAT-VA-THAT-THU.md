@@ -482,7 +482,7 @@ Soi bằng tài khoản Chủ Shop Hubsell, ba API thật, 6 kỳ:
 - **CHƯA kiểm trên prod:** báo hỏng một đơn MỚI sau bản này (mốc `returnDamagedAt` thật + bước tính nốt sổ) — mới kiểm ở local; trang Tổng quan + cầu nối mới so số qua API, chưa soi hình; câu mới ở bước cầu nối Lãi/Lỗ (web Vercel) chưa mở xem.
 - **✅ Anh chốt 20/11 đêm: "Như vậy được rồi. Từ nay chuẩn là được rồi" → đơn `26102183NBVE4N` ĐỂ NGUYÊN ở 31/10, không ghi tay mốc cho đơn báo hỏng trước bản này.**
 
-## 18. Anh báo 23/11/2026: đơn TikTok `587267766969206097` — sàn báo kiện trả đã về, Hubsell vẫn "đang hoàn về" — gốc đã tìm ra bằng payload thật (18.7), đã sửa (18.8), đã commit 23/11, CHƯA push / chưa lên prod
+## 18. Anh báo 23/11/2026: đơn TikTok `587267766969206097` — sàn báo kiện trả đã về, Hubsell vẫn "đang hoàn về" — gốc đã tìm ra bằng payload thật (18.7), đã sửa (18.8), ✅ LÊN PROD 23/11 ~10:50 (commit `64563bc2`), đã soi prod ở 18.9
 
 Anh: "Đơn của khách có trạng thái trên tiktok là hoàn thành công, ship trả hàng thành công nhưng trên hubsell vẫn ở trạng thái đang chờ nhận hàng. Vừa nãy khách đã quét đơn thật và nhập kho rồi. Tuy nhiên trạng thái đang bị lệch."
 
@@ -572,7 +572,7 @@ Kết luận từng nguồn:
 - **(c) hành trình đơn `orders/{id}/tracking` — KHÔNG có chặng trả hàng.** Dừng ở "Your package has been delivered. Recipient: Customer" (chiều đi). Chữ trả về là tiếng Anh + `action_code` (50101 giao thành công, 40501 đang giao…), không phải tiếng Việt.
 - **Vì sao TikTok ghi "hoàn thành công":** phần lớn yêu cầu có `REFUND_SUCCESS` (role SYSTEM, "Hoàn tất hoàn tiền") chỉ 4–6 giây sau `BUYER_SHIPPED` — sàn hoàn tiền cho khách ngay khi khách gửi kiện (`is_quick_refund`), trong khi `return_status` vẫn `BUYER_SHIPPED_ITEM`.
 
-### 18.8 Đã sửa (23/11/2026) — đã commit, CHƯA push / chưa lên prod
+### 18.8 Đã sửa (23/11/2026) — commit `64563bc2`, ĐÃ LÊN PROD 23/11 ~10:50 (soi ở 18.9)
 
 - `backend/src/integrations/tiktok/returns-sync.ts`: hàm thuần `tiktokReturnParcelArrivedAt` (yêu cầu `BUYER_SHIPPED_ITEM` + hạn `SELLER_RESPOND_RECEIVE_PACKAGE` = `update_time` + 48 giờ ± 1 giờ → mốc = `update_time`); `planTiktokReturnUpdate` ghi `returnDeliveredAt` từ mốc này (một lần, như cũ). Dung sai 1 giờ là số tự chọn — cả 6 mẫu lệch 0 giây; sàn đổi số giờ kiểm hàng thì hàm trả null (giữ hành vi cũ), không báo sai.
 - `tiktok/client.ts`: khai `seller_next_action_response`. `lib/return-shipping.ts`: sửa chú thích.
@@ -581,3 +581,17 @@ Kết luận từng nguồn:
 - **Kiểm:** tsc sạch; vitest 6 tệp liên quan 50 / 50 (8 ca mới dùng đúng số payload thật; gồm các tệp chạy trên Postgres local).
 - **Ảnh hưởng Lãi/Lỗ thực hiện (đã đọc mã, CHƯA mô phỏng từng chiến dịch quảng cáo):** `returnGoodsRecovered` thu hồi giá vốn khi có `returnDeliveredAt` → với kiện đã về mà kho chưa quét, vốn được ghi thu hồi sớm hơn tối đa ~48 giờ (trước: chờ `_COMPLETE`); số cuối cùng không đổi; cùng nghĩa với Shopee (`LOGISTICS_DELIVERY_DONE`). Kiện kho quét ngay thì không đổi gì. Trần trên nếu MỌI đơn `BUYER_SHIPPED_ITEM` đang chờ đều đã về (thực tế chỉ phần về trong 48 giờ gần nhất): 1.268 đơn / 72 gian, giá vốn phần trả ≈ 71,0 triệu, gian nhiều nhất 277 đơn. Không đổi công thức, không tăng phiên bản sổ.
 - **Chưa làm / chưa kiểm:** chưa thấy chạy trên prod; chưa có thông báo "kiện đã về, kho chưa quét"; `REJECT_RECEIVE_PACKAGE` (người bán nhận kiện rồi từ chối) vẫn bị coi là yêu cầu chết như cũ; mẫu chữ "hãng đã trả kiện" của kiện GIAO THẤT BẠI TikTok (mục 12) vẫn chưa đối chiếu — hành trình thật là tiếng Anh + `action_code`, cần một đơn giao thất bại đã về để lấy mã.
+
+### 18.9 Đã lên prod + đã soi (23/11/2026 ~11:00)
+
+Anh: "Commit…" rồi "Push đi" → commit `64563bc2`, push `3c223147..64563bc2`; `/health` backend prod báo bản mới sau ~2 phút. Soi bằng SQL chỉ đọc:
+
+| Lúc | Đơn anh báo — mốc sàn | Gian này: chờ về + đã có mốc / chưa có | Toàn hệ thống: chờ về + đã có mốc |
+|---|---|---|---|
+| 10:50 (vừa deploy) | trống | 0 / 106 | 1 đơn / 1 gian |
+| 10:56 | trống (gian chưa tới lượt) | 0 / 106 | 33 đơn / 9 gian |
+| 11:00 | **22/11 09:07:27** | **56 / 54** | 144 đơn / 16 gian (còn tăng theo lượt quét) |
+
+- Mốc của đơn anh báo đúng bằng `update_time` trong payload (18.7).
+- 56 mốc của gian: 27 cái ngày 22/11, 29 cái ngày 23/11, cũ nhất 22/11 09:07, **không cái nào quá 49 giờ** — khớp mô hình (quá 48 giờ thì sàn đã đóng yêu cầu). Tức gian này đang có 56 kiện hãng đã giao về mà kho chưa quét nhận; trước bản này cả 56 hiện "Đang hoàn về".
+- **CHƯA kiểm:** chưa mở màn Đối soát đơn hoàn của khách để nhìn cột (tài khoản điều hành không có gian) — mới kiểm qua database + test `returnShippingOf`; chưa theo một đơn từ lúc có mốc tới lúc sàn sang `_COMPLETE` để chắc mốc không bị ghi lại; chưa mô phỏng quảng cáo.
