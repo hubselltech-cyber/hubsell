@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 23/11 chiều — Cột "Hạn khiếu nại" cho đơn hoàn: tra quy định mới nhất 3 sàn + phương án, CHƯA CODE
+
+- **Anh hỏi** (ảnh tab Video đóng hàng → Đơn hoàn): hạn khiếu nại đơn trả hàng bắt đầu / kết thúc khi nào → tra quy định mới nhất
+  để lên phương án cột "Hạn khiếu nại".
+- **Đã đọc trang chính thức 23/11:** kiện khách trả về tới shop — **cả 3 sàn chỉ 2 ngày** (Shopee: nút khiếu nại biến mất, tính cả
+  T7/CN; TikTok: tự hoàn tiền sau 48 giờ, khớp hạn `SELLER_RESPOND_RECEIVE_PACKAGE` mình đo; Lazada: hệ thống tự quyết). TikTok +
+  Lazada còn cửa khiếu nại 7 ngày chạy song song. Giao thất bại kiện về hỏng: Shopee 7 ngày, Lazada 7 ngày, TikTok tối đa 40 ngày.
+  Shopee bản 06/11/2026 thêm "hoặc ngày nhận hàng hoàn dự kiến, tùy điều kiện nào đến trước". Lazada "90 ngày" của lần tra 13/11
+  là blog cũ — trang 20/11/2026 ghi 7 ngày.
+- **Mốc Hubsell có:** TikTok chính xác (`returnDeliveredAt` từ 23/11 + hạn sàn trong payload, chưa lưu); Shopee có mốc kiện về
+  (gần đúng) và API có `return_seller_due_date` chưa đọc; Lazada không có mốc kiện về; giao thất bại cả 3 sàn không lưu mốc kiện về.
+- **Phương án** `docs/HAN-KHIEU-NAI-DON-HOAN.md`: một ô = hạn gần nhất còn tác dụng (đếm ngược, đỏ ≤ 24 giờ), ưu tiên hạn sàn trả
+  nguyên văn, lùi về luật, cuối cùng "ước tính từ lúc kho nhận" có ghi chữ; cột `Order.returnComplaintDueAt` do một hàm thuần ghi,
+  0 call sàn thêm; 4 lát (0 script chỉ đọc Shopee/Lazada → 1 backend → 2 web + thẻ "Sắp hết hạn" → 3 chuông + app).
+- **Anh: "cái trả hàng này hình như có API về thời gian khiếu nại" → CÓ** (docs mục 6, đọc trang gốc open.shopee.com): `get_return_list`
+  — lệnh lượt quét hoàn nào cũng gọi — có sẵn `due_date`, `return_ship_due_date`, **`return_seller_due_date`**; `get_return_detail`
+  thêm `seller_evidence_deadline`, `seller_compensation_due_date`, `offer_due_date`. Hubsell chưa đọc trường nào. Chưa kiểm giá trị
+  thật → viết script chỉ đọc `backend/scripts/return-due-date-probe.ts` (3 sàn, tsc sạch), **chưa commit / chưa chạy** (local không
+  có token gian thật; cần push + Render Shell worker).
+- **⏳ Chờ anh:** 3 câu ở mục 5 tài liệu.
+
+---
 ## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA, LÊN PROD 23/11 ~10:50 (`64563bc2`)
 
 - **Anh báo:** trên TikTok hoàn thành công / ship trả hàng thành công, Hubsell vẫn chờ; khách vừa quét nhận.
