@@ -219,3 +219,45 @@ mới cho nhân viên (lát 2, 3). Tài khoản chủ shop không đổi hành v
 
 **Còn lại:** lát 2 (app: bật chuông + đăng ký máy cho nhân viên, đường dẫn trong tin về đúng màn có quyền, OTA) · lát 3 (web: vẽ
 chuông cho nhân viên + luồng SSE theo phạm vi).
+
+## 10. Lát 2 (app) — ĐÃ OTA 23/11/2026 ~16:50 cho khách 1.5.0 + 1.4.3, CHƯA thử máy thật
+
+Anh: "Duyệt, làm lát 2". Chỉ đổi JS → đi OTA được (1.5.0 từ master, 1.4.3 từ nhánh `ota/1.4.3-ten-khong-cat`). Cần lát 1 trên prod (đã có).
+
+**Đã làm:**
+- `lib/permissions.ts`: cờ `access.notifications` = chủ shop, hoặc nhân viên có ít nhất một quyền ứng với một mục thông báo (bản sao
+  tập quyền trong `CATEGORY_PERMISSIONS` của backend: Đơn hàng, Đối soát đơn hoàn, Tổng kho, Báo cáo dòng tiền, Hóa đơn & Thuế, Trợ lý
+  quảng cáo, KOC). `bellTabFor(user)` = tab mang chuông: tab đầu tiên người đó có (Trang chủ → Đơn hàng → Kho).
+- Chuông: Trang chủ như cũ (chủ shop không đổi); nhân viên không có Trang chủ → góc phải tiêu đề "Đơn hàng"; không có cả Đơn hàng → góc
+  phải tiêu đề "Kho".
+- `NotificationsContext`: tải danh sách, đăng ký máy nhận tin đẩy, nghe tin tới / bấm tin — mở cho mọi người có `access.notifications`
+  (trước đây chỉ chủ shop). Máy chủ lọc từng dòng (lát 1).
+- Bấm thông báo: `targetAllowed` (lib/notification-target.ts) — đích người đó không vào được (Quảng cáo khi không có quyền quảng cáo,
+  gói dịch vụ, Trợ lý, link Seller Center) thì dòng thành chỉ đọc, không mở màn rồi bị đá về.
+- Màn Thông báo: mở cho người có chuông; nút Cài đặt thông báo chỉ chủ shop; nút quay lại về tab đầu của người đó.
+
+**Đã kiểm:** tsc sạch; eslint các tệp đã sửa không thêm lỗi; test app 46 / 46 (thêm ca chuông + quyền mở đích). Giả lập web + backend
+local, 6 thông báo thử (đơn mới gian 1, khách xin hủy gian 2, hoàn hàng gian 1, báo cáo tuần, gói dịch vụ, quảng cáo TikTok gian 1):
+
+| Tài khoản | Chuông ở | Thấy |
+|---|---|---|
+| chủ shop | Trang chủ | 6, có nút Cài đặt thông báo |
+| đủ quyền (trừ gói), đủ gian | Trang chủ | 5 (không gói dịch vụ), không nút cài đặt |
+| mẫu Nhân viên kho, chỉ gian 1 | Đơn hàng | 2: đơn mới gian 1, hoàn hàng gian 1; bấm "hoàn về" mở Kho → Đơn hoàn |
+| chỉ Đối soát đơn hoàn | Kho | hoàn hàng (đã đọc vì nhân viên kho vừa mở — đã đọc dùng chung) |
+| chỉ Tổng quan | — | không chuông; gõ thẳng /notifications bị đưa về Trang chủ |
+
+**CHƯA kiểm:** tin đẩy thật về máy nhân viên (giả lập web không có push — cần máy thật sau OTA); hộp xin quyền thông báo hiện lần đầu
+khi nhân viên mở bản OTA. **Nhân viên chưa tắt được tin đẩy trên máy trong app** (công tắc nằm ở Cài đặt thông báo — màn chỉ chủ shop);
+muốn tắt thì tắt trong cài đặt điện thoại.
+
+**Phát hành 23/11 (anh: "Duyệt, commit + OTA"), kênh production:**
+
+| Bản khách | Dựng từ | Update group |
+|---|---|---|
+| runtime **1.5.0** | master `d896e20c` | `8d5b9a7b-5dfe-47f7-823a-6546336cc0ff` |
+| runtime **1.4.3** | nhánh local `ota/1.4.3-ten-khong-cat` `43dbf019` (cherry-pick gộp sạch) | `68d32820-5299-4653-b60b-03256b9b0b14` |
+
+Bản 1.4.3: tsc sạch + 46 ca test trên chính nhánh; 8 tệp dùng chung giống hệt bản đã thử giả lập trên master (chỉ khác ký tự xuống
+dòng); chuông ở tiêu đề Đơn hàng nằm đúng hàng tiêu đề. Không chạy lại giả lập từ nhánh. Rút lại: `eas update:republish` nhóm trước —
+1.5.0: `8e004117-df9d-43c1-bc6b-deede16f387d`, 1.4.3: `69e3fbda-9352-4ba0-ae8d-2585664af173`.

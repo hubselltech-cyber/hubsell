@@ -107,7 +107,17 @@
   **Anh: "Duyệt, commit + push" →** push master 23/11 ~10:13 (mã `30e64dc4`, docs `23f6ac09`); `/health` backend web trả
   `23f6ac09` lúc 10:15 → `prisma migrate deploy` trong lệnh khởi động đã qua (migration thêm 2 cột đã áp trên prod). Worker không có
   `/health` công khai → CHƯA xác nhận bản worker. CHƯA đọc được dòng thông báo mới nào trên prod để soi cột `category` /
-  `channelIds`. ⏳ anh duyệt làm lát 2 (app) — xong lát 2 nhân viên mới thấy chuông.
+  `channelIds`.
+- **Anh: "Duyệt, làm lát 2" → LÁT 2 (app) ĐÃ OTA 23/11 ~16:50 cho khách 1.5.0 + 1.4.3** (docs mục 10): cờ `access.notifications` + `bellTabFor`
+  (chuông ở tab đầu của người đó: Trang chủ → Đơn hàng → Kho; chủ shop không đổi); `NotificationsContext` mở cho người có chuông (danh
+  sách, đăng ký máy nhận tin đẩy, bấm tin); `targetAllowed` — đích không vào được thì dòng chỉ đọc; màn Thông báo mở cho người có
+  chuông, nút Cài đặt chỉ chủ shop. Kiểm: tsc sạch, eslint không thêm lỗi, test app 46 / 46, giả lập web local 5 tài khoản đúng (bảng
+  ở docs). CHƯA kiểm tin đẩy thật (cần máy thật sau OTA). Nhân viên chưa tắt được tin đẩy trong app (chỉ qua cài đặt điện thoại).
+  Dữ liệu thử local đã dọn.
+  **Anh: "Duyệt, commit + OTA" →** commit `d896e20c` (master, CHƯA push); OTA kênh production: runtime 1.5.0 group `8d5b9a7b` (master),
+  runtime 1.4.3 group `68d32820` (nhánh local `ota/1.4.3-ten-khong-cat` → `43dbf019`, cherry-pick gộp sạch; tsc + 46 ca test trên
+  nhánh; tệp dùng chung giống hệt bản đã thử trên master). CHƯA thử máy thật. Thư mục tạm `D:\wt143` chưa xóa được (bước kiểm an toàn
+  chặn lệnh xóa) — anh xóa tay. ⏳ anh: nhân viên tắt hẳn app mở lại 2 lần, cho phép thông báo, báo em thấy chuông + nhận tin chưa.
 - **Điểm lệch còn lại (docs mục 7):** chỉ có Báo cáo dòng tiền mà không có Tổng quan thì trang Tài chính thiếu 2 khối (cửa
   `/api/analytics` gác bằng Tổng quan); chỉ có Giá vốn / Thu chi vận hành thì chưa có lối vào; nhân viên không nhận tin đẩy.
 
