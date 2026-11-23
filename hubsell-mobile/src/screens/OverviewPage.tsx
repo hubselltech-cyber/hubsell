@@ -592,7 +592,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <DonutChart
                 size={150}
                 centerLabel={compactMoney(channelTotalRevenue)}
-                centerSub="giá trị đơn hôm nay"
+                centerSub="giá trị đơn"
                 slices={channelRows.map((r) => ({
                   label: channelLabel(r.channel),
                   value: r.revenue,
@@ -623,15 +623,19 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                           opacity: idle ? 0.4 : 1,
                         }}
                       />
+                      {/* Tên sàn KHÔNG đặt bề ngang cứng (trước w-16 = 64 px: máy chữ to
+                          gãy "Shope / e") — giữ nguyên chữ, không bao giờ co hay xuống dòng. */}
                       <Text
-                        className={`w-16 text-[13px] font-medium ${
+                        numberOfLines={1}
+                        className={`shrink-0 text-[13px] font-medium ${
                           idle ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         {channelLabel(r.channel)}
                       </Text>
-                      <View className="flex-1 items-end">
+                      <View className="min-w-0 flex-1 items-end">
                         <Text
+                          numberOfLines={1}
                           className={`text-[13px] font-bold ${
                             idle ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-slate-100"
                           }`}
@@ -639,7 +643,14 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                         >
                           {compactMoney(r.revenue)}
                         </Text>
-                        <Text className="text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
+                        {/* Một dòng; hẹp thì co chữ (tối đa còn 80 %) thay vì cắt "TB 147 k/" */}
+                        <Text
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
+                          className="text-[11px] text-slate-500 dark:text-slate-400"
+                          style={TABULAR}
+                        >
                           {idle
                             ? "Chưa có đơn"
                             : `${share}% · ${groupVN(r.count)} đơn · TB ${compactMoney(Math.round(r.revenue / r.count))}/đơn`}

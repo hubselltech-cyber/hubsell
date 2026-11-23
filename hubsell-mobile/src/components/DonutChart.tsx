@@ -76,14 +76,26 @@ export function DonutChart({
             ))}
           </G>
         </Svg>
+        {/* Chữ tâm nằm GỌN trong lòng vòng (đường kính trong − 12 px lề): máy để chữ to
+            thì co chữ lại, không tràn đè lên vòng màu (23/11/2026). */}
         <View className="absolute inset-0 items-center justify-center">
-          <Text
-            className="text-2xl font-bold text-slate-900 dark:text-slate-100"
-            style={TABULAR}
-          >
-            {centerLabel}
-          </Text>
-          <Text className="text-[11px] text-slate-400 dark:text-slate-500">{centerSub}</Text>
+          <View style={{ width: size - 2 * stroke - 12, alignItems: "center" }}>
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              className="text-2xl font-bold text-slate-900 dark:text-slate-100"
+              style={TABULAR}
+            >
+              {centerLabel}
+            </Text>
+            <Text
+              numberOfLines={2}
+              className="text-center text-[11px] text-slate-400 dark:text-slate-500"
+            >
+              {centerSub}
+            </Text>
+          </View>
         </View>
       </View>
     </View>

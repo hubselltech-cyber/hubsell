@@ -466,7 +466,7 @@ function ZoneCard({
             <Text className="text-xs text-slate-600 dark:text-slate-300">Cao từ đáy tem</Text>
             <View className="flex-row items-center gap-3">
               <StepButton icon="remove" disabled={!canEdit} onPress={() => step(-ZONE_STEP_MM)} />
-              <Text className="w-14 text-center text-sm font-bold text-slate-900 dark:text-slate-100" style={TABULAR}>
+              <Text className="min-w-14 shrink-0 text-center text-sm font-bold text-slate-900 dark:text-slate-100" numberOfLines={1} style={TABULAR}>
                 {mm} mm
               </Text>
               <StepButton icon="add" disabled={!canEdit} onPress={() => step(ZONE_STEP_MM)} />

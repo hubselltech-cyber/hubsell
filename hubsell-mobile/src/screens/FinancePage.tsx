@@ -195,7 +195,7 @@ function BreakdownItems({
               <Text className="text-[11px] text-slate-600 dark:text-slate-300" style={TABULAR}>
                 {compactMoney(sub.amount)}
               </Text>
-              <Text className="w-11 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+              <Text className="min-w-[44px] shrink-0 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
                 {Math.round(sub.percent)}%
               </Text>
             </View>
