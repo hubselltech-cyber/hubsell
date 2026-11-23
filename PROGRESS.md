@@ -29,7 +29,7 @@
   Gốc ở máy chủ, không phải app: `/api/notifications` gác `adminOnly`, luồng chuông web từ chối vai khác ADMIN, tin đẩy chỉ gửi máy
   có `userId = ownerId` (`services/push.ts`) → nhân viên không có chuông ở cả web lẫn app. Nợ cũ đã ghi ở
   docs/THONG-BAO-DAY-MOBILE.md ("Nhân viên chưa có chuông (GĐ1)"). Hướng làm + 3 điểm chốt ở docs/MOBILE-PHAN-QUYEN-NHAN-VIEN.md mục 8.
-- **Anh: "Duyệt, làm lát 1" → LÁT 1 (máy chủ) ĐÃ CODE, CHƯA commit / CHƯA lên prod** (docs mục 9): migration
+- **Anh: "Duyệt, làm lát 1" → LÁT 1 (máy chủ) LÊN PROD 23/11 10:15 (`30e64dc4`)** (docs mục 9): migration
   `20261123100000_notification_category_channels` (cột `category` + `channelIds`, chỉ sửa metadata, có khối lấy khóa thử lại);
   `services/notification-access.ts` một nguồn luật mục ↔ quyền + phạm vi gian; `/api/notifications` bỏ `adminOnly`, danh sách / số
   chưa đọc / đánh dấu đọc theo phạm vi người gọi, cài đặt + gửi thử vẫn chỉ chủ shop; tin đẩy gửi thêm máy nhân viên được thấy;
@@ -39,7 +39,10 @@
   Kiểm: tsc sạch; vitest 19 tệp liên quan 195 qua; chạy thật trên local 5 nhân viên × 10 loại thông báo 27 / 27 đúng; chọn máy nhận
   tin đẩy 9 / 9 đúng (lời gọi ra Expo thay bản giả). Lát này một mình không đổi gì trên màn của ai — nhân viên CHƯA thấy chuông tới
   khi xong lát 2 (app) / lát 3 (web). DB local đã dọn dữ liệu thử; thông báo cũ của tài khoản seed local bị đánh dấu đã đọc.
-  ⏳ anh duyệt commit + push (push = Render deploy + chạy migration trên prod).
+  **Anh: "Duyệt, commit + push" →** push master 23/11 ~10:13 (mã `30e64dc4`, docs `23f6ac09`); `/health` backend web trả
+  `23f6ac09` lúc 10:15 → `prisma migrate deploy` trong lệnh khởi động đã qua (migration thêm 2 cột đã áp trên prod). Worker không có
+  `/health` công khai → CHƯA xác nhận bản worker. CHƯA đọc được dòng thông báo mới nào trên prod để soi cột `category` /
+  `channelIds`. ⏳ anh duyệt làm lát 2 (app) — xong lát 2 nhân viên mới thấy chuông.
 - **Điểm lệch còn lại (docs mục 7):** chỉ có Báo cáo dòng tiền mà không có Tổng quan thì trang Tài chính thiếu 2 khối (cửa
   `/api/analytics` gác bằng Tổng quan); chỉ có Giá vốn / Thu chi vận hành thì chưa có lối vào; nhân viên không nhận tin đẩy.
 

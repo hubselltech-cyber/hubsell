@@ -161,7 +161,7 @@ tuần" (doanh thu, lãi), "Gói dịch vụ, thanh toán"; nhân viên bị gi�
 3. **Thông báo cũ (trước ngày lên) không có cột gian** → nhân viên bị giới hạn gian chỉ thấy thông báo từ ngày lên trở đi; nhân viên
    được giao đủ gian thấy cả cũ.
 
-## 9. Lát 1 (máy chủ) — ĐÃ CODE 23/11/2026, thử local đạt, CHƯA commit / CHƯA lên prod
+## 9. Lát 1 (máy chủ) — LÊN PROD 23/11/2026 10:15 (`30e64dc4`), thử local đạt, chưa soi dữ liệu prod
 
 Anh: "Duyệt, làm lát 1" (theo ba mặc định ở mục 8). Lát này một mình KHÔNG đổi gì trên màn của ai: app và web chưa gọi các đường
 mới cho nhân viên (lát 2, 3). Tài khoản chủ shop không đổi hành vi.
@@ -211,7 +211,10 @@ mới cho nhân viên (lát 2, 3). Tài khoản chủ shop không đổi hành v
   nhân viên gọi cài đặt / gửi thử → 403; không nhân viên nào thấy dòng cũ.
 - Chọn máy nhận tin đẩy (DB local, lời gọi ra Expo thay bằng bản giả — không tin nào đi ra ngoài): 9 / 9 ca đúng, gồm nhân viên đã
   xóa không nhận, tin thử chỉ tới chủ shop.
-- **CHƯA kiểm:** trên prod; tin đẩy thật tới máy nhân viên (cần lát 2); tải của câu đếm chưa đọc trên shop có rất nhiều thông báo
+- **Trên prod:** push 23/11 ~10:13, `/health` backend web trả `23f6ac09` lúc 10:15 — lệnh khởi động là
+  `prisma migrate deploy && npm run start` nên web lên bản mới nghĩa là migration đã áp. Worker (nơi phát phần lớn thông báo) không
+  có `/health` công khai, chưa xác nhận bản. Chưa đọc dòng `notifications` mới nào trên prod để soi hai cột.
+- **CHƯA kiểm:** tin đẩy thật tới máy nhân viên (cần lát 2); tải của câu đếm chưa đọc trên shop có rất nhiều thông báo
   (câu của nhân viên đi cùng chỉ mục `(ownerId, createdAt)` như câu của chủ shop, thêm điều kiện lọc — chưa đo).
 
 **Còn lại:** lát 2 (app: bật chuông + đăng ký máy cho nhân viên, đường dẫn trong tin về đúng màn có quyền, OTA) · lát 3 (web: vẽ
