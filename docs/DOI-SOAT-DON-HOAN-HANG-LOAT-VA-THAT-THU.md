@@ -481,3 +481,73 @@ Soi bằng tài khoản Chủ Shop Hubsell, ba API thật, 6 kỳ:
 - Màn Báo cáo dòng tiền kỳ "Hôm nay" hiện dòng Thất thu 257.000 đ ở cuối cột Chi phí; kỳ "30 ngày qua" 387.000 đ (đủ 3 đơn anh hỏi). Chú thích dòng đã là câu mới.
 - **CHƯA kiểm trên prod:** báo hỏng một đơn MỚI sau bản này (mốc `returnDamagedAt` thật + bước tính nốt sổ) — mới kiểm ở local; trang Tổng quan + cầu nối mới so số qua API, chưa soi hình; câu mới ở bước cầu nối Lãi/Lỗ (web Vercel) chưa mở xem.
 - **✅ Anh chốt 20/11 đêm: "Như vậy được rồi. Từ nay chuẩn là được rồi" → đơn `26102183NBVE4N` ĐỂ NGUYÊN ở 31/10, không ghi tay mốc cho đơn báo hỏng trước bản này.**
+
+## 18. Anh báo 23/11/2026: đơn TikTok `587267766969206097` — sàn báo kiện trả đã về, Hubsell vẫn "đang hoàn về" — CHỈ KIỂM + viết script đọc payload, chưa sửa mã
+
+Anh: "Đơn của khách có trạng thái trên tiktok là hoàn thành công, ship trả hàng thành công nhưng trên hubsell vẫn ở trạng thái đang chờ nhận hàng. Vừa nãy khách đã quét đơn thật và nhập kho rồi. Tuy nhiên trạng thái đang bị lệch."
+
+### 18.1 Số thật của đơn (SQL chỉ đọc trên prod, 23/11 10:19 giờ VN)
+
+| Cột | Giá trị |
+|---|---|
+| Tạo đơn / giao thành công | 19/11 13:43 / 20/11 13:30 |
+| Khách mở yêu cầu trả hàng | 21/11 10:27, `returnSolution = RETURN_REFUND`, mã vận đơn chiều hoàn có |
+| `platformReturnStatus` | **`BUYER_SHIPPED_ITEM`** — vẫn vậy 48 phút sau khi kho quét |
+| `returnDeliveredAt` (mốc sàn báo kiện về) | trống |
+| Kho | `RECEIVED` lúc 23/11 09:31 = "Đã nhận · chờ nhập kho"; `stockRestoredAt` trống → **chưa nhập kho, chưa cộng tồn** |
+| `shippingStatus` | `CANCELLED` (route quét nhận lẻ ghi — điểm G4 mục 3, chưa sửa) |
+
+### 18.2 Gốc
+
+- **Không phải đồng bộ chết.** Cùng gian, mốc sàn mới nhất ghi lúc 23/11 09:40; lượt quét tầng nhanh vẫn đọc `returns/search` đều.
+- **TikTok không có trạng thái "kiện trả đã về tới shop".** Tài liệu Search Returns 202309 (đọc lại 23/11): `BUYER_SHIPPED_ITEM` = "Buyer has shipped the approved items to seller", bước kế là `REJECT_RECEIVE_PACKAGE` / `RETURN_OR_REFUND_REQUEST_SUCCESS` ("will be refunded") / `_COMPLETE` ("has been refunded"). Tức yêu cầu đứng ở `BUYER_SHIPPED_ITEM` suốt từ lúc khách gửi tới lúc hoàn tiền xong, kể cả khi hãng đã giao kiện về shop.
+- `returnShippingOf` (`backend/src/lib/return-shipping.ts`) chỉ coi "Hoàn thành công" khi sàn sang `_SUCCESS` / `_COMPLETE` hoặc kho đã quét → trong khoảng giữa, cột Trạng thái vận chuyển ghi **"Đang hoàn về · Sàn chưa báo kiện về tới"** dù kiện đã nằm ở shop. Câu chú thích trong mã "đơn khách trả hàng đã có mốc từ API hoàn" đúng với Shopee, **sai với TikTok**.
+
+### 18.3 Cỡ của lỗ hổng (gian này, đơn tạo trong 45 ngày, đo 23/11)
+
+| Nhóm | Số đơn |
+|---|---|
+| Sàn `_COMPLETE`, kho đã quét — sàn báo TRƯỚC kho | 370 |
+| Sàn `_COMPLETE`, kho đã quét — kho quét TRƯỚC sàn | 84–85 |
+| Sàn còn `BUYER_SHIPPED_ITEM`, kho đã quét (ca của đơn này) | 33 |
+| Sàn còn `BUYER_SHIPPED_ITEM`, kho chưa quét | 105 |
+| Sàn `_COMPLETE`, kho chưa quét (dòng đỏ "Kho chưa quét nhận") | 65 |
+
+- 117 / 487 lượt kho quét (24%) diễn ra lúc Hubsell còn ghi "Đang hoàn về".
+- Ở 85 đơn kho quét trước, TikTok đóng yêu cầu sau đó **trung vị 41,5 giờ**, p90 45,6 giờ, lâu nhất 70,4 giờ. Suy ra (chưa có payload chứng minh): sàn chờ hết hạn người bán kiểm hàng ~2 ngày rồi tự hoàn tiền. Đơn này nhiều khả năng tự sang `_COMPLETE` quanh 25/11.
+- Trong 105 đơn "khách đã gửi, kho chưa quét" không biết bao nhiêu kiện đã về tới shop — đây là nhóm cột hiện đang nói sai.
+
+### 18.4 Toàn hệ thống (đơn Chờ hàng về, sàn chưa ghi mốc kiện về — đo 23/11 10:30 qua chỉ mục `Order_return_awaiting_idx`)
+
+| Sàn / trạng thái sàn | Đơn | Gian | Cột Trạng thái vận chuyển đang ghi |
+|---|---|---|---|
+| TikTok `BUYER_SHIPPED_ITEM` | **1.310** | 71 | "Đang hoàn về · Sàn chưa báo kiện về tới" — **điểm mù của mục này** |
+| TikTok `AWAITING_BUYER_SHIP` | 521 | 62 | "Chờ khách gửi hàng" (đúng) |
+| TikTok `CANCELLED_AFTER_SHIP` | 2.898 | 113 | hỏi hành trình hãng lúc xem trang (mẫu chữ "đã trả kiện" vẫn chưa đối chiếu payload thật — mục 12) |
+| Shopee `PROCESSING` / `ACCEPTED` / `REQUESTED` | 328 / 96 / 12 | 58 / 31 / 10 | theo `reverse_logistics_status` của Shopee (có bước kiện về) |
+| Shopee `CANCELLED_AFTER_SHIP` | 383 | 56 | hỏi hành trình hãng lúc xem trang |
+| Lazada | 3 | 1 | — |
+
+Tra lại đơn `587267766969206097` lúc 10:30: không đổi (kho `RECEIVED`, sàn `BUYER_SHIPPED_ITEM`, không có dòng nhật ký tồn nào gắn đơn).
+
+### 18.5 Nguồn có thể cho mốc "kiện trả đã về shop" — cần payload thật mới chốt
+
+Đọc đủ bảng tham số trả về của Search Returns 202309 (23/11): ngoài `return_status` còn **`seller_next_action_response[]` = `{ action, deadline }`**, `action` ∈ `SELLER_RESPOND_REFUND` / `SELLER_RESPOND_RETURN` / **`SELLER_RESPOND_RECEIVE_PACKAGE`** / `SELLER_RESPOND_REPLACEMENT`. Trường này nằm sẵn trong `returns/search` mà lượt quét tầng nhanh nào cũng đọc → nếu dùng được thì **0 call thêm**, lưu được vào DB, lọc / đếm được. Mã hiện KHÔNG đọc trường này (`TikTokReturnOrder` chưa khai).
+
+Tài liệu không nói `SELLER_RESPOND_RECEIVE_PACKAGE` xuất hiện từ lúc khách gửi hay chỉ khi hãng đã giao kiện về shop. Số đo ở 18.3 (sàn đóng yêu cầu sau khi kho quét trung vị 41,5 giờ, p90 45,6) khớp giả thuyết "hạn kiểm hàng 48 giờ tính từ lúc kiện về" nhưng chưa phải bằng chứng.
+
+Ba nguồn cần nhìn payload thật: (a) `seller_next_action_response` + `deadline`; (b) `GET /return_refund/202309/returns/{return_id}/records` — tài liệu nói có "shipment events", không liệt kê tên; (c) hành trình `fulfillment/202309/orders/{id}/tracking` (đang dùng cho kiện giao thất bại).
+
+Script chỉ đọc `backend/scripts/tiktok-return-leg-probe.ts` in cả ba nguồn, tối đa 5 đơn (mỗi đơn 2 + số yêu cầu hoàn call). Cờ `--mau` lấy thêm 2 đơn `BUYER_SHIPPED_ITEM` chờ về lâu nhất + 2 đơn mới nhất của gian để so "mới gửi" với "gửi đã lâu". Chạy trên Render Shell worker sau khi push:
+
+```
+npx tsx scripts/tiktok-return-leg-probe.ts cmwodpg4o0jzeo93t9niui52i 587267766969206097 --mau
+```
+
+Không lấy được payload bằng đường khác: Chrome của anh đang đăng nhập tài khoản điều hành (không có gian), HQ không có chức năng xem thay khách.
+
+### 18.6 Hướng sửa (chờ payload)
+
+- (a) dùng được: `planTiktokReturnUpdate` ghi mốc kiện về từ `seller_next_action_response` → cột, bộ lọc "Hoàn thành công", dòng đỏ "Kho chưa quét nhận" tự đúng cho cả 1.310 đơn, không thêm call. ⚠️ `returnDeliveredAt` là cột Lãi/Lỗ thực hiện đang đọc để thu hồi giá vốn (`returnGoodsRecovered`) → ghi sớm hơn ~2 ngày sẽ làm vốn thu hồi sớm hơn ~2 ngày: phải đo trước / sau rồi mới đẩy, hoặc ghi vào cột riêng.
+- Chỉ (b) / (c) dùng được: cột hỏi thêm lúc xem trang cho đơn TikTok `BUYER_SHIPPED_ITEM` + Chờ hàng về, đúng khuôn kiện giao thất bại (lô 10 đơn, đệm 10 phút, không lưu DB, không quét nền); 1–2 call / đơn / lượt xem.
+- Không nguồn nào dùng được: chỉ sửa câu chữ dòng phụ cho đơn TikTok.

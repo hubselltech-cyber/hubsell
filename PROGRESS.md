@@ -5,6 +5,26 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — CHỈ KIỂM, chưa sửa mã
+
+- **Anh báo:** trên TikTok hoàn thành công / ship trả hàng thành công, Hubsell vẫn chờ; khách vừa quét nhận.
+- **Số prod (SQL chỉ đọc 10:19):** kho `RECEIVED` 09:31 (Đã nhận · chờ nhập kho — CHƯA nhập kho, `stockRestoredAt` trống);
+  `platformReturnStatus` vẫn `BUYER_SHIPPED_ITEM`, không có mốc sàn; `shippingStatus = CANCELLED` (G4 cũ, route quét lẻ ghi).
+- **Gốc:** đồng bộ vẫn chạy (mốc sàn mới nhất của gian 09:40). TikTok không có trạng thái "kiện trả đã về shop" — tài liệu Search
+  Returns 202309: `BUYER_SHIPPED_ITEM` giữ tới khi hoàn tiền (`_SUCCESS` / `_COMPLETE`). `returnShippingOf` vì thế ghi "Đang hoàn
+  về · Sàn chưa báo kiện về tới" trong suốt khoảng đó.
+- **Cỡ (gian này, 45 ngày):** 117 / 487 lượt kho quét (24%) rơi vào lúc Hubsell còn ghi "Đang hoàn về"; kho quét trước thì TikTok
+  đóng yêu cầu sau trung vị 41,5 giờ (p90 45,6); 105 đơn "khách đã gửi, kho chưa quét" đang không biết kiện đã về hay chưa.
+- **Toàn hệ thống (10:30):** 1.310 đơn TikTok / 71 gian đang `BUYER_SHIPPED_ITEM` + Chờ hàng về — cột không biết kiện đã về chưa.
+- **Lãi/Lỗ thực hiện đọc cùng mấy cột đó** (anh hỏi "trong lãi lỗ có mà"): dòng "hàng đã về" hiện khi sàn đóng yêu cầu HOẶC kho đã
+  quét; không có nguồn riêng.
+- **Ứng viên 0 call:** `returns/search` có sẵn `seller_next_action_response[] {action, deadline}` (`SELLER_RESPOND_RECEIVE_PACKAGE`),
+  mã chưa đọc; tài liệu không nói nó xuất hiện từ lúc khách gửi hay khi kiện về shop → phải nhìn payload thật.
+- **Script chỉ đọc** `backend/scripts/tiktok-return-leg-probe.ts` (`returns/search` + `returns/{id}/records` + hành trình đơn, cờ
+  `--mau` so đơn mới gửi với đơn gửi đã lâu), tsc sạch; anh: "Em kiểm tra hết đi" → commit, **chờ anh push + chạy trên Render Shell**.
+- Chi tiết + hướng sửa: docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18.
+
+---
 ## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), PUSH master 23/11 (`c3d6ec3a`)
 
 - **Anh báo (ảnh nhân viên Nguyệt `admin/nguyet`, tick đủ 8 nhóm quyền):** "Nhân viên anh cấp full quyền nhưng vào thì lại không đủ."
