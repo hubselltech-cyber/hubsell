@@ -1,7 +1,8 @@
 /// <reference types="node" />
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accessOf, hasPermission, homePathFor } from "./permissions";
+import { accessOf, bellTabFor, hasPermission, homePathFor } from "./permissions";
+import { resolveNotificationTarget, targetAllowed } from "./notification-target";
 import type { AuthUser } from "../types/api";
 
 /**
@@ -149,4 +150,50 @@ test("hasPermission: lá khớp đúng lá, nhóm khớp mọi lá con, không k
   assert.equal(hasPermission(["finance.analytics"], "finance.expenses"), false);
   assert.equal(hasPermission(["orders"], "order"), false);
   assert.equal(hasPermission(["adsx.shopee"], "ads"), false);
+});
+
+test("chuông: ai có, nằm ở tab nào (23/11/2026)", () => {
+  // Chủ shop: Trang chủ như cũ
+  assert.equal(bellTabFor(owner), "home");
+  assert.equal(bellTabFor(staff(FULL)), "home");
+  // Mẫu Nhân viên kho: không Trang chủ → chuông ở Đơn hàng
+  assert.equal(bellTabFor(staff(["orders", "warehouse.products", "warehouse.returns"])), "orders");
+  // Chỉ quyền kho → chuông ở Kho
+  assert.equal(bellTabFor(staff(["warehouse.returns"])), "warehouse");
+  assert.equal(bellTabFor(staff(["warehouse.products"])), "warehouse");
+  // Kế toán: Trang chủ
+  assert.equal(bellTabFor(staff(["dashboard", "finance.analytics", "invoicing"])), "home");
+  // Chỉ quảng cáo TikTok: Trang chủ (trang Quảng cáo)
+  assert.equal(bellTabFor(staff(["ads.tiktok"])), "home");
+  // Có Trang chủ nhưng không quyền nào ứng với một mục thông báo → không chuông
+  assert.equal(bellTabFor(staff(["dashboard"])), null);
+  assert.equal(accessOf(staff(["dashboard", "operations.reviews"])).notifications, false);
+  // Chỉ KOC / Hóa đơn: có thông báo nhưng app không có tab nào → không chuông (màn "chưa có quyền")
+  assert.equal(bellTabFor(staff(["koc"])), null);
+  assert.equal(bellTabFor(staff(["invoicing"])), null);
+});
+
+test("bấm thông báo: chỉ mở màn người này vào được", () => {
+  const kho = accessOf(staff(["orders", "warehouse.returns"]));
+  const ads = accessOf(staff(["ads.tiktok"]));
+  const own = accessOf(owner);
+  const t = (link: string, type = "x") => {
+    const r = resolveNotificationTarget({ type, link, title: "" });
+    assert.ok(r, link);
+    return r;
+  };
+  // Đơn hàng / hoàn hàng
+  assert.equal(targetAllowed(t("/orders?cancelRequested=1", "cancel_request"), kho), true);
+  assert.equal(targetAllowed(t("/warehouse/returns", "return"), kho), true);
+  assert.equal(targetAllowed(t("/warehouse/returns", "return"), ads), false);
+  // Quảng cáo TikTok: chỉ người có quyền TikTok
+  const camp = t("/ads/tiktok/campaign?id=abc", "tiktok-ads-advice");
+  assert.equal(targetAllowed(camp, ads), true);
+  assert.equal(targetAllowed(camp, kho), false);
+  // Chủ shop mở được mọi đích
+  for (const x of [camp, t("/orders"), t("/warehouse/returns", "return")]) assert.equal(targetAllowed(x, own), true);
+  // Đích chỉ chủ shop
+  assert.equal(targetAllowed({ kind: "plan" }, accessOf(staff(FULL))), false);
+  assert.equal(targetAllowed({ kind: "assistant", prompt: "x" }, accessOf(staff(FULL))), false);
+  assert.equal(targetAllowed({ kind: "external", url: "https://seller.shopee.vn" }, accessOf(staff(FULL))), false);
 });

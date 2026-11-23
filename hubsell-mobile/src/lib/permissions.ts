@@ -28,7 +28,12 @@ import type { AuthUser } from "../types/api";
  *   expenses   màn Chi phí vận hành      /api/expenses             → "finance.expenses"
  *
  * `owner` = việc CHỈ chủ shop làm được dù nhân viên có đủ mọi quyền: nối gian
- * hàng, chuông + tin đẩy, Trợ lý Hubsell, gói dịch vụ (backend gác adminOnly).
+ * hàng, cài đặt thông báo, Trợ lý Hubsell, gói dịch vụ (backend gác adminOnly).
+ *
+ * `notifications` = có chuông + nhận tin đẩy (23/11/2026). Nhân viên có chuông khi
+ * có ít nhất một quyền ứng với một mục thông báo — chép bảng CATEGORY_PERMISSIONS ở
+ * backend/src/services/notification-access.ts; máy chủ tự lọc từng dòng theo quyền
+ * + gian được giao, app chỉ quyết có vẽ chuông hay không.
  */
 export interface AppAccess {
   owner: boolean;
@@ -47,7 +52,19 @@ export interface AppAccess {
   warehouse: boolean;
   costPrices: boolean;
   expenses: boolean;
+  notifications: boolean;
 }
+
+/** Quyền nào mở ít nhất một mục thông báo cho nhân viên (bản sao notification-access.ts). */
+const NOTIFICATION_PERMISSION_KEYS = [
+  "orders",
+  "warehouse.returns",
+  "warehouse.products",
+  "finance.analytics",
+  "invoicing",
+  "ads",
+  "koc",
+] as const;
 
 export function accessOf(user: Pick<AuthUser, "role" | "permissions"> | null | undefined): AppAccess {
   const owner = user?.role === "ADMIN";
@@ -77,7 +94,23 @@ export function accessOf(user: Pick<AuthUser, "role" | "permissions"> | null | u
     warehouse: stock || returns,
     costPrices: can("finance.cost-prices"),
     expenses: can("finance.expenses"),
+    notifications: NOTIFICATION_PERMISSION_KEYS.some(can),
   };
+}
+
+/**
+ * Tab mang nút CHUÔNG — tab đầu tiên người này có (Trang chủ → Đơn hàng → Kho), để
+ * mở app là thấy chuông ngay. Chủ shop luôn là Trang chủ (như trước). null = không chuông.
+ */
+export function bellTabFor(
+  user: Pick<AuthUser, "role" | "permissions"> | null | undefined
+): "home" | "orders" | "warehouse" | null {
+  const a = accessOf(user);
+  if (!a.notifications) return null;
+  if (a.home) return "home";
+  if (a.orders) return "orders";
+  if (a.warehouse) return "warehouse";
+  return null;
 }
 
 /**

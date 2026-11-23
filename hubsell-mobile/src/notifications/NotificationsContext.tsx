@@ -23,9 +23,12 @@ import {
 import type { AppNotification } from "@/types/api";
 import { destinationFor, type NotificationDestination } from "@/lib/notification-links";
 import { withCategory } from "@/lib/notification-category";
+import { accessOf } from "@/lib/permissions";
 
 /**
- * CHUÔNG THÔNG BÁO + PUSH của app (23/10/2026) — một nguồn cho cả khu chủ shop:
+ * CHUÔNG THÔNG BÁO + PUSH của app (23/10/2026) — một nguồn cho cả app. Từ 23/11/2026
+ * nhân viên có quyền ứng với một mục thông báo cũng có chuông + tin đẩy (`access.notifications`);
+ * máy chủ chỉ trả / chỉ đẩy những dòng họ được thấy theo quyền + gian được giao:
  *   · Danh sách + số chưa đọc từ /api/notifications (cùng bảng với chuông web).
  *     Không có SSE trên app: đọc lại khi mở màn / app về foreground / mỗi 60 s;
  *     tin mới tới NGAY qua push nên nhịp 60 s chỉ là lưới an toàn.
@@ -115,7 +118,9 @@ async function ensureAndroidChannel(): Promise<void> {
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const { user, status: authStatus } = useAuth();
   const router = useRouter();
-  const isOwner = authStatus === "signedIn" && user?.role === "ADMIN";
+  // Tên giữ `isOwner` cho gọn diff; nghĩa từ 23/11/2026 = "người này có chuông".
+  const access = useMemo(() => accessOf(authStatus === "signedIn" ? user : null), [authStatus, user]);
+  const isOwner = access.notifications;
 
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -193,12 +198,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)));
         markNotificationsRead([n.id]).catch(() => {});
       }
-      const dest = destinationFor(n);
+      const dest = destinationFor(n, access);
       if (!dest) return false;
       go(dest);
       return true;
     },
-    [go]
+    [go, access]
   );
 
   // Nạp lần đầu + về foreground + 60 s một lần (chỉ khi app đang mở).
@@ -332,12 +337,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         type?: string;
         link?: string | null;
       } | null;
-      const dest = destinationFor({
-        id: data?.notificationId,
-        type: data?.type ?? "",
-        link: data?.link ?? null,
-        title: resp.notification.request.content.title,
-      });
+      const dest = destinationFor(
+        {
+          id: data?.notificationId,
+          type: data?.type ?? "",
+          link: data?.link ?? null,
+          title: resp.notification.request.content.title,
+        },
+        access
+      );
       void refresh(true);
       if (dest) go(dest);
       else router.navigate("/notifications");
@@ -351,7 +359,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       })
       .catch(() => {});
     return () => sub.remove();
-  }, [isOwner, router, refresh, go]);
+  }, [isOwner, router, refresh, go, access]);
 
   const value = useMemo<NotificationsValue>(
     () => ({

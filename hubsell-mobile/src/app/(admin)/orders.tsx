@@ -19,6 +19,9 @@ import { Image } from "expo-image";
 import { fetchOrders, lookupOrder, type OrdersFilter } from "@/api/orders";
 import { fetchChannels } from "@/api/channels";
 import { RequireAccess } from "@/components/RequireAccess";
+import { NotificationBell } from "@/components/NotificationBell";
+import { useAuth } from "@/auth/AuthContext";
+import { bellTabFor } from "@/lib/permissions";
 import { ApiError } from "@/api/client";
 import type {
   ChannelListItem,
@@ -125,6 +128,9 @@ export default function OrdersTab() {
 }
 
 function OrdersScreen() {
+  // Tab Đơn hàng mang chuông khi người này không có Trang chủ (23/11/2026).
+  const { user } = useAuth();
+  const showBell = bellTabFor(user) === "orders";
   const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -688,6 +694,7 @@ function OrdersScreen() {
             {groupVN(total)} đơn{activeFilterCount > 0 ? " khớp bộ lọc" : ""}
           </Text>
         </View>
+        {showBell ? <NotificationBell /> : null}
       </View>
 
       {/* Ô tìm + nút QUÉT ĐÓNG GÓI (anh Trung 05/11). Nút có chữ vì nút QR giữa thanh

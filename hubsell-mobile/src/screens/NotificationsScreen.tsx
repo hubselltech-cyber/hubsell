@@ -7,6 +7,8 @@ import { useColorScheme } from "nativewind";
 import * as Clipboard from "expo-clipboard";
 import { useNotifications } from "@/notifications/NotificationsContext";
 import { destinationFor } from "@/lib/notification-links";
+import { useAuth } from "@/auth/AuthContext";
+import { accessOf } from "@/lib/permissions";
 import { notificationOrderCode } from "@/lib/notification-target";
 import { categoryMeta, timeAgo } from "@/lib/notification-meta";
 import { hapticTap } from "@/lib/haptics";
@@ -27,6 +29,8 @@ export function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { items, loading, hasMore, refresh, loadMore, markAllRead, open } = useNotifications();
+  const { user } = useAuth();
+  const access = accessOf(user);
   const [refreshing, setRefreshing] = useState(false);
 
   // Vào màn = đã đọc hết (badge về 0). KHÔNG refresh ở đây kẻo lượt đọc về
@@ -39,7 +43,7 @@ export function NotificationsScreen() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.navigate("/(admin)/home");
+    else router.navigate("/");
   };
 
   return (
@@ -54,6 +58,8 @@ export function NotificationsScreen() {
           <Ionicons name="chevron-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-bold text-slate-900 dark:text-slate-100">Thông báo</Text>
+        {/* Bật / tắt nhóm thông báo là cài đặt của chủ shop — nhân viên theo cài đặt đó (23/11/2026). */}
+        {access.owner ? (
         <Pressable
           className="h-10 w-10 items-center justify-center rounded-full active:opacity-60"
           onPress={() => {
@@ -65,6 +71,7 @@ export function NotificationsScreen() {
         >
           <Ionicons name="options-outline" size={22} color="#64748b" />
         </Pressable>
+        ) : null}
       </View>
 
       {loading && items.length === 0 ? (
@@ -117,7 +124,9 @@ function NotificationRow({ n, onPress }: { n: AppNotification; onPress: () => vo
   const meta = categoryMeta(n.category);
   const tint = ICON_TINT[meta.tint];
   const unread = !n.readAt;
-  const canOpen = destinationFor(n) !== null;
+  // Dòng người này không mở được màn (quyền) thì không có mũi tên.
+  const { user } = useAuth();
+  const canOpen = destinationFor(n, accessOf(user)) !== null;
   // Có việc để làm nhưng app chưa có màn (hóa đơn, gian hàng…) → nói rõ thay vì im.
   const webOnly = !canOpen && !!n.link;
   const orderCode = notificationOrderCode(n);

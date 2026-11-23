@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import type { Href } from "expo-router";
-import { resolveNotificationTarget, type NotificationTarget } from "@/lib/notification-target";
+import { resolveNotificationTarget, targetAllowed, type NotificationTarget } from "@/lib/notification-target";
+import type { AppAccess } from "@/lib/permissions";
 
 /**
  * ĐÍCH CÓ KIỂU → MÀN APP (bước 2 của luồng thông báo; bước 1 ở notification-target.ts).
@@ -62,15 +63,20 @@ export function hrefForTarget(
 
 /**
  * Thông báo (dòng chuông hoặc data của tin đẩy) → nơi cần tới. null = không có
- * màn trên app (dòng chỉ để đọc).
+ * màn trên app, hoặc người đang đăng nhập không vào được màn đó (dòng chỉ để đọc).
+ * Bỏ trống `access` = không lọc theo quyền.
  */
-export function destinationFor(n: {
-  id?: string | null;
-  type: string;
-  link: string | null | undefined;
-  title?: string | null;
-}): NotificationDestination | null {
+export function destinationFor(
+  n: {
+    id?: string | null;
+    type: string;
+    link: string | null | undefined;
+    title?: string | null;
+  },
+  access?: AppAccess
+): NotificationDestination | null {
   const target = resolveNotificationTarget(n);
   if (!target) return null;
+  if (access && !targetAllowed(target, access)) return null;
   return hrefForTarget(target, n.id ?? undefined);
 }

@@ -3,7 +3,8 @@ import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthContext";
-import { accessOf } from "@/lib/permissions";
+import { accessOf, bellTabFor } from "@/lib/permissions";
+import { NotificationBell } from "@/components/NotificationBell";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { StockPage } from "@/screens/StockPage";
 import { WarehouseHubPage } from "@/screens/WarehouseHubPage";
@@ -34,7 +35,15 @@ export function KhoScreen() {
   return (
     <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 12 }}>
       <View className="px-4 pb-3">
-        <Text className="mb-2.5 text-xl font-bold text-slate-900 dark:text-slate-100">Kho</Text>
+        {/* Chuông khi người này không có Trang chủ lẫn Đơn hàng (nhân viên chỉ quyền kho, 23/11/2026). */}
+        {bellTabFor(user) === "warehouse" ? (
+          <View className="mb-1 flex-row items-center justify-between">
+            <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">Kho</Text>
+            <NotificationBell />
+          </View>
+        ) : (
+          <Text className="mb-2.5 text-xl font-bold text-slate-900 dark:text-slate-100">Kho</Text>
+        )}
         {canStock && canReturns ? (
           <SegmentedTabs
             options={[

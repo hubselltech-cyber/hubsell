@@ -10,7 +10,7 @@ import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
 import { AdsPage } from "@/screens/AdsPage";
 import { useAuth } from "@/auth/AuthContext";
-import { accessOf } from "@/lib/permissions";
+import { accessOf, bellTabFor } from "@/lib/permissions";
 import { RequireAccess } from "@/components/RequireAccess";
 
 // react-native-pager-view KHÔNG có bản web — giả lập web chuyển trang bằng tap.
@@ -31,8 +31,8 @@ const ALL_SECTIONS = [
  * VIỆC nên 04/10 đã dời xuống thanh tab dưới.
  * Nhân viên thấy đúng những trang được cấp quyền (23/11/2026): Tổng quan theo
  * quyền Tổng quan, Tài chính theo quyền Báo cáo dòng tiền, Quảng cáo theo quyền
- * Trợ lý quảng cáo. Chuông thông báo và Trợ lý Hubsell là việc riêng của chủ
- * shop (máy chủ chỉ mở cho chủ shop) nên nhân viên không có.
+ * Trợ lý quảng cáo. Chuông: chủ shop + nhân viên có quyền ứng với một mục thông
+ * báo (23/11/2026, máy chủ lọc từng dòng). Trợ lý Hubsell vẫn chỉ chủ shop.
  */
 export default function HomeTab() {
   return (
@@ -118,7 +118,7 @@ function Home() {
             ))}
           </View>
         ) : null}
-        {access.owner ? <NotificationBell /> : <View className="h-10" />}
+        {bellTabFor(user) === "home" ? <NotificationBell /> : <View className="h-10" />}
       </View>
 
       {/* Dải nhắc gói: sắp hết hạn (vàng, tắt được) / hết hạn, vượt trần, khóa

@@ -174,3 +174,37 @@ export function resolveNotificationTarget(n: NotificationLike): NotificationTarg
   // /channels, /invoicing/*, /koc-marketing/*: app chưa có màn → chỉ đọc.
   return null;
 }
+
+// ─────────────────── QUYỀN MỞ ĐÍCH (nhân viên có chuông, 23/11/2026) ───────────────────
+
+/** Chỉ các cờ targetAllowed cần (bản đầy đủ: AppAccess ở lib/permissions.ts). */
+type AppAccess = Pick<
+  import("./permissions").AppAccess,
+  "owner" | "orders" | "stock" | "returns" | "finance" | "adsShopee" | "adsLazada" | "adsTiktok"
+>;
+
+/**
+ * Người này có vào được màn đích không (23/11/2026 — nhân viên cũng có chuông). Không
+ * vào được thì dòng chuông thành dòng chỉ để đọc, thay vì mở màn rồi bị cổng quyền
+ * đá về tab đầu. Cùng luật với RequireAccess của từng màn.
+ */
+export function targetAllowed(t: NotificationTarget, access: AppAccess): boolean {
+  switch (t.kind) {
+    case "orders":
+      return access.orders;
+    case "warehouse":
+      return t.tab === "returns" ? access.returns : access.stock;
+    case "finance":
+      return access.finance;
+    case "ads":
+      return t.platform === "shopee" ? access.adsShopee : t.platform === "lazada" ? access.adsLazada : access.adsTiktok;
+    case "tiktok_campaign":
+      return access.adsTiktok;
+    case "assistant":
+    case "plan":
+      return access.owner;
+    case "external":
+      // Link ra ngoài (Seller Center…) đi kèm các mục nối lại gian — việc của chủ shop.
+      return access.owner;
+  }
+}

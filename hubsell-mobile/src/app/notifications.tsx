@@ -1,13 +1,15 @@
 import React from "react";
-import { Redirect } from "expo-router";
-import { useAuth } from "@/auth/AuthContext";
+import { RequireAccess } from "@/components/RequireAccess";
 import { NotificationsScreen } from "@/screens/NotificationsScreen";
 
-/** Trang Thông báo (chuông) — Stack gốc để phủ thanh tab; chỉ chủ shop (GĐ1). */
+/**
+ * Trang Thông báo (chuông) — Stack gốc để phủ thanh tab. Chủ shop + nhân viên có
+ * chuông (23/11/2026); máy chủ chỉ trả dòng trong phạm vi của người gọi.
+ */
 export default function NotificationsRoute() {
-  const { status, user } = useAuth();
-  if (status === "loading") return null;
-  if (status === "signedOut" || !user) return <Redirect href="/login" />;
-  if (user.role !== "ADMIN") return <Redirect href="/" />;
-  return <NotificationsScreen />;
+  return (
+    <RequireAccess allow={(a) => a.notifications}>
+      <NotificationsScreen />
+    </RequireAccess>
+  );
 }
