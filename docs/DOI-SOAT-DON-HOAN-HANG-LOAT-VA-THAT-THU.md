@@ -482,7 +482,7 @@ Soi bằng tài khoản Chủ Shop Hubsell, ba API thật, 6 kỳ:
 - **CHƯA kiểm trên prod:** báo hỏng một đơn MỚI sau bản này (mốc `returnDamagedAt` thật + bước tính nốt sổ) — mới kiểm ở local; trang Tổng quan + cầu nối mới so số qua API, chưa soi hình; câu mới ở bước cầu nối Lãi/Lỗ (web Vercel) chưa mở xem.
 - **✅ Anh chốt 20/11 đêm: "Như vậy được rồi. Từ nay chuẩn là được rồi" → đơn `26102183NBVE4N` ĐỂ NGUYÊN ở 31/10, không ghi tay mốc cho đơn báo hỏng trước bản này.**
 
-## 18. Anh báo 23/11/2026: đơn TikTok `587267766969206097` — sàn báo kiện trả đã về, Hubsell vẫn "đang hoàn về" — CHỈ KIỂM + viết script đọc payload, chưa sửa mã
+## 18. Anh báo 23/11/2026: đơn TikTok `587267766969206097` — sàn báo kiện trả đã về, Hubsell vẫn "đang hoàn về" — gốc đã tìm ra bằng payload thật (18.7), đã sửa (18.8), đã commit 23/11, CHƯA push / chưa lên prod
 
 Anh: "Đơn của khách có trạng thái trên tiktok là hoàn thành công, ship trả hàng thành công nhưng trên hubsell vẫn ở trạng thái đang chờ nhận hàng. Vừa nãy khách đã quét đơn thật và nhập kho rồi. Tuy nhiên trạng thái đang bị lệch."
 
@@ -551,3 +551,33 @@ Không lấy được payload bằng đường khác: Chrome của anh đang đ�
 - (a) dùng được: `planTiktokReturnUpdate` ghi mốc kiện về từ `seller_next_action_response` → cột, bộ lọc "Hoàn thành công", dòng đỏ "Kho chưa quét nhận" tự đúng cho cả 1.310 đơn, không thêm call. ⚠️ `returnDeliveredAt` là cột Lãi/Lỗ thực hiện đang đọc để thu hồi giá vốn (`returnGoodsRecovered`) → ghi sớm hơn ~2 ngày sẽ làm vốn thu hồi sớm hơn ~2 ngày: phải đo trước / sau rồi mới đẩy, hoặc ghi vào cột riêng.
 - Chỉ (b) / (c) dùng được: cột hỏi thêm lúc xem trang cho đơn TikTok `BUYER_SHIPPED_ITEM` + Chờ hàng về, đúng khuôn kiện giao thất bại (lô 10 đơn, đệm 10 phút, không lưu DB, không quét nền); 1–2 call / đơn / lượt xem.
 - Không nguồn nào dùng được: chỉ sửa câu chữ dòng phụ cho đơn TikTok.
+
+### 18.7 Payload thật (23/11/2026 ~10:40, script chạy trên Render Shell worker sau khi push `3c223147`)
+
+Hai lượt, 10 yêu cầu trả hàng của gian này, đều đang `BUYER_SHIPPED_ITEM`:
+
+| Đơn | Kho | Khách gửi (records `BUYER_SHIPPED`) | `update_time` | Hạn `SELLER_RESPOND_RECEIVE_PACKAGE` | Hạn − `update_time` |
+|---|---|---|---|---|---|
+| `587267766969206097` (đơn anh báo) | quét 23/11 09:31 | 21/11 16:11:14 | **22/11 09:07:27** | 24/11 09:07:27 | **48 giờ 0 giây** |
+| 5 đơn kho quét 22/11 15:16–15:17 | đã quét | 20/11 16:23 → 17:41 | **22/11 14:33:39** (cả 5 cùng giây) | 24/11 14:33:39 | **48 giờ 0 giây** |
+| `587272194788983964` | chờ về | 23/11 09:41:17 | 23/11 09:41:23 | 07/12 09:41:17 | ≈ 14 ngày |
+| `587228132114859026` | chờ về | 23/11 10:24:41 | 23/11 10:24:45 | 07/12 10:24:41 | ≈ 14 ngày |
+| `587089589909947754` | chờ về | 22/11 18:58:10 | 22/11 18:58:10 | 06/12 18:58:10 | 14 ngày |
+| `587051148167710016` (khách tự gửi) | chờ về | 20/11 14:40:58 | 20/11 14:41:09 | 04/12 14:40:59 | ≈ 14 ngày |
+
+Kết luận từng nguồn:
+
+- **(a) `seller_next_action_response` — DÙNG ĐƯỢC.** Việc `SELLER_RESPOND_RECEIVE_PACKAGE` có từ lúc khách gửi (hạn = lúc gửi + 14 ngày). Khi hãng giao kiện về shop, sàn cập nhật yêu cầu (không kèm dòng nhật ký nào) và đặt lại hạn = `update_time` + đúng 48 giờ → `update_time` lúc đó là giờ kiện về. 6 / 6 đơn kho đã cầm kiện khớp, 4 / 4 đơn còn chờ không khớp. 5 đơn cùng một giây 14:33:39 rồi kho quét 15:16 = hãng giao một lô, 43 phút sau kho quét.
+- **(b) `returns/{id}/records` — KHÔNG có mốc kiện về.** Chỉ có `ORDER_RETURN`, `SELLER_AGGREE_RETURN` (hoặc `SELLER_REJECT_APPLICATION_TIMEOUT_RETURN`), `BUYER_SHIPPED`, `REFUND_SUCCESS`.
+- **(c) hành trình đơn `orders/{id}/tracking` — KHÔNG có chặng trả hàng.** Dừng ở "Your package has been delivered. Recipient: Customer" (chiều đi). Chữ trả về là tiếng Anh + `action_code` (50101 giao thành công, 40501 đang giao…), không phải tiếng Việt.
+- **Vì sao TikTok ghi "hoàn thành công":** phần lớn yêu cầu có `REFUND_SUCCESS` (role SYSTEM, "Hoàn tất hoàn tiền") chỉ 4–6 giây sau `BUYER_SHIPPED` — sàn hoàn tiền cho khách ngay khi khách gửi kiện (`is_quick_refund`), trong khi `return_status` vẫn `BUYER_SHIPPED_ITEM`.
+
+### 18.8 Đã sửa (23/11/2026) — đã commit, CHƯA push / chưa lên prod
+
+- `backend/src/integrations/tiktok/returns-sync.ts`: hàm thuần `tiktokReturnParcelArrivedAt` (yêu cầu `BUYER_SHIPPED_ITEM` + hạn `SELLER_RESPOND_RECEIVE_PACKAGE` = `update_time` + 48 giờ ± 1 giờ → mốc = `update_time`); `planTiktokReturnUpdate` ghi `returnDeliveredAt` từ mốc này (một lần, như cũ). Dung sai 1 giờ là số tự chọn — cả 6 mẫu lệch 0 giây; sàn đổi số giờ kiểm hàng thì hàm trả null (giữ hành vi cũ), không báo sai.
+- `tiktok/client.ts`: khai `seller_next_action_response`. `lib/return-shipping.ts`: sửa chú thích.
+- Không đổi schema, không thêm call sàn, không đổi giao diện: cột Trạng thái vận chuyển, chip lọc "Hoàn thành công", dòng đỏ "Kho chưa quét nhận" đọc `returnDeliveredAt` sẵn.
+- **Sau khi lên prod:** lượt quét tầng nhanh (cửa sổ 2 ngày theo `update_time`, 7 ngày khi trùng nhịp giờ) tự ghi mốc cho các kiện về trong 7 ngày gần nhất — không cần chạy bù. Đơn anh báo sẽ ra "Hoàn thành công · Sàn báo 22/11 09:07".
+- **Kiểm:** tsc sạch; vitest 6 tệp liên quan 50 / 50 (8 ca mới dùng đúng số payload thật; gồm các tệp chạy trên Postgres local).
+- **Ảnh hưởng Lãi/Lỗ thực hiện (đã đọc mã, CHƯA mô phỏng từng chiến dịch quảng cáo):** `returnGoodsRecovered` thu hồi giá vốn khi có `returnDeliveredAt` → với kiện đã về mà kho chưa quét, vốn được ghi thu hồi sớm hơn tối đa ~48 giờ (trước: chờ `_COMPLETE`); số cuối cùng không đổi; cùng nghĩa với Shopee (`LOGISTICS_DELIVERY_DONE`). Kiện kho quét ngay thì không đổi gì. Trần trên nếu MỌI đơn `BUYER_SHIPPED_ITEM` đang chờ đều đã về (thực tế chỉ phần về trong 48 giờ gần nhất): 1.268 đơn / 72 gian, giá vốn phần trả ≈ 71,0 triệu, gian nhiều nhất 277 đơn. Không đổi công thức, không tăng phiên bản sổ.
+- **Chưa làm / chưa kiểm:** chưa thấy chạy trên prod; chưa có thông báo "kiện đã về, kho chưa quét"; `REJECT_RECEIVE_PACKAGE` (người bán nhận kiện rồi từ chối) vẫn bị coi là yêu cầu chết như cũ; mẫu chữ "hãng đã trả kiện" của kiện GIAO THẤT BẠI TikTok (mục 12) vẫn chưa đối chiếu — hành trình thật là tiếng Anh + `action_code`, cần một đơn giao thất bại đã về để lấy mã.

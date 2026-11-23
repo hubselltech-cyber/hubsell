@@ -884,6 +884,13 @@ export interface TikTokReturnOrder {
   shipment_type?: string;
   /** Sàn cho khách GIỮ HÀNG dù yêu cầu là trả hàng / đổi hàng (docs 202309). */
   can_buyer_keep_item?: boolean;
+  /**
+   * Việc kế tiếp của người bán + hạn (Unix giây). action: SELLER_RESPOND_REFUND /
+   * SELLER_RESPOND_RETURN / SELLER_RESPOND_RECEIVE_PACKAGE / SELLER_RESPOND_REPLACEMENT.
+   * Hạn của SELLER_RESPOND_RECEIVE_PACKAGE là dấu hiệu DUY NHẤT sàn cho biết kiện trả
+   * đã về tới shop trước khi yêu cầu đóng — returns-sync.ts tiktokReturnParcelArrivedAt.
+   */
+  seller_next_action_response?: { action?: string; deadline?: number }[];
   [k: string]: unknown;
 }
 

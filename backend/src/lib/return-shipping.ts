@@ -5,8 +5,10 @@
 //
 // Hàm THUẦN, chỉ đọc các cột Order đã có — KHÔNG gọi sàn:
 //   · returnDeliveredAt  — sàn xác nhận kiện hoàn đã về tay shop (Shopee
-//     reverse_logistics_status = LOGISTICS_DELIVERY_DONE, TikTok yêu cầu trả hàng
-//     sang SUCCESS / COMPLETE);
+//     reverse_logistics_status = LOGISTICS_DELIVERY_DONE; TikTok: sàn mở hạn 48 giờ
+//     kiểm hàng lúc hãng giao kiện về shop — tiktok/returns-sync.ts
+//     tiktokReturnParcelArrivedAt, 23/11/2026 — hoặc yêu cầu sang SUCCESS / COMPLETE.
+//     Trước 23/11 TikTok chỉ có căn cứ sau, tức muộn ~2 ngày so với lúc kiện về);
 //   · platformReturnStatus — trạng thái yêu cầu hoàn nguyên văn của sàn;
 //   · returnTrackingCode — có mã vận đơn chiều hoàn = khách đã gửi kiện;
 //   · returnStatus / returnedAt — kho đã cầm kiện trên tay chưa.

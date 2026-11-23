@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — CHỈ KIỂM, chưa sửa mã
+## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA + commit, CHƯA push
 
 - **Anh báo:** trên TikTok hoàn thành công / ship trả hàng thành công, Hubsell vẫn chờ; khách vừa quét nhận.
 - **Số prod (SQL chỉ đọc 10:19):** kho `RECEIVED` 09:31 (Đã nhận · chờ nhập kho — CHƯA nhập kho, `stockRestoredAt` trống);
@@ -22,7 +22,16 @@
   mã chưa đọc; tài liệu không nói nó xuất hiện từ lúc khách gửi hay khi kiện về shop → phải nhìn payload thật.
 - **Script chỉ đọc** `backend/scripts/tiktok-return-leg-probe.ts` (`returns/search` + `returns/{id}/records` + hành trình đơn, cờ
   `--mau` so đơn mới gửi với đơn gửi đã lâu), tsc sạch; anh: "Em kiểm tra hết đi" → commit, **chờ anh push + chạy trên Render Shell**.
-- Chi tiết + hướng sửa: docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18.
+- **Anh: "Em push và chạy lệnh đi" →** push `3c223147`, chạy script trên Render Shell worker 2 lượt (10 yêu cầu). Kết quả: nhật ký
+  hoàn + hành trình đơn KHÔNG có mốc kiện về; chỉ `seller_next_action_response` có — kiện về shop thì hạn
+  `SELLER_RESPOND_RECEIVE_PACKAGE` = `update_time` + đúng 48 giờ (6 / 6 đơn kho đã cầm), còn trên đường thì = lúc khách gửi + 14
+  ngày (4 / 4). Đơn anh báo: kiện về 22/11 09:07, kho quét 23/11 09:31. TikTok ghi "hoàn thành công" vì hoàn tiền nhanh ngay lúc
+  khách gửi (`REFUND_SUCCESS` sau `BUYER_SHIPPED` vài giây).
+- **Sửa (đã commit 23/11, CHƯA push):** `tiktokReturnParcelArrivedAt` trong `tiktok/returns-sync.ts` → `planTiktokReturnUpdate` ghi
+  `returnDeliveredAt` ngay khi kiện về (trước: chờ `_COMPLETE`, muộn ~2 ngày). 0 call thêm, không đổi schema / giao diện. tsc sạch,
+  vitest 6 tệp 50 / 50. Lãi/Lỗ thực hiện: vốn kiện đã về mà kho chưa quét được thu hồi sớm ≤ 48 giờ, số cuối không đổi; CHƯA mô
+  phỏng từng chiến dịch quảng cáo — chờ anh duyệt đẩy.
+- Chi tiết: docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18 (payload 18.7, bản sửa 18.8).
 
 ---
 ## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), PUSH master 23/11 (`c3d6ec3a`)

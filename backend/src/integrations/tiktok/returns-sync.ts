@@ -27,6 +27,13 @@
 // 585860564513293743 gian Giày Dép Đức Khải: lỗ 144.620 thay vì 4.620).
 // backfillTiktokReturnsByOrder hỏi returns/search theo order_ids cho các đơn đó.
 //
+// KIỆN TRẢ ĐÃ VỀ TỚI SHOP KHI YÊU CẦU CHƯA ĐÓNG (23/11/2026, đơn 587267766969206097,
+// docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 18): return_status đứng ở
+// BUYER_SHIPPED_ITEM suốt từ lúc khách gửi tới khi hết hạn người bán kiểm hàng (~48
+// giờ SAU khi hãng giao kiện về shop) — nhật ký records và hành trình đơn đều không
+// có mốc "đã giao về shop". Dấu hiệu duy nhất: seller_next_action_response
+// SELLER_RESPOND_RECEIVE_PACKAGE đổi hạn — xem tiktokReturnParcelArrivedAt.
+//
 // An toàn dữ liệu: trục returnStatus CHỈ đổi NONE ↔ AWAITING; đơn kho đã xử
 // lý (RECEIVED trở đi) tuyệt đối không đụng. Hủy đơn (cancellations) nằm trên
 // trục shippingStatus qua đồng bộ đơn, không phải trục hoàn.
@@ -91,6 +98,39 @@ export function tiktokRefundOf(ro: TikTokReturnOrder): number {
 export function isTiktokReturnDelivered(status?: string | null): boolean {
   const s = (status ?? "").toUpperCase();
   return s.endsWith("_SUCCESS") || s.endsWith("_COMPLETE");
+}
+
+/** Hạn sàn cho người bán kiểm hàng sau khi kiện trả về tới shop. */
+const RECEIVE_PACKAGE_WINDOW_SEC = 48 * 60 * 60;
+/** Dung sai khi so hạn (tự chọn; cả 6 mẫu thật lệch đúng 0 giây). */
+const RECEIVE_PACKAGE_TOLERANCE_SEC = 60 * 60;
+
+/**
+ * Mốc hãng giao KIỆN TRẢ về tới shop khi yêu cầu còn ở BUYER_SHIPPED_ITEM — null nếu
+ * chưa về / không đủ căn cứ.
+ *
+ * Căn cứ (payload thật 23/11/2026, 10 yêu cầu của một gian, scripts/tiktok-return-leg-probe.ts):
+ *   · kiện còn trên đường (4 / 4): hạn SELLER_RESPOND_RECEIVE_PACKAGE = lúc khách gửi + 14 ngày;
+ *   · kiện đã về shop (6 / 6, kho đã quét nhận ngay sau đó): sàn cập nhật yêu cầu KHÔNG kèm
+ *     dòng nhật ký nào và đặt lại hạn = update_time + đúng 48 giờ → update_time chính là
+ *     lúc kiện về.
+ * So chặt (48 giờ ± 1 giờ) để thà sót còn hơn báo "đã về" oan: sót thì giữ như trước
+ * (chờ yêu cầu sang SUCCESS / COMPLETE). Sàn đổi số giờ kiểm hàng → hàm này trả null,
+ * không báo sai.
+ */
+export function tiktokReturnParcelArrivedAt(
+  ro: Pick<TikTokReturnOrder, "return_status" | "update_time" | "seller_next_action_response">
+): Date | null {
+  if ((ro.return_status ?? "").toUpperCase() !== "BUYER_SHIPPED_ITEM") return null;
+  const updated = Number(ro.update_time ?? 0);
+  if (!(updated > 0)) return null;
+  const next = Array.isArray(ro.seller_next_action_response) ? ro.seller_next_action_response : [];
+  const receive = next.find((a) => (a?.action ?? "").toUpperCase() === "SELLER_RESPOND_RECEIVE_PACKAGE");
+  const deadline = Number(receive?.deadline ?? 0);
+  if (!(deadline > 0)) return null;
+  const gap = deadline - updated;
+  if (Math.abs(gap - RECEIVE_PACKAGE_WINDOW_SEC) > RECEIVE_PACKAGE_TOLERANCE_SEC) return null;
+  return new Date(updated * 1000);
 }
 
 /** Trạng thái hoàn hiện tại của đơn — phần planner cần nhìn (mirror Lazada). */
@@ -224,11 +264,22 @@ export function planTiktokReturnUpdate(
   if (refund !== (order.platformRefundAmount ?? 0)) plan.data.platformRefundAmount = refund;
   if (status !== (order.platformReturnStatus ?? null)) plan.data.platformReturnStatus = status;
 
-  // Kiện trả đã về tay theo sàn (SUCCESS/COMPLETE của yêu cầu TRẢ HÀNG) — ghi
-  // MỘT lần; kho quét nhận sau vẫn là mốc vật lý riêng (returnStatus).
-  if (!refundOnly && !order.returnDeliveredAt && isTiktokReturnDelivered(status)) {
-    plan.data.returnDeliveredAt = new Date(toMs(newest.update_time) || nowMs);
-    plan.delivered = true;
+  // Kiện trả đã về tay theo sàn — ghi MỘT lần; kho quét nhận sau vẫn là mốc vật lý
+  // riêng (returnStatus). Hai căn cứ:
+  //   · yêu cầu TRẢ HÀNG sang SUCCESS / COMPLETE (mốc = update_time lúc đó);
+  //   · yêu cầu còn BUYER_SHIPPED_ITEM nhưng sàn đã mở hạn 48 giờ kiểm hàng = hãng vừa
+  //     giao kiện về shop (tiktokReturnParcelArrivedAt) — sớm hơn căn cứ trên ~2 ngày,
+  //     đúng lúc kho cần biết để quét nhận.
+  if (!refundOnly && !order.returnDeliveredAt) {
+    const arrivedAt = isTiktokReturnDelivered(status)
+      ? new Date(toMs(newest.update_time) || nowMs)
+      : tiktokReturnSolutionOf(newest) === ReturnSolution.RETURN_REFUND
+        ? tiktokReturnParcelArrivedAt(newest)
+        : null;
+    if (arrivedAt) {
+      plan.data.returnDeliveredAt = arrivedAt;
+      plan.delivered = true;
+    }
   }
   // Khách giữ hàng mà trước đây đã lỡ ghi mốc kiện về (bản chưa đọc cờ
   // can_buyer_keep_item) → gỡ mốc, kẻo Lãi/Lỗ thu hồi giá vốn của hàng không về.

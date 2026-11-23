@@ -15,6 +15,7 @@ import {
   isDeadTiktokReturn,
   isTiktokBuyerKeepsItem,
   planTiktokReturnUpdate,
+  tiktokReturnParcelArrivedAt,
   tiktokReturnSolutionOf,
 } from "../tiktok/returns-sync";
 import type { TikTokReturnOrder } from "../tiktok/client";
@@ -265,5 +266,120 @@ describe("planTiktokReturnUpdate", () => {
     expect(Object.keys(plan.data)).toHaveLength(0);
     expect(plan.flagged).toBe(false);
     expect(plan.trackingSaved).toBe(false);
+  });
+});
+
+// ---------- Kiện trả đã về shop khi yêu cầu còn BUYER_SHIPPED_ITEM (23/11/2026) ----------
+// Số lấy từ payload THẬT (scripts/tiktok-return-leg-probe.ts chạy trên prod 23/11/2026):
+//   · đơn 587267766969206097 — kiện đã về: cập nhật 22/11 09:07:27, hạn nhận kiện 24/11 09:07:27 (+48 giờ);
+//   · đơn 587272194788983964 — còn trên đường: khách gửi 23/11 09:41:17, hạn 07/12 09:41:17 (+14 ngày).
+describe("tiktokReturnParcelArrivedAt — hạn 48 giờ kiểm hàng = kiện trả đã về shop", () => {
+  const ARRIVED = {
+    return_status: "BUYER_SHIPPED_ITEM",
+    update_time: 1_795_313_247,
+    seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_795_486_047 }],
+  };
+  const IN_TRANSIT = {
+    return_status: "BUYER_SHIPPED_ITEM",
+    update_time: 1_795_401_683,
+    seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_796_611_277 }],
+  };
+  const AWAITING_ORDER = {
+    returnStatus: ReturnStatus.AWAITING,
+    returnRequestedAt: new Date(1_795_231_633_000),
+    returnTrackingCode: "854172952136",
+    returnSolution: ReturnSolution.RETURN_REFUND,
+    platformRefundAmount: 291_750,
+    platformReturnStatus: "BUYER_SHIPPED_ITEM",
+    returnDeliveredAt: null,
+  };
+
+  it("kiện đã về (hạn = cập nhật + 48 giờ) → mốc = giờ sàn cập nhật", () => {
+    expect(tiktokReturnParcelArrivedAt(ARRIVED)?.toISOString()).toBe("2026-11-22T02:07:27.000Z");
+  });
+
+  it("kiện còn trên đường (hạn = lúc khách gửi + 14 ngày) → null", () => {
+    expect(tiktokReturnParcelArrivedAt(IN_TRANSIT)).toBeNull();
+  });
+
+  it("thiếu căn cứ thì không đoán: không có trường, hạn 72 giờ, việc kế khác, trạng thái khác", () => {
+    expect(tiktokReturnParcelArrivedAt({ return_status: "BUYER_SHIPPED_ITEM", update_time: 1_795_313_247 })).toBeNull();
+    expect(
+      tiktokReturnParcelArrivedAt({
+        ...ARRIVED,
+        seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_795_313_247 + 72 * 3600 }],
+      })
+    ).toBeNull();
+    expect(
+      tiktokReturnParcelArrivedAt({
+        ...ARRIVED,
+        seller_next_action_response: [{ action: "SELLER_RESPOND_RETURN", deadline: 1_795_486_047 }],
+      })
+    ).toBeNull();
+    expect(tiktokReturnParcelArrivedAt({ ...ARRIVED, return_status: "AWAITING_BUYER_SHIP" })).toBeNull();
+    expect(tiktokReturnParcelArrivedAt({ ...ARRIVED, update_time: undefined })).toBeNull();
+  });
+
+  it("dung sai 1 giờ: lệch 30 phút vẫn nhận, lệch 2 giờ thì không", () => {
+    const at = (gapSec: number) =>
+      tiktokReturnParcelArrivedAt({
+        ...ARRIVED,
+        seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_795_313_247 + gapSec }],
+      });
+    expect(at(48 * 3600 - 1800)).not.toBeNull();
+    expect(at(48 * 3600 + 2 * 3600)).toBeNull();
+  });
+
+  it("planner: đơn Chờ hàng về + kiện đã về → ghi mốc sàn, KHÔNG đổi trục kho", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ ...ARRIVED, return_tracking_number: "854172952136", refund_amount: { refund_total: "291750" } })],
+      AWAITING_ORDER,
+      NOW
+    );
+    expect(plan.delivered).toBe(true);
+    expect(plan.data.returnDeliveredAt?.toISOString()).toBe("2026-11-22T02:07:27.000Z");
+    expect(plan.data.returnStatus).toBeUndefined();
+    expect(plan.data.platformReturnStatus).toBeUndefined();
+  });
+
+  it("planner: kiện còn trên đường → không ghi mốc", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ ...IN_TRANSIT, return_tracking_number: "854172952136", refund_amount: { refund_total: "291750" } })],
+      AWAITING_ORDER,
+      NOW
+    );
+    expect(plan.delivered).toBe(false);
+    expect(plan.data.returnDeliveredAt).toBeUndefined();
+  });
+
+  it("planner: đã có mốc thì không ghi lại (kể cả khi yêu cầu sang COMPLETE sau đó)", () => {
+    const had = { ...AWAITING_ORDER, returnDeliveredAt: new Date("2026-11-22T02:07:27.000Z") };
+    const again = planTiktokReturnUpdate(
+      [ro({ ...ARRIVED, return_tracking_number: "854172952136", refund_amount: { refund_total: "291750" } })],
+      had,
+      NOW
+    );
+    expect(again.delivered).toBe(false);
+    expect(again.data.returnDeliveredAt).toBeUndefined();
+    const done = planTiktokReturnUpdate(
+      [
+        ro({
+          return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE",
+          update_time: 1_795_486_100,
+          return_tracking_number: "854172952136",
+          refund_amount: { refund_total: "291750" },
+        }),
+      ],
+      had,
+      NOW
+    );
+    expect(done.data.returnDeliveredAt).toBeUndefined();
+    expect(done.data.platformReturnStatus).toBe("RETURN_OR_REFUND_REQUEST_COMPLETE");
+  });
+
+  it("planner: sàn cho khách giữ hàng → không ghi mốc dù có hạn 48 giờ", () => {
+    const plan = planTiktokReturnUpdate([ro({ ...ARRIVED, can_buyer_keep_item: true })], NONE, NOW);
+    expect(plan.delivered).toBe(false);
+    expect(plan.data.returnDeliveredAt).toBeUndefined();
   });
 });
