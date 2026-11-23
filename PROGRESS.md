@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 23/11 sáng — App mobile: nhân viên tick đủ quyền mà chỉ thấy Kho · QR · Cấu hình — ĐÃ OTA cho khách (1.5.0 + 1.4.3), commit `c3d6ec3a` CHƯA push
+
+- **Anh báo (ảnh nhân viên Nguyệt `admin/nguyet`, tick đủ 8 nhóm quyền):** "Nhân viên anh cấp full quyền nhưng vào thì lại không đủ."
+- **Gốc (đọc mã, không phải lỗi dữ liệu):** app chia màn theo VAI — `homePathFor` đưa mọi nhân viên vào khu `(warehouse)` cố định
+  Kho · [QR] · Cấu hình (thiết kế 04/10, lúc nhân viên trên app mới là người kho). Máy chủ thì đã gác theo quyền đúng từ 10/08.
+- **Sửa (docs/MOBILE-PHAN-QUYEN-NHAN-VIEN.md):** một nguồn `accessOf(user)` → thanh tab, cổng từng màn (`RequireAccess`), từng khối
+  ở Tổng quan / chip sàn ở Quảng cáo hiện theo đúng quyền của API nuôi nó; bỏ khu `(warehouse)`; nút QR luôn giữa thanh tab; app đọc
+  lại `/me` khi đưa từ nền lên (quyền đổi trên web là nhân viên mở lại app thấy ngay). Không đổi backend, không thêm thư viện gốc.
+- **Vẫn chỉ chủ shop có (máy chủ gác):** chuông + tin đẩy, Trợ lý Hubsell, nối gian, gói dịch vụ.
+- **Kiểm:** tsc sạch; eslint không tăng lỗi; `permissions.test.ts` 7 / 7; giả lập web + backend local với 8 tài khoản nhân viên (đủ
+  quyền, 3 mẫu có sẵn, 4 quyền lẻ) + chủ shop — bảng kết quả ở docs mục 5; soi 320 / 375 / 430, sáng + tối. Tài khoản thử, hạn gói
+  seed đã trả về như cũ sau khi thử.
+- **CHƯA kiểm:** máy thật; phím Back Android với nhân viên không có Trang chủ; vuốt PagerView khi Trang chủ còn 1–2 trang.
+- **Anh: "Duyệt, commit + OTA" →** commit `c3d6ec3a` (master, chỉ `hubsell-mobile/src`); OTA kênh production: runtime 1.5.0 group
+  `8e004117` (từ master), runtime 1.4.3 group `69e3fbda` (nhánh local `ota/1.4.3-ten-khong-cat` → `19157be9`, cherry-pick gộp sạch;
+  kiểm kiểu + 7 ca test + chạy giả lập web từ nhánh đó trước khi đẩy; KHÔNG thử kênh preview trên máy thật). Hệ quả đã báo anh trước:
+  nhân viên có quyền Đơn hàng của MỌI shop thấy thêm tab Đơn hàng; có quyền Tổng quan / Dòng tiền / Quảng cáo thấy tab Trang chủ.
+- **⏳ Anh:** `git push` (commit mã + commit docs); bảo Nguyệt tắt hẳn app mở lại 2 lần rồi báo em thấy đủ tab chưa. Rút OTA: docs mục 6.
+- **Điểm lệch còn lại (docs mục 7):** chỉ có Báo cáo dòng tiền mà không có Tổng quan thì trang Tài chính thiếu 2 khối (cửa
+  `/api/analytics` gác bằng Tổng quan); chỉ có Giá vốn / Thu chi vận hành thì chưa có lối vào; nhân viên không nhận tin đẩy.
+
+---
 ## Phiên 22/11 đêm — Sao chép sản phẩm: nguồn Shopee có phân loại không lên TikTok / lên Shopee mất phân loại — LÊN PROD 22/11 đêm (`aa8f291f`), CHƯA có lượt thật
 
 - **Anh báo (ảnh đợt BL007, ANO Official Store → and.not.or):** điền đủ, "Đủ điều kiện" mà đăng vẫn lỗi TikTok 12052241

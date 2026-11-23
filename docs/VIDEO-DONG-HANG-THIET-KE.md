@@ -573,6 +573,12 @@ chưa làm.
 
 **Đụng prod:** mục 4 là sửa máy chủ (push + deploy); mục 1–2 là app (bản TestFlight nhánh thử). Chờ anh duyệt.
 
+> **⚠️ 23/11/2026 — tiền đề của 17.1 / 17.2 đã đổi:** app không còn "khu nhân viên" riêng; nhân viên có quyền Đơn hàng thấy tab
+> Đơn hàng như chủ shop (theo quyền `orders`, KHÔNG rào theo chủ thí điểm) và nút QR luôn nằm giữa thanh tab — xem
+> [MOBILE-PHAN-QUYEN-NHAN-VIEN.md](MOBILE-PHAN-QUYEN-NHAN-VIEN.md). Lát N3 và câu C3 bên dưới vì thế không còn việc; phần quay
+> video giữ nguyên rào riêng (N1, N2, N4, N5). Thay đổi đó ở master `c3d6ec3a` (đã OTA cho khách 23/11) — nhánh
+> `thu/video-dong-goi-lat-0` CHƯA có, khi gộp phải xem tay `(admin)/orders.tsx` + `app/index.tsx`.
+
 ### 17.1 Anh đổi lối vào (18/11): "Thêm quyền nhân viên vào nút QR thì rối quá… trong phần 'Đơn hàng' trên app mình thêm một tab là 'Quay video gói hàng'"
 
 → BỎ đề xuất "chế độ thứ tư ở nút QR". Lối vào = tab con **"Quay video gói hàng"** trong **Đơn hàng**, theo khuôn tab con sẵn có của Kho
