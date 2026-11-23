@@ -4,7 +4,11 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/auth/AuthContext";
 
-/** Nhân viên chưa được cấp quyền "Đối soát đơn hoàn" — app mobile v1 chỉ phục vụ kho. */
+/**
+ * Nhân viên chưa được cấp quyền nào trong các mục app có: Tổng quan, Đơn hàng, Kho,
+ * Báo cáo dòng tiền, Trợ lý quảng cáo (các mục khác — KOC, Hóa đơn & Thuế, Trợ lý vận
+ * hành… — mới có trên web).
+ */
 export default function NoAccessScreen() {
   const { signOut } = useAuth();
   const router = useRouter();
@@ -15,8 +19,9 @@ export default function NoAccessScreen() {
         Tài khoản chưa có quyền dùng app
       </Text>
       <Text className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
-        App mobile hiện dành cho nhân viên kho (quyền "Đối soát đơn hoàn").
-        Nhờ chủ shop cấp quyền, hoặc dùng bản web app.hubsell.vn.
+        App hiện có các mục Tổng quan, Đơn hàng, Kho, Báo cáo dòng tiền và Trợ lý
+        quảng cáo. Nhờ chủ shop cấp một trong các quyền đó, hoặc dùng bản web
+        app.hubsell.vn.
       </Text>
       <Pressable
         className="mt-6 rounded-xl bg-slate-900 px-6 py-3 active:opacity-80 dark:bg-slate-700"

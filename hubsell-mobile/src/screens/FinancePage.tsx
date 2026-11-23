@@ -28,6 +28,8 @@ import { compactMoney, formatMoney, groupVN } from "@/lib/format";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ShopFilterField, type ShopScope } from "@/components/ShopFilter";
 import { fetchChannels } from "@/api/channels";
+import { useAuth } from "@/auth/AuthContext";
+import { accessOf } from "@/lib/permissions";
 import type { ChannelListItem } from "@/types/api";
 import { hapticTap } from "@/lib/haptics";
 import { DonutChart } from "@/components/DonutChart";
@@ -218,6 +220,8 @@ function BreakdownItems({
 }
 
 export function FinancePage() {
+  const { user } = useAuth();
+  const canOverview = accessOf(user).overview;
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [scope, setScope] = useState<ShopScope>(ALL_SHOPS);
   const [channels, setChannels] = useState<ChannelListItem[]>([]);
@@ -281,8 +285,10 @@ export function FinancePage() {
           // 4 thẻ = Báo cáo dòng tiền web; kỳ trước cho pill ▲/▼
           fetchAnalytics(from, to, ch),
           fetchAnalytics(prev.from, prev.to, ch).catch(() => null),
-          // Thác nước + cơ cấu chi phí = Tổng quan web
-          fetchOverview(from, to, ch),
+          // Thác nước + cơ cấu chi phí = Tổng quan web. API này gác bằng quyền Tổng quan:
+          // nhân viên có Báo cáo dòng tiền mà không có Tổng quan thì hai khối đó ẩn
+          // (overview = null), 4 thẻ + bảng tiền theo gian vẫn hiện — không để 403 che cả trang.
+          canOverview ? fetchOverview(from, to, ch) : null,
           // Bảng Tiền theo gian hàng: đọc số cron gần nhất trong DB — hiện ngay,
           // KHÔNG chờ sàn; kéo số mới từ sàn chạy nền bên dưới.
           fetchCashFlow(),
@@ -316,7 +322,7 @@ export function FinancePage() {
         }
       }
     },
-    [pullWalletInBackground]
+    [pullWalletInBackground, canOverview]
   );
 
   useEffect(() => {

@@ -16,10 +16,10 @@ const MODE_KEY = "scanTabMode";
  *   Xem đơn    — quét bất kỳ đơn nào để xem CHI TIẾT ĐƠN HÀNG (04/10);
  *   Quét nhiều — quét liên tục một xấp kiện rồi xem thống kê của đúng xấp đó (số kiện,
  *                tổng hàng theo SKU, đơn hủy lẫn trong lô). Chỉ xem, không đổi đơn;
- *   Đóng gói   — quét liên tục các kiện đã gói → đơn sang "Đã đóng gói". Khu nhân viên
- *                không có tab Đơn hàng nên đây là lối vào của người gói hàng.
- * Vào được tab này tức là đã có quyền Đơn hàng (layout hai khu chỉ hiện nút QR khi có),
- * đúng quyền cả hai API cần.
+ *   Đóng gói   — quét liên tục các kiện đã gói → đơn sang "Đã đóng gói". Lối vào nhanh
+ *                nhất của người gói hàng.
+ * Vào được tab này tức là đã có quyền Đơn hàng (thanh tab chỉ hiện nút QR khi có, màn
+ * tự gác lại bằng RequireAccess), đúng quyền cả hai API cần.
  *
  * Thanh tab giữ màn mounted khi chuyển tab, mà màn quét giữ sáng màn hình + mở camera →
  * chỉ render khi tab đang được xem; rời tab là thả camera.

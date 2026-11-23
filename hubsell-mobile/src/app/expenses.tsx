@@ -1,13 +1,15 @@
 import React from "react";
-import { Redirect } from "expo-router";
-import { useAuth } from "@/auth/AuthContext";
+import { RequireAccess } from "@/components/RequireAccess";
 import { ExpensesScreen } from "@/screens/ExpensesScreen";
 
-/** Màn Chi phí vận hành (12/11/2026) — Stack gốc, chỉ chủ shop (số tiền nội bộ). */
+/**
+ * Màn Chi phí vận hành (12/11/2026) — Stack gốc. Chủ shop và nhân viên có quyền
+ * Thu chi vận hành (cùng cửa với /api/expenses); số tiền nội bộ nên không mở rộng hơn.
+ */
 export default function ExpensesRoute() {
-  const { status, user } = useAuth();
-  if (status === "loading") return null;
-  if (status === "signedOut" || !user) return <Redirect href="/login" />;
-  if (user.role !== "ADMIN") return <Redirect href="/" />;
-  return <ExpensesScreen />;
+  return (
+    <RequireAccess allow={(a) => a.expenses}>
+      <ExpensesScreen />
+    </RequireAccess>
+  );
 }

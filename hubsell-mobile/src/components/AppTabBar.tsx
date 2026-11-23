@@ -20,11 +20,14 @@ export interface AppTab {
 }
 
 /**
- * THANH TAB DƯỚI dùng chung cho khu chủ shop và khu nhân viên (anh Trung 04/10:
+ * THANH TAB DƯỚI dùng chung cho chủ shop và nhân viên (anh Trung 04/10:
  * "đổi trạng thái đen-trắng giống bản web, bo góc nhẹ nhàng"). Cùng nết với
  * thanh bên của web: mục đang chọn = viên nền bo góc + icon TÔ ĐẶC + chữ đậm;
  * mục còn lại = icon nét viền, chữ xám. Thanh tự chừa phần đáy cho nút điều
  * hướng / vạch vuốt của từng dòng máy (safe area).
+ *
+ * `tabs` = các tab người này ĐƯỢC THẤY (layout lọc theo quyền, 23/11/2026) —
+ * số tab thay đổi theo quyền nên nút QR được giữ chính giữa bằng bố cục hai nửa.
  */
 export function AppTabBar({
   state,
@@ -34,79 +37,106 @@ export function AppTabBar({
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const dark = colorScheme === "dark";
+
+  const renderTab = (tab: AppTab) => {
+    const index = state.routes.findIndex((r) => r.name === tab.name);
+    if (index < 0) return null;
+    const route = state.routes[index];
+    const focused = state.index === index;
+    const onPress = () => {
+      const event = navigation.emit({
+        type: "tabPress",
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (!focused && !event.defaultPrevented) {
+        hapticSelect();
+        navigation.navigate(route.name, route.params);
+      }
+    };
+
+    if (tab.qr) {
+      return (
+        <Pressable
+          key={tab.name}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel="Quét mã: xem chi tiết đơn hoặc quét đóng gói"
+          className="flex-1 items-center justify-center active:opacity-80"
+        >
+          <View className="h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500">
+            <Ionicons name="qr-code-outline" size={22} color="#fff" />
+          </View>
+        </Pressable>
+      );
+    }
+
+    return (
+      <Pressable
+        key={tab.name}
+        onPress={onPress}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: focused }}
+        accessibilityLabel={tab.label}
+        className="flex-1 items-center active:opacity-70"
+      >
+        {/* Thử máy ảo Android 04/10: đổi nền của một view đang hiện (trong suốt → có màu)
+            làm viên MẤT BO GÓC, lần dựng đầu thì bo đúng. Nên nền + bo góc đặt bằng
+            style và gắn key theo trạng thái để viên được dựng lại khi đổi tab. */}
+        <View
+          key={focused ? "on" : "off"}
+          className="w-full max-w-[84px] items-center py-1.5"
+          style={{
+            borderRadius: 16,
+            backgroundColor: focused ? (dark ? "#1e293b" : "#f1f5f9") : "transparent",
+          }}
+        >
+          <TabIcon name={focused ? tab.iconActive : tab.icon} focused={focused} />
+          <Text
+            numberOfLines={1}
+            className={`mt-0.5 text-[11px] ${
+              focused
+                ? "font-bold text-slate-900 dark:text-slate-50"
+                : "font-medium text-slate-400 dark:text-slate-500"
+            }`}
+          >
+            {tab.label}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
+
+  // Nút QR LUÔN nằm chính giữa thanh, kể cả khi số tab hai bên lệch nhau (nhân viên
+  // không có Trang chủ: Đơn hàng · [QR] · Kho · Cấu hình). Hai nửa trái / phải rộng
+  // bằng nhau, mỗi nửa tự chia đều cho các tab của nó; khi hai bên bằng nhau (chủ shop
+  // 2 + 2) từng ô rộng đúng như lúc chia đều cả thanh. Không có nút QR (nhân viên
+  // không có quyền Đơn hàng) thì chia đều như cũ.
+  const qrAt = tabs.findIndex((t) => t.qr);
+  const left = qrAt < 0 ? tabs : tabs.slice(0, qrAt);
+  const right = qrAt < 0 ? [] : tabs.slice(qrAt + 1);
+  const half = Math.max(left.length, right.length, 1);
+
   return (
     <View
       className="flex-row items-center border-t border-slate-200 bg-white px-2 pt-1.5 dark:border-slate-800 dark:bg-slate-900"
       style={{ paddingBottom: Math.max(insets.bottom, 6) }}
     >
-      {tabs.map((tab) => {
-        const index = state.routes.findIndex((r) => r.name === tab.name);
-        if (index < 0) return null;
-        const route = state.routes[index];
-        const focused = state.index === index;
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
-          if (!focused && !event.defaultPrevented) {
-            hapticSelect();
-            navigation.navigate(route.name, route.params);
-          }
-        };
-
-        if (tab.qr) {
-          return (
-            <Pressable
-              key={tab.name}
-              onPress={onPress}
-              accessibilityRole="button"
-              accessibilityLabel="Quét mã: xem chi tiết đơn hoặc quét đóng gói"
-              className="flex-1 items-center justify-center active:opacity-80"
-            >
-              <View className="h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500">
-                <Ionicons name="qr-code-outline" size={22} color="#fff" />
-              </View>
-            </Pressable>
-          );
-        }
-
-        return (
-          <Pressable
-            key={tab.name}
-            onPress={onPress}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: focused }}
-            accessibilityLabel={tab.label}
-            className="flex-1 items-center active:opacity-70"
-          >
-            {/* Thử máy ảo Android 04/10: đổi nền của một view đang hiện (trong suốt → có màu)
-                làm viên MẤT BO GÓC, lần dựng đầu thì bo đúng. Nên nền + bo góc đặt bằng
-                style và gắn key theo trạng thái để viên được dựng lại khi đổi tab. */}
-            <View
-              key={focused ? "on" : "off"}
-              className="w-full max-w-[84px] items-center py-1.5"
-              style={{
-                borderRadius: 16,
-                backgroundColor: focused ? (dark ? "#1e293b" : "#f1f5f9") : "transparent",
-              }}
-            >
-              <TabIcon name={focused ? tab.iconActive : tab.icon} focused={focused} />
-              <Text
-                numberOfLines={1}
-                className={`mt-0.5 text-[11px] ${
-                  focused
-                    ? "font-bold text-slate-900 dark:text-slate-50"
-                    : "font-medium text-slate-400 dark:text-slate-500"
-                }`}
-              >
-                {tab.label}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
+      {qrAt < 0 ? (
+        tabs.map(renderTab)
+      ) : (
+        <>
+          <View className="flex-row items-center" style={{ flex: half }}>
+            {left.map(renderTab)}
+          </View>
+          <View className="flex-row items-center" style={{ flex: 1 }}>
+            {renderTab(tabs[qrAt])}
+          </View>
+          <View className="flex-row items-center" style={{ flex: half }}>
+            {right.map(renderTab)}
+          </View>
+        </>
+      )}
     </View>
   );
 }

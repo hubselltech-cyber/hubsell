@@ -154,7 +154,7 @@ export function ExpensesScreen() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.navigate("/(admin)/home");
+    else router.navigate("/");
   };
   const stepMonth = (delta: number) => {
     hapticTap();

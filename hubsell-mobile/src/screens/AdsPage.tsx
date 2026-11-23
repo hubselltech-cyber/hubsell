@@ -35,6 +35,8 @@ import { ShopFilterField } from "@/components/ShopFilter";
 import { Card } from "@/components/Card";
 import { AdsRecommendSection } from "@/components/AdsRecommendSection";
 import { TiktokAdsSection } from "@/components/TiktokAdsSection";
+import { useAuth } from "@/auth/AuthContext";
+import { accessOf } from "@/lib/permissions";
 import { TABULAR } from "@/theme/tokens";
 
 /**
@@ -135,7 +137,18 @@ function needsAttention(c: AdsCampaignDto): boolean {
 
 export function AdsPage() {
   const channelColors = useChannelColors();
-  const [uiPlatform, setUiPlatform] = useState<UiPlatform>("shopee");
+  // Nhân viên chỉ thấy chip của sàn được cấp quyền (ads.shopee / ads.lazada / ads.tiktok —
+  // cùng cửa với /api/quang-cao/<sàn>); mở trang là đứng ở sàn đầu tiên họ có.
+  const { user } = useAuth();
+  const access = accessOf(user);
+  const platforms = PLATFORMS.filter((p) =>
+    p.key === "shopee" ? access.adsShopee : p.key === "lazada" ? access.adsLazada : access.adsTiktok
+  );
+  const [pickedPlatform, setUiPlatform] = useState<UiPlatform>(platforms[0]?.key ?? "shopee");
+  // Sàn đang chọn không còn trong danh sách được phép (quyền vừa đổi, thông báo trỏ sàn khác) → về sàn đầu.
+  const uiPlatform: UiPlatform = platforms.some((p) => p.key === pickedPlatform)
+    ? pickedPlatform
+    : (platforms[0]?.key ?? "shopee");
   // Nhánh Shopee / Lazada bên dưới chỉ chạy khi không phải TikTok.
   const platform: AdsPlatform = uiPlatform === "tiktok" ? "shopee" : uiPlatform;
   const platformChannelName = PLATFORMS.find((p) => p.key === uiPlatform)?.channelName ?? "SHOPEE";
@@ -268,7 +281,7 @@ export function AdsPage() {
     <>
       {/* Sàn + chế độ Trợ lý (chỉ xem — đổi chế độ ở web) */}
       <View className="mb-2 flex-row flex-wrap items-center gap-2">
-          {PLATFORMS.map((p) => {
+          {platforms.map((p) => {
             const active = uiPlatform === p.key;
             return (
               <Pressable

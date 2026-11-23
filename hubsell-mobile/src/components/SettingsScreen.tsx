@@ -83,7 +83,7 @@ export function SettingsScreen() {
   const identity =
     user.staffUsername && user.username
       ? `${user.username}/${user.staffUsername}`
-      : (user.username ?? user.email ?? "");
+      : (user.username ?? user.staffUsername ?? user.email ?? "");
   const roleLabel = user.role === "ADMIN" ? "Chủ shop" : "Nhân viên";
 
   return (

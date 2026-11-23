@@ -37,6 +37,7 @@ import { rangeFor, yesterdayRange } from "@/lib/dates";
 import { compactMoney, groupVN } from "@/lib/format";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { useAuth } from "@/auth/AuthContext";
+import { accessOf } from "@/lib/permissions";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
 import { DeltaPill } from "@/components/DeltaPill";
@@ -121,6 +122,18 @@ function HeroBackdrop({ width, height }: { width: number; height: number }) {
 
 export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const { user } = useAuth();
+  // Nhân viên chỉ có quyền Tổng quan vẫn mở được trang này; từng khối bên dưới hiện
+  // theo đúng quyền của API nuôi nó (23/11/2026) — không có quyền thì KHÔNG gọi API
+  // đó (gọi là 403, đẩy cả trang vào ô lỗi) và khối đó ẩn đi:
+  //   khối tiền (hero + thẻ Chi phí)  → Báo cáo dòng tiền
+  //   thẻ đơn hoàn                    → Đối soát đơn hoàn
+  //   ô Gian hàng                     → chỉ chủ shop (nối gian là việc của chủ)
+  //   ô Giá vốn / Chi phí vận hành    → Cấu hình Giá vốn / Thu chi vận hành
+  const access = accessOf(user);
+  const canMoney = access.finance;
+  const canReturns = access.returns;
+  const canExpenses = access.expenses;
+  const isOwner = access.owner;
   const router = useRouter();
   const channelColors = useChannelColors();
   const { width } = useWindowDimensions();
@@ -167,18 +180,20 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         fetchOverview(from, to),
         // Số TIỀN hôm nay = 4 thẻ Báo cáo dòng tiền (cùng nguồn trang Tài chính).
         // Gói bị khóa → null + nhớ câu backend, các khối khác vẫn tải tiếp.
-        fetchAnalytics(from, to).catch((e: unknown) => {
-          if (!isPlanLockedError(e)) throw e;
-          lockedMsg = e.message;
-          return null;
-        }),
+        canMoney
+          ? fetchAnalytics(from, to).catch((e: unknown) => {
+              if (!isPlanLockedError(e)) throw e;
+              lockedMsg = e.message;
+              return null;
+            })
+          : null,
         // Hôm qua chỉ để so ▲/▼ doanh thu — hỏng thì bỏ pill, không che màn.
-        fetchAnalytics(yd.from, yd.to).catch(() => null),
-        fetchReturnsSummary(),
+        canMoney ? fetchAnalytics(yd.from, yd.to).catch(() => null) : null,
+        canReturns ? fetchReturnsSummary() : null,
         // Hỏng thì giữ ô Gian hàng ở trạng thái "—", không che màn.
-        fetchChannels().catch(() => null),
+        isOwner ? fetchChannels().catch(() => null) : null,
         // Khoản chi vận hành tháng này — hỏng / bị khóa thì ô chỉ mất con số.
-        fetchExpenses(month.from, month.to).catch(() => null),
+        canExpenses ? fetchExpenses(month.from, month.to).catch(() => null) : null,
       ]);
       if (seq !== reqSeq.current) return;
       setAnalytics(ana);
@@ -188,7 +203,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       );
       setMoney(fin?.breakdown ?? null);
       setPrevMoney(prevFin?.breakdown ?? null);
-      setReturns(ret.summary);
+      setReturns(ret?.summary ?? null);
       setError("");
       setNoChannel(false);
       setPlanLocked(lockedMsg);
@@ -214,7 +229,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [canMoney, canReturns, canExpenses, isOwner]);
 
   useEffect(() => {
     void load("first");
@@ -291,10 +306,62 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
     if (pulling > 0) return { value: `Đang kéo ${groupVN(pulling)} gian`, tone: "warn" as const };
     return { value: `${groupVN(live.length)} đang nối`, tone: "muted" as const };
   })();
-  const costTile =
-    missingCostOrders > 0
+  // Số đơn thiếu giá vốn đi theo khối tiền — không có quyền khối tiền thì không khoe "Đủ giá vốn".
+  const costTile = !canMoney
+    ? { value: "Xem, nhập giá vốn", tone: "muted" as const }
+    : missingCostOrders > 0
       ? { value: `${groupVN(missingCostOrders)} đơn chưa có giá`, tone: "warn" as const }
       : { value: "Đủ giá vốn", tone: "muted" as const };
+  // Các ô THIẾT LẬP người này được vào — xếp 2 ô một hàng, hàng lẻ có ô trống giữ chỗ.
+  const setupTiles: {
+    key: string;
+    short: string;
+    icon: React.ComponentProps<typeof Ionicons>["name"];
+    label: string;
+    value: string;
+    tone: "bad" | "warn" | "muted";
+    href: string;
+  }[] = [];
+  if (isOwner) {
+    setupTiles.push({
+      key: "channels",
+      short: "Gian hàng",
+      icon: "storefront",
+      label: "Gian hàng",
+      value: channelTile.value,
+      tone: channelTile.tone,
+      href: "/channels",
+    });
+  }
+  if (access.costPrices) {
+    setupTiles.push({
+      key: "cost",
+      short: "Giá vốn",
+      icon: "pricetag",
+      label: "Giá vốn",
+      value: costTile.value,
+      tone: costTile.tone,
+      href: "/cost-prices",
+    });
+  }
+  if (canExpenses) {
+    setupTiles.push({
+      key: "expenses",
+      short: "Chi phí",
+      icon: "wallet",
+      label: "Chi phí vận hành",
+      value:
+        opexMonth === null
+          ? "Đóng gói, lương…"
+          : opexMonth > 0
+            ? `Tháng này ${compactMoney(opexMonth)}`
+            : "Chưa nhập tháng này",
+      tone: "muted",
+      href: "/expenses",
+    });
+  }
+  const setupRows: (typeof setupTiles)[] = [];
+  for (let i = 0; i < setupTiles.length; i += 2) setupRows.push(setupTiles.slice(i, i + 2));
   // Bề rộng sparkline = màn hình − padding trang (16×2) − padding hero (20×2)
   const sparkW = Math.min(width, 480) - 72;
 
@@ -324,10 +391,12 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             Chưa có gian hàng nào
           </Text>
           <Text className="mt-1.5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Kết nối Shopee, TikTok Shop hoặc Lazada ngay tại đây — đơn hàng, đối soát và
-            danh mục sản phẩm sẽ tự về trong vài phút, không cần cài gì thêm.
+            {isOwner
+              ? "Kết nối Shopee, TikTok Shop hoặc Lazada ngay tại đây — đơn hàng, đối soát và danh mục sản phẩm sẽ tự về trong vài phút, không cần cài gì thêm."
+              : "Chủ shop chưa kết nối gian hàng nào. Khi chủ shop nối Shopee, TikTok Shop hoặc Lazada, số liệu sẽ tự hiện ở đây."}
           </Text>
-          {/* 28/10: nối gian ngay trong app (trước 1.3.1 mở app.hubsell.vn). */}
+          {/* 28/10: nối gian ngay trong app (trước 1.3.1 mở app.hubsell.vn). Nối gian là việc của chủ shop. */}
+          {isOwner ? (
           <Pressable
             className="mt-4 flex-row items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 active:opacity-80"
             onPress={() => {
@@ -339,9 +408,10 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             <Ionicons name="link-outline" size={16} color="#fff" />
             <Text className="text-sm font-semibold text-white">Liên kết gian hàng ngay</Text>
           </Pressable>
+          ) : null}
           <Pressable className="mt-3" onPress={() => void load("first")} hitSlop={8}>
             <Text className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              Đã kết nối xong, tải lại
+              {isOwner ? "Đã kết nối xong, tải lại" : "Tải lại"}
             </Text>
           </Pressable>
         </Card>
@@ -355,7 +425,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               Doanh thu | Lợi nhuận (chốt 13/08), sparkline lãi 7 ngày dưới đáy.
               Các khối vào trang so le 60ms — đủ thấy nhịp, không đủ gây chờ.
               Gói bị khóa → thẻ khóa đứng đúng chỗ hero, phần đơn bên dưới giữ nguyên. */}
-          {planLocked ? (
+          {!canMoney ? null : planLocked ? (
             <Animated.View entering={FadeInDown.duration(280)} className="mb-3">
               <PlanLockedCard message={planLocked} onRetry={() => void load("first")} />
             </Animated.View>
@@ -462,6 +532,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 <DeltaPill current={orderCount} previous={prevOrders} />
               </View>
             </Card>
+            {canMoney ? (
             <Card className="flex-1 p-3.5">
               <Text className="text-[11px] text-slate-500 dark:text-slate-400">Chi phí</Text>
               <Text
@@ -478,6 +549,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                     : "Giá vốn + vận hành + quảng cáo"}
               </Text>
             </Card>
+            ) : null}
           </Animated.View>
 
           {/* PHỄU VẬN HÀNH HÔM NAY — đơn phát sinh trong ngày đang ở bước nào,
@@ -581,6 +653,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
           </Animated.View>
 
           {/* Đơn hoàn cần để mắt — bấm sang trang Kho */}
+          {canReturns ? (
           <Animated.View entering={FadeInDown.duration(280).delay(180)}>
             <Card
               className="flex-row items-center gap-3 p-4"
@@ -609,63 +682,48 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
             </Card>
           </Animated.View>
+          ) : null}
 
           {/* THIẾT LẬP — hai ô Gian hàng + Giá vốn (anh Trung 28/10, dời xuống CUỐI
               trang theo ý anh: trang chủ là nơi XEM số, việc thiết lập đứng sau).
               Ô mang TRẠNG THÁI (gian rớt đỏ / đang kéo vàng / thiếu giá vốn vàng /
               ổn xám) chứ không phải lối tắt chết. Hàng ngang bọc View thường vì
               Animated.View trên giả lập web không nhận className. */}
+          {setupRows.length > 0 ? (
           <Animated.View entering={FadeInDown.duration(280).delay(210)} className="mt-5">
             <View className="mb-2 flex-row items-baseline justify-between px-1">
               <Text className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 Thiết lập
               </Text>
               <Text className="text-[11px] text-slate-400 dark:text-slate-500">
-                Gian hàng · Giá vốn · Chi phí
+                {setupTiles.map((t) => t.short).join(" · ")}
               </Text>
             </View>
-            <View className="flex-row gap-3">
-              <QuickTile
-                icon="storefront"
-                label="Gian hàng"
-                value={channelTile.value}
-                tone={channelTile.tone}
-                onPress={() => router.push("/channels" as Href)}
-              />
-              <QuickTile
-                icon="pricetag"
-                label="Giá vốn"
-                value={costTile.value}
-                tone={costTile.tone}
-                onPress={() => router.push("/cost-prices" as Href)}
-              />
-            </View>
-            {/* CHI PHÍ VẬN HÀNH — ô CÙNG CỠ với Gian hàng, nằm ngay dưới nó (anh Trung 12/11:
-                "cùng kích thước khối với Gian hàng, về sau còn thêm các mục khác bên cạnh").
-                Ô trống bên phải giữ chỗ cho mục sau — đừng kéo ô này ra hết hàng. */}
-            <View className="mt-3 flex-row gap-3">
-              <QuickTile
-                icon="wallet"
-                label="Chi phí vận hành"
-                value={
-                  opexMonth === null
-                    ? "Đóng gói, lương…"
-                    : opexMonth > 0
-                      ? `Tháng này ${compactMoney(opexMonth)}`
-                      : "Chưa nhập tháng này"
-                }
-                tone="muted"
-                onPress={() => router.push("/expenses" as Href)}
-              />
-              {/* Ô giữ chỗ mang CÙNG đệm + viền với ô thật: phần chia đều tính sau khi trừ đệm,
-                  ô trống không đệm sẽ hẹp hơn và làm ô Chi phí rộng hơn ô Gian hàng 17 px. */}
-              <View className="flex-1 border border-transparent p-4" />
-            </View>
+            {/* Ô nào cũng CÙNG CỠ (anh Trung 12/11: "cùng kích thước khối với Gian hàng, về sau
+                còn thêm các mục khác bên cạnh") — hàng lẻ có ô trống giữ chỗ, đừng kéo ô ra hết hàng.
+                Ô giữ chỗ mang CÙNG đệm + viền với ô thật: phần chia đều tính sau khi trừ đệm,
+                ô trống không đệm sẽ hẹp hơn và làm ô bên cạnh rộng hơn 17 px. */}
+            {setupRows.map((row, i) => (
+              <View key={row[0].key} className={`flex-row gap-3 ${i > 0 ? "mt-3" : ""}`}>
+                {row.map((t) => (
+                  <QuickTile
+                    key={t.key}
+                    icon={t.icon}
+                    label={t.label}
+                    value={t.value}
+                    tone={t.tone}
+                    onPress={() => router.push(t.href as Href)}
+                  />
+                ))}
+                {row.length < 2 ? <View className="flex-1 border border-transparent p-4" /> : null}
+              </View>
+            ))}
           </Animated.View>
+          ) : null}
 
           {/* Hộp nhắc nhập giá vốn — chỉ khi hôm nay có đơn thiếu giá vốn, hỏi một
               lần, Bỏ qua = không hiện lại (luật web 02/10, không nhắc lúc nối gian). */}
-          {user && !planLocked ? (
+          {user && !planLocked && canMoney && access.costPrices ? (
             <MissingCostPrompt
               userId={user.id}
               orderCount={missingCostOrders}

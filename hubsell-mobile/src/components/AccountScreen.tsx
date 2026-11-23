@@ -132,7 +132,7 @@ export function AccountScreen() {
   const identity =
     user.staffUsername && user.username
       ? `${user.username}/${user.staffUsername}`
-      : (user.username ?? user.email ?? "");
+      : (user.username ?? user.staffUsername ?? user.email ?? "");
   const roleLabel = user.role === "ADMIN" ? "Chủ shop" : "Nhân viên";
   const phone = displayPhone(user.phone);
   const planInfo = plan ? planSummary(plan) : null;

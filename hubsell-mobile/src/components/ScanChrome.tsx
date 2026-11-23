@@ -107,8 +107,8 @@ const SCAN_TAB_MODES: { key: ScanTabMode; label: string }[] = [
 ];
 
 /**
- * Công tắc "Xem đơn · Quét nhiều · Đóng gói" nổi trên camera ở tab QR giữa. Khu nhân viên không có
- * tab Đơn hàng nên đây là lối vào Quét đóng gói của người gói hàng. Nền đen mờ + chữ
+ * Công tắc "Xem đơn · Quét nhiều · Đóng gói" nổi trên camera ở tab QR giữa — lối vào Quét
+ * đóng gói nhanh nhất của người gói hàng (cũng vào được từ nút Đóng gói ở tab Đơn hàng). Nền đen mờ + chữ
  * trắng vì cảnh camera có thể sáng (tem trắng, kho đèn mạnh).
  */
 export function ScanModeSwitch({

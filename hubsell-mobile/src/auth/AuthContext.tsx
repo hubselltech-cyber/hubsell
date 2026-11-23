@@ -4,8 +4,10 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import { setAuthToken, setOnUnauthorized } from "../api/client";
 import {
   login as apiLogin,
@@ -82,6 +84,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signingOut = false;
     }
   }, []);
+
+  // QUYỀN ĐỔI GIỮA PHIÊN (23/11/2026): thanh tab + từng màn hiện theo quyền trong `user`,
+  // mà `user` trước đây chỉ đọc lại /me lúc mở app từ đầu. Chủ shop vừa tick thêm / rút
+  // quyền trên web thì nhân viên đưa app từ nền lên là nhận quyền mới — không phải đăng
+  // xuất hay tắt hẳn app. Cách nhau ≥ 30 giây; giống hệt bản đang giữ thì không đụng state
+  // (khỏi vẽ lại cả app mỗi lần mở máy); mất mạng thì giữ quyền cũ.
+  const userRef = useRef<AuthUser | null>(null);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+  useEffect(() => {
+    if (status !== "signedIn") return;
+    let last = Date.now();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active" || Date.now() - last < 30_000) return;
+      last = Date.now();
+      fetchMe()
+        .then((me) => {
+          const cur = userRef.current;
+          if (!cur || cur.id !== me.user.id) return;
+          if (JSON.stringify(cur) === JSON.stringify(me.user)) return;
+          setUser(me.user);
+          return storage.setItem(USER_KEY, serializeUser(me.user));
+        })
+        .catch(() => {});
+    });
+    return () => sub.remove();
+  }, [status]);
 
   // Token hết hạn giữa chừng (401) → về màn đăng nhập thay vì mỗi màn tự lo.
   // Đang đăng xuất mà hook gỡ token push dính 401 thì bỏ qua (tránh gọi vòng).

@@ -18,6 +18,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { fetchOrders, lookupOrder, type OrdersFilter } from "@/api/orders";
 import { fetchChannels } from "@/api/channels";
+import { RequireAccess } from "@/components/RequireAccess";
 import { ApiError } from "@/api/client";
 import type {
   ChannelListItem,
@@ -114,7 +115,16 @@ interface FilterValue {
   cancelRequested: boolean;
 }
 
-export default function OrdersScreen() {
+/** Tab Đơn hàng — chủ shop và nhân viên có quyền Đơn hàng (cùng cửa với /api/orders). */
+export default function OrdersTab() {
+  return (
+    <RequireAccess allow={(a) => a.orders}>
+      <OrdersScreen />
+    </RequireAccess>
+  );
+}
+
+function OrdersScreen() {
   const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();

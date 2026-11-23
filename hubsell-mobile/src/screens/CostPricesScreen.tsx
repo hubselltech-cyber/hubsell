@@ -291,7 +291,7 @@ export function CostPricesScreen() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.navigate("/(admin)/home");
+    else router.navigate("/");
   };
 
   const renderGroup = (g: ModelGroup, showOrders: boolean) => {

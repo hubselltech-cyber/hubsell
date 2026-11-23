@@ -5,10 +5,9 @@ import { useAuth } from "@/auth/AuthContext";
 import { homePathFor } from "@/lib/permissions";
 
 /**
- * CỔNG ĐIỀU HƯỚNG THEO VAI — điểm vào duy nhất của app:
- *   ADMIN                     → (admin)/finance   (Tài chính & Dòng tiền)
- *   Nhân viên có quyền Đơn hàng / Kho → (warehouse)/stock (Kho + nút QR giữa)
- *   Nhân viên không có quyền nào trong đó → /no-access
+ * CỔNG ĐIỀU HƯỚNG THEO QUYỀN — điểm vào duy nhất của app:
+ *   vào tab ĐẦU TIÊN người đó có quyền: Trang chủ → Đơn hàng → Kho (homePathFor);
+ *   chủ shop luôn là Trang chủ; nhân viên không có quyền nào trong đó → /no-access
  */
 export default function Gate() {
   const { status, user } = useAuth();
