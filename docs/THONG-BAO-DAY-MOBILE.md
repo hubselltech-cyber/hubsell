@@ -138,7 +138,9 @@ Chưa kiểm được trên prod vì cần một đơn hủy thật sau deploy �
 - ⏳ Anh: Firebase + FCM V1 (mục 4.1) — push Android chỉ chạy sau bước này; iOS cần build EAS mới.
 - ⏳ Thử máy thật: xin quyền lần đầu, bấm tin khi app đóng, đăng xuất rồi đăng nhập tài khoản khác không nhận
   tin cũ, công tắc tắt trên máy.
-- ⏳ Nhân viên chưa có chuông (GĐ1) — mở theo cây quyền là nợ cũ.
+- ⏳ Nhân viên chưa có chuông (GĐ1) — mở theo cây quyền là nợ cũ. **23/11/2026: lát 1 (máy chủ) đã code** — luật mục ↔ quyền,
+  phạm vi gian, tin đẩy cho máy nhân viên: xem [MOBILE-PHAN-QUYEN-NHAN-VIEN.md](MOBILE-PHAN-QUYEN-NHAN-VIEN.md) mục 8–9. App + web
+  (lát 2, 3) chưa làm nên nhân viên CHƯA thấy chuông.
 - ⏳ Đọc biên nhận Expo (receipts) để tắt token chết muộn.
 - ⏳ Web: màn cài đặt nhóm (route đã có).
 - ⏳ Nút Chấp nhận/Từ chối yêu cầu hủy + trả lời yêu cầu hoàn trên app (mục 6); nhạc cảnh báo khi quét đơn

@@ -23,7 +23,23 @@
   kiểm kiểu + 7 ca test + chạy giả lập web từ nhánh đó trước khi đẩy; KHÔNG thử kênh preview trên máy thật). Hệ quả đã báo anh trước:
   nhân viên có quyền Đơn hàng của MỌI shop thấy thêm tab Đơn hàng; có quyền Tổng quan / Dòng tiền / Quảng cáo thấy tab Trang chủ.
 - **Anh: "Em commit và push đi" →** push master 23/11 (mã `c3d6ec3a` + docs). Chỉ đụng `hubsell-mobile` + tài liệu nên Render không deploy lại.
-- **⏳ Anh:** bảo Nguyệt tắt hẳn app mở lại 2 lần rồi báo em thấy đủ tab chưa. Rút OTA: docs mục 6.
+- **✅ Anh xác nhận trên máy thật 23/11: "Đã thấy đủ"** (tab theo quyền đã tới máy nhân viên). Rút OTA: docs mục 6.
+- **Anh báo tiếp: "của khách hàng đang không nhận được chuông thông báo, không có nút chuông".** Em hiểu là tài khoản NHÂN VIÊN (tài
+  khoản chủ shop vẫn có chuông — `home.tsx` + `permissions.ts` hai nhánh 1.5.0 / 1.4.3 giống hệt nhau, đã soi chủ shop trên local).
+  Gốc ở máy chủ, không phải app: `/api/notifications` gác `adminOnly`, luồng chuông web từ chối vai khác ADMIN, tin đẩy chỉ gửi máy
+  có `userId = ownerId` (`services/push.ts`) → nhân viên không có chuông ở cả web lẫn app. Nợ cũ đã ghi ở
+  docs/THONG-BAO-DAY-MOBILE.md ("Nhân viên chưa có chuông (GĐ1)"). Hướng làm + 3 điểm chốt ở docs/MOBILE-PHAN-QUYEN-NHAN-VIEN.md mục 8.
+- **Anh: "Duyệt, làm lát 1" → LÁT 1 (máy chủ) ĐÃ CODE, CHƯA commit / CHƯA lên prod** (docs mục 9): migration
+  `20261123100000_notification_category_channels` (cột `category` + `channelIds`, chỉ sửa metadata, có khối lấy khóa thử lại);
+  `services/notification-access.ts` một nguồn luật mục ↔ quyền + phạm vi gian; `/api/notifications` bỏ `adminOnly`, danh sách / số
+  chưa đọc / đánh dấu đọc theo phạm vi người gọi, cài đặt + gửi thử vẫn chỉ chủ shop; tin đẩy gửi thêm máy nhân viên được thấy;
+  17 tệp phát thông báo ghi gian. "Đã đọc" dùng chung, nhân viên theo cài đặt của chủ shop (hai mặc định anh duyệt).
+  **Chặt hơn bản đã trình:** nhân viên không thấy thông báo phát trước ngày lên (kể cả người đủ gian); đợt đơn mới gom có gian
+  không được giao thì không thấy cả đợt; chuyện cả shop chỉ tới người được giao đủ gian.
+  Kiểm: tsc sạch; vitest 19 tệp liên quan 195 qua; chạy thật trên local 5 nhân viên × 10 loại thông báo 27 / 27 đúng; chọn máy nhận
+  tin đẩy 9 / 9 đúng (lời gọi ra Expo thay bản giả). Lát này một mình không đổi gì trên màn của ai — nhân viên CHƯA thấy chuông tới
+  khi xong lát 2 (app) / lát 3 (web). DB local đã dọn dữ liệu thử; thông báo cũ của tài khoản seed local bị đánh dấu đã đọc.
+  ⏳ anh duyệt commit + push (push = Render deploy + chạy migration trên prod).
 - **Điểm lệch còn lại (docs mục 7):** chỉ có Báo cáo dòng tiền mà không có Tổng quan thì trang Tài chính thiếu 2 khối (cửa
   `/api/analytics` gác bằng Tổng quan); chỉ có Giá vốn / Thu chi vận hành thì chưa có lối vào; nhân viên không nhận tin đẩy.
 

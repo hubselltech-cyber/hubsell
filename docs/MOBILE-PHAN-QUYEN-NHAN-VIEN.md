@@ -117,6 +117,102 @@ thấy ô Gian hàng ở Tổng quan, không thấy mục Thông báo và Gói d
    "chưa có quyền".
 3. **Lãi/Lỗ Thực Hiện, Kiểm toán phí sàn, Đối soát phí ship, Trợ lý vận hành, KOC, Hóa đơn & Thuế:** app chưa có màn — tick quyền
    này không thêm gì trên app (chủ shop cũng không có).
-4. **Thông báo đẩy cho nhân viên:** máy chủ chỉ gửi cho chủ shop.
+4. **Chuông + thông báo đẩy cho nhân viên:** máy chủ chỉ mở cho chủ shop — anh báo 23/11, hướng làm ở mục 8.
 5. Dòng tên ở Cấu hình / Tài khoản của nhân viên trước đây trống (" · Nhân viên") vì `/me` không kèm tên đăng nhập của chủ → nay hiện
    tên đăng nhập riêng của nhân viên (`nguyet · Nhân viên`), chưa phải dạng đủ `admin/nguyet`.
+
+## 8. Chuông + thông báo đẩy cho nhân viên (anh báo 23/11 sau khi xác nhận "Đã thấy đủ") — đề xuất; anh duyệt "làm lát 1" → mục 9
+
+Anh: "của khách hàng đang không nhận được chuông thông báo, không có nút chuông thông báo."
+
+**Hiện trạng (đã đọc mã):**
+- `backend/src/app.ts`: `/api/notifications` gác `adminOnly`; `notificationStream` (chuông web) trả 401 cho vai khác ADMIN.
+- `services/push.ts` `sendPushToOwner`: chỉ gửi máy có `userId = ownerId` (máy của chính chủ shop).
+- Web `app-shell.tsx`: chuông chỉ vẽ khi `isAdmin(user)`. → nhân viên không có chuông ở CẢ web lẫn app; không phải do bản OTA 23/11.
+- Tài khoản chủ shop không đổi: `(admin)/home.tsx` + `lib/permissions.ts` ở master và nhánh 1.4.3 giống hệt nhau.
+- Bảng `notifications`: mỗi dòng thuộc chủ shop, KHÔNG có cột gian hàng, KHÔNG có cột nhóm, một cột `readAt` dùng chung.
+  Nhóm (22 mục, 6 nhóm) suy từ `type` bằng hàm `categoryOf` lúc chạy. Cài đặt bật / tắt nhóm lưu theo chủ shop.
+
+**Vì sao không phải sửa một dòng:** mở cổng cho nhân viên như hiện trạng thì nhân viên chỉ có quyền Kho cũng đọc được "Báo cáo
+tuần" (doanh thu, lãi), "Gói dịch vụ, thanh toán"; nhân viên bị giới hạn gian đọc được thông báo của gian khác.
+
+**Hướng làm (em đề xuất):**
+
+| Nhóm thông báo | Nhân viên nhận khi có quyền |
+|---|---|
+| Đơn hàng (đơn mới, hỏa tốc, xin hủy, giao hụt, tự chuẩn bị hàng) | Đơn hàng |
+| Hoàn hàng | Đối soát đơn hoàn hoặc Đơn hàng |
+| Báo cáo tuần, đơn lỗ / sai phí | Báo cáo dòng tiền |
+| Hóa đơn điện tử, hạn kê khai thuế | Hóa đơn & Thuế |
+| Quảng cáo (5 mục) | Trợ lý quảng cáo |
+| Hết hàng, sắp hết hàng | Tổng kho |
+| Mẫu KOC quá hạn | KOC |
+| Mất kết nối gian, đồng bộ dừng, gói dịch vụ, hệ thống | chỉ chủ shop |
+
+- Lát 1 (máy chủ, có migration nhỏ): thêm cột `category` + `channelId` vào `notifications` (ghi lúc `notify`), cổng theo quyền thay
+  `adminOnly`, danh sách + số chưa đọc lọc theo nhóm được phép và gian được giao, tin đẩy gửi thêm máy nhân viên theo cùng luật.
+- Lát 2 (app): bật chuông + đăng ký máy nhận tin đẩy cho nhân viên; đường dẫn trong tin dẫn tới đúng màn họ có quyền. Đi OTA.
+- Lát 3 (web): vẽ chuông cho nhân viên.
+
+**Ba điểm anh phải chốt:**
+1. **"Đã đọc" chung hay riêng từng người.** Em nghiêng CHUNG cả shop ở lát đầu (như hộp thư chung: nhân viên mở "khách xin hủy" là
+   chấm đỏ của chủ shop cũng tắt) — không thêm bảng. Riêng từng người thì thêm một bảng đánh dấu đã đọc, làm sau nếu khách kêu.
+2. **Nhân viên có tự tắt nhóm thông báo không.** Em nghiêng KHÔNG ở lát đầu: nhân viên theo cài đặt của chủ shop.
+3. **Thông báo cũ (trước ngày lên) không có cột gian** → nhân viên bị giới hạn gian chỉ thấy thông báo từ ngày lên trở đi; nhân viên
+   được giao đủ gian thấy cả cũ.
+
+## 9. Lát 1 (máy chủ) — ĐÃ CODE 23/11/2026, thử local đạt, CHƯA commit / CHƯA lên prod
+
+Anh: "Duyệt, làm lát 1" (theo ba mặc định ở mục 8). Lát này một mình KHÔNG đổi gì trên màn của ai: app và web chưa gọi các đường
+mới cho nhân viên (lát 2, 3). Tài khoản chủ shop không đổi hành vi.
+
+**Đã làm:**
+- Migration `20261123100000_notification_category_channels`: `notifications.category` (TEXT, null) + `notifications.channelIds`
+  (TEXT[], mặc định rỗng). Chỉ sửa metadata, có khối lấy khóa + thử lại như các migration đụng bảng nóng. Không thêm chỉ mục, không
+  điền bù dòng cũ.
+- `services/notification-access.ts` — MỘT nguồn luật: bảng mục ↔ quyền (`CATEGORY_PERMISSIONS`), phạm vi gian, bản lọc trong bộ nhớ
+  (`staffCanSeeNotification`, dùng cho tin đẩy) và bản SQL (`staffNotificationWhere`, dùng cho danh sách / số chưa đọc / đánh dấu đã
+  đọc); test so hai bản trên mọi tổ hợp.
+- `services/notifications.ts`: `notify()` ghi `category` + `channelIds`; mount `/api/notifications` bỏ `adminOnly`, router tự gác:
+  `GET /` và `POST /read` theo phạm vi người gọi; `POST / DELETE /devices` mở cho nhân viên (đăng ký máy nhận tin đẩy);
+  `GET / PUT /preferences`, `POST /test-push`, `/dev-test` vẫn chỉ chủ shop. Luồng SSE của web vẫn chỉ chủ shop (lát 3).
+- `services/push.ts`: tin đẩy đi kèm một thông báo gửi thêm máy của nhân viên được thấy thông báo đó; nhân viên đã xóa thì không gửi;
+  tin thử vẫn chỉ máy chủ shop. Shop không có máy nhân viên nào thì không tốn thêm câu hỏi DB.
+- Gắn gian ở nơi phát đã biết gian (17 tệp): đơn mới (đợt gom ghi mọi gian có đơn trong đợt), hỏa tốc, khách xin hủy / đơn bị hủy,
+  giao hụt ×3 sàn, hoàn hàng ×3 sàn, tự chuẩn bị hàng, quảng cáo TikTok (nhận định, tự xử lý, chuyển Phân phối tối đa).
+  Để là "chuyện cả shop" (không ghi gian): cảnh báo điều hành (`ops-alerts`: đơn lỗ, sai phí, ví quảng cáo, hết hàng…), tổng kết
+  quảng cáo ngày, báo cáo tuần, hóa đơn, thuế, KOC.
+
+**Luật gian (chặt hơn bản em trình ở mục 8 — nói rõ để anh biết):**
+1. Nhân viên thấy một thông báo khi KHÔNG gian nào của nó nằm ngoài phần được giao. Đợt "đơn mới" gom gian A + B mà nhân viên chỉ
+   được giao A → không thấy cả đợt (tiêu đề + nội dung in số của cả hai gian).
+2. Thông báo "chuyện cả shop" chỉ tới nhân viên được giao ĐỦ mọi gian. Hệ quả: shop nối thêm gian mà chưa giao cho nhân viên thì
+   nhân viên đó thôi nhận báo cáo tuần, cảnh báo hết hàng… cho tới khi được giao gian mới.
+3. Thông báo phát TRƯỚC ngày lên bản này: nhân viên KHÔNG thấy, kể cả người được giao đủ gian (mục 8 em nói người đủ gian thấy cả
+   cũ). Lý do: dòng cũ không có cột mục để lọc theo quyền; điền bù là ghi hàng loạt lên bảng `notifications` trên prod, không đáng.
+
+**Đã kiểm:**
+- `npx tsc --noEmit` sạch. Vitest 19 tệp có liên quan: 195 qua, 3 bỏ qua sẵn. Test mới: `notification-access.test.ts` (13 ca) +
+  3 ca gian trong `new-order-notify.test.ts`.
+- Prisma sinh đúng câu `ALTER TABLE` như tệp migration (`migrate diff`). DB local kẹt một migration cũ từ 17/09
+  (`20260830120000_fee_audit` FAILED) nên áp riêng tệp SQL này bằng `prisma db execute`.
+- Chạy thật trên backend local, 5 nhân viên × 10 loại thông báo, 27 / 27 ca đúng:
+
+| Người | Quyền / gian | Thấy |
+|---|---|---|
+| chủ shop | — | cả 10, chưa đọc 10 |
+| đủ quyền, đủ gian | 20 lá | 8 (thiếu đúng "gói dịch vụ" và "mất kết nối gian") |
+| mẫu Nhân viên kho, chỉ gian 1 | đơn hàng + kho | 2: đơn mới gian 1, hoàn hàng gian 1 (không đợt gom gian 1 + 2, không hết hàng cả shop) |
+| mẫu Kế toán, đủ gian | tài chính + hóa đơn | 2: báo cáo tuần, hóa đơn |
+| chỉ Quảng cáo TikTok | 2 gian | 1: nhận định chiến dịch |
+| chỉ Phản hồi đánh giá | — | 0, danh sách rỗng |
+
+  Nhân viên kho bấm "đọc hết" → đánh dấu đúng 2 dòng của mình, chấm đỏ chủ shop 10 → 8; đánh dấu dòng gói dịch vụ bằng id → 0 dòng;
+  nhân viên gọi cài đặt / gửi thử → 403; không nhân viên nào thấy dòng cũ.
+- Chọn máy nhận tin đẩy (DB local, lời gọi ra Expo thay bằng bản giả — không tin nào đi ra ngoài): 9 / 9 ca đúng, gồm nhân viên đã
+  xóa không nhận, tin thử chỉ tới chủ shop.
+- **CHƯA kiểm:** trên prod; tin đẩy thật tới máy nhân viên (cần lát 2); tải của câu đếm chưa đọc trên shop có rất nhiều thông báo
+  (câu của nhân viên đi cùng chỉ mục `(ownerId, createdAt)` như câu của chủ shop, thêm điều kiện lọc — chưa đo).
+
+**Còn lại:** lát 2 (app: bật chuông + đăng ký máy cho nhân viên, đường dẫn trong tin về đúng màn có quyền, OTA) · lát 3 (web: vẽ
+chuông cho nhân viên + luồng SSE theo phạm vi).
