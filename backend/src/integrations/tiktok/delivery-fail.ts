@@ -399,6 +399,7 @@ export async function processTiktokDeliveryTracking(
       if (cfg.alertEnabled) {
         await notify(ownerId, {
           type: "delivery-fail",
+          channelIds: [channel.id],
           // 25/10/2026: TikTok chưa có nhắn khách tự động (chatStatus chỉ NONE/SKIPPED) → tiêu đề nói thẳng việc cần làm + cái mất nếu không làm.
           title: `Đơn ${order.orderCode} giao ${fails} lần không thành công — gọi khách để cứu đơn`,
           body:

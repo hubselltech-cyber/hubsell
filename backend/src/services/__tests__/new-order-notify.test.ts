@@ -178,3 +178,60 @@ describe("notification-categories — type kỹ thuật → mục con → nhóm 
     expect(sanitizeMuted(["orders", "plan", "system", "ads_wallet", "rác", "ads_wallet"])).toEqual(["orders", "ads_wallet"]);
   });
 });
+
+describe("new-order-notify — ghi gian vào chuông (nhân viên chỉ nhận thông báo của gian được giao, 23/11/2026)", () => {
+  let calls: Call[];
+  let now: number;
+  const base = { ownerId: "o1", totalAmount: 100_000, carrierName: "SPX Express" };
+  const A = { ...base, shopName: "ANO", channelName: "SHOPEE", channelId: "ch-A" };
+  const B = { ...base, shopName: "Hi.Bé", channelName: "TIKTOK", channelId: "ch-B" };
+
+  beforeEach(() => {
+    calls = [];
+    now = Date.parse("2026-11-23T10:00:00Z");
+    _resetNewOrderBuffers();
+    _setNewOrderDeps({
+      now: () => now,
+      flushDelayMs: 1_000_000,
+      isMuted: async () => false,
+      notify: async (...args: unknown[]) => {
+        calls.push({ kind: "notify", args });
+        return { id: `n${calls.length}` };
+      },
+      amend: async (...args: unknown[]) => {
+        calls.push({ kind: "amend", args });
+        return true;
+      },
+    });
+  });
+  afterEach(() => _resetNewOrderBuffers());
+
+  const channelIdsOfCall = (c: Call, argIndex: number) => (c.args[argIndex] as { channelIds?: unknown }).channelIds;
+
+  it("đợt gom ghi đủ các gian có đơn trong đợt; đợt cộng dồn ghi lại danh sách sau khi gộp", async () => {
+    noteNewOrder({ ...A, orderCode: "A1", placedAt: new Date(now) });
+    noteNewOrder({ ...A, orderCode: "A2", placedAt: new Date(now) });
+    await flushOwner("o1");
+    expect(channelIdsOfCall(calls[0], 1)).toEqual(["ch-A"]);
+
+    now += 60_000;
+    noteNewOrder({ ...B, orderCode: "B1", placedAt: new Date(now) });
+    await flushOwner("o1");
+    expect(calls.map((c) => c.kind)).toEqual(["notify", "amend"]);
+    // amend(ownerId, id, patch, push) — patch mang danh sách gian của cả bản ghi đã gộp
+    expect(channelIdsOfCall(calls[1], 2)).toEqual(["ch-A", "ch-B"]);
+  });
+
+  it("một gian trong đợt không rõ mã → ghi rỗng (coi là chuyện của cả shop), không ghi thiếu gian", async () => {
+    noteNewOrder({ ...A, orderCode: "A1", placedAt: new Date(now) });
+    noteNewOrder({ ...base, shopName: "Gian cũ", channelName: "LAZADA", orderCode: "L1", placedAt: new Date(now) });
+    await flushOwner("o1");
+    expect(channelIdsOfCall(calls[0], 1)).toEqual([]);
+  });
+
+  it("đơn hỏa tốc báo ngay kèm gian của đơn", () => {
+    noteNewOrder({ ...A, carrierName: "SPX Instant", orderCode: "X1", placedAt: new Date(now) });
+    const express = calls.find((c) => (c.args[1] as { type: string }).type === "order_express")!;
+    expect(channelIdsOfCall(express, 1)).toEqual(["ch-A"]);
+  });
+});

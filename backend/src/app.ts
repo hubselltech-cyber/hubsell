@@ -342,9 +342,11 @@ export function createApp() {
 
   // Chuông thông báo (Tầng 3): stream SSE đứng TRƯỚC router và KHÔNG qua
   // requireAuth — EventSource không gắn được header Authorization, token đi
-  // qua query và được verify bên trong. GĐ1 chỉ chủ shop (adminOnly).
+  // qua query và được verify bên trong. Stream vẫn chỉ chủ shop; các đường REST mở
+  // cho nhân viên theo quyền + gian được giao từ 23/11/2026 (tự gác trong router:
+  // services/notifications.ts readScopeOf + requireAdmin cho cài đặt / gửi thử).
   app.get("/api/notifications/stream", notificationStream);
-  app.use("/api/notifications", requireAuth, adminOnly, notificationsRouter);
+  app.use("/api/notifications", requireAuth, notificationsRouter);
 
   // Trợ lý Hubsell (bong bóng chat hỏi số liệu vận hành — tầng luật): câu trả
   // lời chạm đủ mảng tài chính nên GĐ1 chỉ CHỦ SHOP, như chuông thông báo.

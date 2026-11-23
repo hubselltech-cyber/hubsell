@@ -746,6 +746,7 @@ export async function processShopeeDeliveryTracking(
       if (cfg.alertEnabled) {
         await notify(ownerId, {
           type: "delivery-fail",
+          channelIds: [channel.id],
           // 25/10/2026: máy đã nhắn khách thì tiêu đề nói việc ĐÃ LÀM trước, việc còn lại sau.
           title:
             chatStatus === DeliveryFailChatStatus.SENT

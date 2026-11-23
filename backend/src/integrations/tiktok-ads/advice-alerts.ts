@@ -144,6 +144,7 @@ export async function runTiktokAdviceAlerts(
     if (!plan.alert) continue;
     await notify(channel.userId, {
       type: NOTIFY_TYPE_TIKTOK_ADVICE,
+      channelIds: [channel.id],
       title: `${c.name || "Chiến dịch GMV Max"}: ${advice.label}`,
       body: advice.conclusion,
       link: `/ads/tiktok/campaign?id=${c.id}`,

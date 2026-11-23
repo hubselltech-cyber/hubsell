@@ -3860,6 +3860,14 @@ model Notification {
   link      String?
   readAt    DateTime?
   createdAt DateTime  @default(now())
+  /// Mục con (services/notification-categories.ts) GHI LÚC PHÁT — để lọc theo quyền
+  /// nhân viên ngay trong câu SQL (23/11/2026). Dòng phát trước ngày đó = null:
+  /// chủ shop vẫn thấy (suy lại từ type), nhân viên không thấy.
+  category   String?
+  /// Các gian mà thông báo này nói tới; rỗng = chuyện của CẢ SHOP (báo cáo tuần,
+  /// cảnh báo điều hành…). Nhân viên chỉ thấy khi được giao đủ các gian này
+  /// (services/notification-access.ts).
+  channelIds String[] @default([])
 
   @@index([ownerId, createdAt])
   @@map("notifications")
@@ -3867,7 +3875,8 @@ model Notification {
 
 /// THIẾT BỊ NHẬN THÔNG BÁO ĐẨY (app mobile, 23/10/2026). App gửi Expo push
 /// token khi đăng nhập (POST /api/notifications/devices), gỡ khi đăng xuất.
-/// Push chỉ tới máy của CHỦ SHOP (userId = ownerId) vì chuông GĐ1 chỉ chủ shop.
+/// Push tới máy của chủ shop (userId = ownerId) và, từ 23/11/2026, máy của nhân viên
+/// được thấy thông báo đó theo quyền + gian (services/push.ts devicesAllowed).
 /// Sàn Expo báo DeviceNotRegistered → enabled=false (services/push.ts).
 model PushDevice {
   id         String   @id @default(cuid())

@@ -220,6 +220,7 @@ export async function handleAutoArrangeItem(item: LeaseItem, _signal: AbortSigna
     const sample = blocked.slice(0, 3).map((b) => b.orderCode).join(", ");
     await notify(channel.userId, {
       type: "auto-arrange",
+      channelIds: [channel.id],
       title: `Tự chuẩn bị hàng: gian ${channel.shopName} có đơn cần làm tay`,
       body: `${blocked.length} đơn máy không chuẩn bị được (${sample}${blocked.length > 3 ? "…" : ""}). Mở Đơn hàng → Chờ xử lý, trỏ vào nhãn để xem lý do.`,
       link: "/orders?tab=pending",

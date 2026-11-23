@@ -450,6 +450,7 @@ async function notifyMaxDeliverySwitch(channelId: string, items: { rowId: string
   for (const it of items) {
     await notify(owner.userId, {
       type: NOTIFY_TYPE_TIKTOK_ADVICE,
+      channelIds: [channelId],
       title: `${it.name || "Chiến dịch GMV Max"}: vừa chuyển sang Phân phối tối đa`,
       body:
         `TikTok sẽ tiêu trọn ${it.budget > 0 ? vnd(it.budget) + "/ngày" : "ngân sách"} để đẩy doanh thu — không còn ROI mục tiêu` +

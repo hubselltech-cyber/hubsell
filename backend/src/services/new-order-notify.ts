@@ -23,6 +23,8 @@ import { isExpressShipping } from "./shipping";
 
 export interface NewOrderNote {
   ownerId: string;
+  /** Gian của đơn — để chuông ghi đúng gian (nhân viên chỉ nhận thông báo của gian được giao). */
+  channelId?: string;
   shopName: string;
   channelName: string;
   orderCode: string;
@@ -54,6 +56,7 @@ interface ShopCount {
   label: string;
   count: number;
   amount: number;
+  channelId?: string;
 }
 
 export interface OrderBatch {
@@ -111,7 +114,7 @@ function addToBatch(b: OrderBatch, n: NewOrderNote): void {
   b.count += 1;
   b.amount += amount;
   const key = `${n.channelName}:${n.shopName}`;
-  const s = b.byShop.get(key) ?? { label: shopLabel(n), count: 0, amount: 0 };
+  const s = b.byShop.get(key) ?? { label: shopLabel(n), count: 0, amount: 0, channelId: n.channelId };
   s.count += 1;
   s.amount += amount;
   b.byShop.set(key, s);
@@ -121,11 +124,25 @@ function mergeBatch(into: OrderBatch, from: OrderBatch): void {
   into.count += from.count;
   into.amount += from.amount;
   for (const [k, s] of from.byShop) {
-    const cur = into.byShop.get(k) ?? { label: s.label, count: 0, amount: 0 };
+    const cur = into.byShop.get(k) ?? { label: s.label, count: 0, amount: 0, channelId: s.channelId };
     cur.count += s.count;
     cur.amount += s.amount;
     into.byShop.set(k, cur);
   }
+}
+
+/**
+ * Các gian có đơn trong đợt. Chỉ cần MỘT gian không rõ mã thì trả rỗng (= coi là
+ * chuyện của cả shop): thà nhân viên bị giới hạn gian không nhận đợt đó còn hơn
+ * ghi thiếu gian rồi để họ đọc số của gian không được giao.
+ */
+export function channelIdsOf(b: OrderBatch): string[] {
+  const ids: string[] = [];
+  for (const s of b.byShop.values()) {
+    if (!s.channelId) return [];
+    ids.push(s.channelId);
+  }
+  return ids;
 }
 
 /**
@@ -161,6 +178,7 @@ export function noteNewOrder(n: NewOrderNote): void {
       body: `${shopLabel(n)} · ${compactVnd(n.totalAmount)}. ${n.carrierName ?? "Hãng"} đến lấy trong vài giờ — chuẩn bị hàng ngay.`,
       link: `/orders?search=${encodeURIComponent(n.orderCode)}`,
       dedupe: false,
+      channelIds: [n.channelId],
     });
   }
 
@@ -197,7 +215,7 @@ export async function flushOwner(ownerId: string): Promise<void> {
     const amended = await deps.amend(
       ownerId,
       r.notificationId,
-      { title: titleOf(r.count, r.amount), body: `${describeBatch(r)}\n(15 phút gần đây)` },
+      { title: titleOf(r.count, r.amount), body: `${describeBatch(r)}\n(15 phút gần đây)`, channelIds: channelIdsOf(r) },
       { title: `Thêm ${b.count} đơn mới · ${vndCompact(b.amount)} — chờ bạn chuẩn bị hàng`, body: describeBatch(b), data: { type: "order_new", link: "/orders" } }
     );
     if (amended) return;
@@ -211,6 +229,7 @@ export async function flushOwner(ownerId: string): Promise<void> {
     body: describeBatch(b),
     link: "/orders",
     dedupe: false,
+    channelIds: channelIdsOf(b),
   });
   if (res) {
     rolling.set(ownerId, {

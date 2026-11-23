@@ -33,7 +33,8 @@ export const CANCEL_REQUEST_LINK = "/orders?cancelRequested=1";
  * đơn đã ghi, không làm hỏng luồng đồng bộ.
  */
 export async function notifyCancelRequest(
-  channel: Pick<Channel, "userId" | "shopName" | "channelName">,
+  // `id` để chuông ghi đúng gian (nhân viên chỉ nhận thông báo của gian được giao).
+  channel: Pick<Channel, "userId" | "shopName" | "channelName"> & { id?: string },
   orderCode: string,
   reason: string | null,
   dueAt: Date | null,
@@ -51,6 +52,7 @@ export async function notifyCancelRequest(
   if (reason) parts.push(`Lý do khách: ${reason}.`);
   await notify(channel.userId, {
     type: "cancel_request",
+    channelIds: [channel.id],
     title: prepared
       ? `Khách yêu cầu hủy đơn đã chuẩn bị hàng ${orderCode}`
       : `Khách yêu cầu hủy đơn ${orderCode}`,
@@ -129,11 +131,11 @@ export function orderCancelledMessage(
 }
 
 export async function notifyOrderCancelledAfterPrepare(
-  channel: Pick<Channel, "userId" | "shopName" | "channelName">,
+  channel: Pick<Channel, "userId" | "shopName" | "channelName"> & { id?: string },
   orderCode: string,
   info: OrderCancelledInfo
 ): Promise<void> {
   if (!shouldNotifyOrderCancelled(info)) return;
   const msg = orderCancelledMessage(channel, orderCode, info);
-  await notify(channel.userId, { type: "order_cancelled", ...msg });
+  await notify(channel.userId, { type: "order_cancelled", ...msg, channelIds: [channel.id] });
 }

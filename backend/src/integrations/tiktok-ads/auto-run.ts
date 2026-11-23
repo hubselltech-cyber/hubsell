@@ -519,6 +519,7 @@ async function reportCommandsNotApplied(campaign: CampaignLite, liveIds: Set<str
   console.warn(`[TikTok Ads] "${campaign.name}": ${videos} video của ${bad.length} lệnh loại vẫn đang phân phối (lệnh không ngấm).`);
   await notify(ownerId, {
     type: "tiktok-ads-auto",
+    channelIds: [campaign.channelId],
     title: `${campaign.name}: ${videos} video đã ra lệnh loại nhưng TikTok vẫn đang phân phối`,
     body:
       `TikTok báo đã nhận lệnh nhưng ${videos} video vẫn chạy — sàn không áp dụng lệnh cho các video này, hoặc video đã được khôi phục từ Seller Center / TikTok Ads Manager. ` +
@@ -561,7 +562,7 @@ export async function applyAutoPlan(
       where: { adsCampaignId: campaign.id },
       data: { lastRunAt: new Date(), lastRunSummary: { mode, summary: skipped, skipped, exclude: 0, windowFrom: bundle.windowFrom, windowTo: bundle.windowTo } },
     });
-    await notify(ownerId, { type: "tiktok-ads-auto", ...skippedNotice(campaign.name, skipped), link });
+    await notify(ownerId, { type: "tiktok-ads-auto", ...skippedNotice(campaign.name, skipped), link, channelIds: [campaign.channelId] });
     console.warn(`[TikTok Ads] "${campaign.name}" bỏ lượt chấm: ${dataProblem}`);
     return "skipped";
   }
@@ -618,6 +619,7 @@ export async function applyAutoPlan(
     if (change.changed && (plan.counts.flag > 0 || plan.counts.grace > 0 || change.removed > 0)) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
+        channelIds: [campaign.channelId],
         ...nothingNotice(campaign.name, plan.assessments.length, mode === "live", summary),
         link,
       });
@@ -661,6 +663,7 @@ export async function applyAutoPlan(
     if (change.changed) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
+        channelIds: [campaign.channelId],
         ...plannedNotice(noticeInput, runChangeLabel(prevDigest, change)),
         link,
       });
@@ -693,13 +696,13 @@ export async function applyAutoPlan(
   if (!sent.ok) {
     const message = sent.error;
     await saveRun({ error: message });
-    await notify(ownerId, { type: "tiktok-ads-auto", ...refusedNotice(noticeInput, message), link });
+    await notify(ownerId, { type: "tiktok-ads-auto", ...refusedNotice(noticeInput, message), link, channelIds: [campaign.channelId] });
     return "failed";
   }
   await saveRun({ executedVideoIds: [...excludedIds] });
   // Chủ shop vừa tự bấm và đã thấy kết quả ngay trên màn hình → không chuông "Trợ lý đã loại".
   if (confirmedByOwner) return "executed";
-  await notify(ownerId, { type: "tiktok-ads-auto", ...excludedNotice(noticeInput), link });
+  await notify(ownerId, { type: "tiktok-ads-auto", ...excludedNotice(noticeInput), link, channelIds: [campaign.channelId] });
   return "executed";
 }
 

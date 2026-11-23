@@ -13,16 +13,18 @@
 // (Render hubsell-backend-sg); nếu sau này scale ngang thì thay hub bằng
 // Redis pub/sub, chữ ký notify() giữ nguyên.
 //
-// GĐ1 chỉ CHỦ SHOP nhận thông báo (nhiều loại là dữ liệu tài chính); mở cho
-// nhân viên theo cây quyền để sau.
+// NHÂN VIÊN (23/11/2026): danh sách chuông, số chưa đọc, đánh dấu đã đọc và tin
+// đẩy về máy mở theo quyền + gian được giao — luật ở notification-access.ts.
+// Luồng SSE của web và các đường cài đặt / gửi thử vẫn chỉ chủ shop.
 // ============================================================
 
 import type { Response } from "express";
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { Role } from "@prisma/client";
+import { Role, type Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import type { AuthRequest } from "../middleware/auth";
+import { requireAdmin, type AuthRequest } from "../middleware/auth";
+import { cleanChannelIds, staffNotificationScope, staffNotificationWhere } from "./notification-access";
 import {
   NOTIFICATION_GROUPS,
   categoryOf,
@@ -53,6 +55,12 @@ export interface NotifyInput {
   dedupe?: boolean;
   /** false = chỉ ghi chuông, không đẩy về điện thoại. */
   push?: boolean;
+  /**
+   * Các gian thông báo này nói tới (đơn của gian nào, chiến dịch của gian nào). Bỏ
+   * trống = chuyện của cả shop. Nhân viên chỉ nhận thông báo của gian được giao
+   * (notification-access.ts) nên nơi phát BIẾT gian thì phải điền.
+   */
+  channelIds?: readonly (string | null | undefined)[];
 }
 
 // ─────────────────── NHÓM ĐÃ TẮT (cache 60 s mỗi chủ shop) ───────────────────
@@ -89,7 +97,7 @@ export async function isNotificationTypeMuted(ownerId: string, type: string): Pr
 }
 
 /**
- * Phát một thông báo cho chủ shop: ghi DB + đẩy SSE (web) + push (app).
+ * Phát một thông báo cho chủ shop (và nhân viên được thấy nó): ghi DB + đẩy SSE (web) + push (app).
  * KHÔNG BAO GIỜ ném lỗi — thông báo là tiện ích, không được làm vỡ nghiệp vụ
  * đang gọi nó (đồng bộ đơn hoàn, quét cảnh báo…). Trả id bản ghi để nơi gọi
  * cộng dồn về sau (đơn mới), null khi bỏ qua / lỗi.
@@ -100,6 +108,7 @@ export async function notify(ownerId: string, input: NotifyInput): Promise<{ id:
     // chuông web lẫn push app cùng im, đúng ý "tắt là thôi".
     const category = categoryOf(input.type);
     if (await isMuted(ownerId, category)) return null;
+    const channelIds = cleanChannelIds(input.channelIds);
 
     // Sự kiện lặp (worker quét lại cùng điều kiện) không nên thành chuỗi
     // thông báo trùng — đã có một bản CHƯA ĐỌC y hệt gần đây thì thôi.
@@ -124,16 +133,22 @@ export async function notify(ownerId: string, input: NotifyInput): Promise<{ id:
         title: input.title,
         body: input.body ?? null,
         link: input.link ?? null,
+        category,
+        channelIds,
       },
     });
 
     pushToClients(row);
     if (input.push !== false) {
-      void sendPushToOwner(ownerId, {
-        title: input.title,
-        body: input.body,
-        data: { notificationId: row.id, type: input.type, category, link: input.link ?? null },
-      });
+      void sendPushToOwner(
+        ownerId,
+        {
+          title: input.title,
+          body: input.body,
+          data: { notificationId: row.id, type: input.type, category, link: input.link ?? null },
+        },
+        { category, channelIds }
+      );
     }
     return { id: row.id };
   } catch (err) {
@@ -145,12 +160,13 @@ export async function notify(ownerId: string, input: NotifyInput): Promise<{ id:
 /**
  * Sửa nội dung một bản ghi CHƯA ĐỌC (đơn mới cộng dồn trong 15 phút) và đẩy
  * push với phần tăng thêm. Trả false khi bản ghi đã đọc / không còn — nơi gọi
- * mở bản ghi mới.
+ * mở bản ghi mới. `patch.channelIds` = danh sách gian SAU khi cộng dồn (thay cả
+ * danh sách); bỏ trống thì giữ danh sách cũ.
  */
 export async function amendNotification(
   ownerId: string,
   id: string,
-  patch: { title: string; body?: string },
+  patch: { title: string; body?: string; channelIds?: readonly (string | null | undefined)[] },
   push?: { title: string; body?: string; data?: Record<string, unknown> }
 ): Promise<boolean> {
   try {
@@ -163,15 +179,24 @@ export async function amendNotification(
     if (await isMuted(ownerId, categoryOf(cur.type))) return false;
     const row = await prisma.notification.update({
       where: { id },
-      data: { title: patch.title, body: patch.body ?? null },
+      data: {
+        title: patch.title,
+        body: patch.body ?? null,
+        ...(patch.channelIds ? { channelIds: cleanChannelIds(patch.channelIds) } : {}),
+      },
     });
     pushToClients(row);
     if (push) {
-      void sendPushToOwner(ownerId, {
-        title: push.title,
-        body: push.body,
-        data: { notificationId: row.id, type: row.type, category: categoryOf(row.type), link: row.link, ...(push.data ?? {}) },
-      });
+      const category = categoryOf(row.type);
+      void sendPushToOwner(
+        ownerId,
+        {
+          title: push.title,
+          body: push.body,
+          data: { notificationId: row.id, type: row.type, category, link: row.link, ...(push.data ?? {}) },
+        },
+        { category, channelIds: row.channelIds }
+      );
     }
     return true;
   } catch (err) {
@@ -317,21 +342,46 @@ export async function notificationStream(req: AuthRequest, res: Response) {
 export const notificationsRouter = Router();
 
 /**
+ * PHẠM VI ĐỌC của người đang gọi (mount ở app.ts chỉ còn requireAuth từ 23/11/2026):
+ *  - chủ shop: mọi thông báo của shop;
+ *  - nhân viên: đúng các mục khớp quyền + gian được giao (notification-access.ts);
+ *  - nhân viên không có quyền nào ứng với một mục thông báo: null — không có chuông.
+ * Quyền và gian đọc tươi mỗi request (requireAuth) nên chủ shop đổi là có hiệu lực ngay.
+ */
+async function readScopeOf(req: AuthRequest): Promise<Prisma.NotificationWhereInput | null> {
+  const ownerId = req.ownerId!;
+  if (req.userRole === Role.ADMIN) return { ownerId };
+  const channels = await prisma.channel.findMany({ where: { userId: ownerId }, select: { id: true } });
+  const scope = staffNotificationScope(
+    req.permissions ?? [],
+    req.allowedChannelIds ?? [],
+    channels.map((c) => c.id)
+  );
+  if (scope.categories.length === 0) return null;
+  return { ownerId, ...staffNotificationWhere(scope) };
+}
+
+/**
  * Danh sách mới nhất + số chưa đọc — nuôi chuông và badge. App cuộn tiếp bằng
  * ?before=<createdAt ISO của dòng cuối> (trang 30 dòng). Mỗi dòng kèm `category`
- * để app vẽ icon theo nhóm.
+ * để app vẽ icon theo nhóm. Nhân viên chỉ nhận phần trong phạm vi của mình;
+ * không có phạm vi thì danh sách rỗng (không 403 — app khỏi phải rẽ nhánh lỗi).
  */
 notificationsRouter.get("/", async (req: AuthRequest, res) => {
-  const ownerId = req.ownerId!;
+  const scope = await readScopeOf(req);
+  if (!scope) {
+    res.json({ items: [], unread: 0, hasMore: false });
+    return;
+  }
   const beforeRaw = typeof req.query.before === "string" ? new Date(req.query.before) : null;
   const before = beforeRaw && !Number.isNaN(beforeRaw.getTime()) ? beforeRaw : null;
   const [items, unread] = await Promise.all([
     prisma.notification.findMany({
-      where: { ownerId, ...(before ? { createdAt: { lt: before } } : {}) },
+      where: { ...scope, ...(before ? { createdAt: { lt: before } } : {}) },
       orderBy: { createdAt: "desc" },
       take: 30,
     }),
-    prisma.notification.count({ where: { ownerId, readAt: null } }),
+    prisma.notification.count({ where: { ...scope, readAt: null } }),
   ]);
   res.json({
     items: items.map((n) => ({ ...n, category: categoryOf(n.type) })),
@@ -342,14 +392,17 @@ notificationsRouter.get("/", async (req: AuthRequest, res) => {
 
 // ─────────────────────── ƯU TIÊN THEO NHÓM (app Cài đặt) ───────────────────────
 
-/** Cây nhóm cha → mục con + danh sách khóa đã tắt (khóa nhóm hoặc khóa mục). */
-notificationsRouter.get("/preferences", async (req: AuthRequest, res) => {
+/**
+ * Cây nhóm cha → mục con + danh sách khóa đã tắt (khóa nhóm hoặc khóa mục).
+ * Bật / tắt nhóm là cài đặt của CHỦ SHOP — nhân viên theo cài đặt đó, không có bản riêng.
+ */
+notificationsRouter.get("/preferences", requireAdmin, async (req: AuthRequest, res) => {
   const muted = await getMutedCategories(req.ownerId!);
   res.json({ groups: NOTIFICATION_GROUPS, muted: [...muted] });
 });
 
 /** Ghi đè toàn bộ danh sách đã tắt: body { muted: string[] } — khóa nhóm và/hoặc khóa mục. */
-notificationsRouter.put("/preferences", async (req: AuthRequest, res) => {
+notificationsRouter.put("/preferences", requireAdmin, async (req: AuthRequest, res) => {
   const ownerId = req.ownerId!;
   const raw: unknown = req.body?.muted;
   if (!Array.isArray(raw)) {
@@ -368,7 +421,11 @@ notificationsRouter.put("/preferences", async (req: AuthRequest, res) => {
 
 // ─────────────────────── THIẾT BỊ NHẬN PUSH (app mobile) ───────────────────────
 
-/** App đăng ký / làm mới token sau khi đăng nhập. body { token, platform, appVersion?, deviceName? } */
+/**
+ * App đăng ký / làm mới token sau khi đăng nhập. body { token, platform, appVersion?, deviceName? }
+ * Chủ shop lẫn nhân viên đều đăng ký được; máy nhân viên chỉ nhận tin của thông báo
+ * họ được thấy (push.ts lọc lúc gửi).
+ */
 notificationsRouter.post("/devices", async (req: AuthRequest, res) => {
   const { token, platform, appVersion, deviceName } = req.body ?? {};
   if (!isExpoPushToken(token)) {
@@ -394,7 +451,7 @@ notificationsRouter.post("/devices", async (req: AuthRequest, res) => {
  * thông báo" ở Cài đặt thông báo trên app, 23/10/2026) — chỉ push, không ghi
  * chuông. Trả số máy đã nhận để app báo "Đã gửi tới N máy" / "Chưa có máy nào".
  */
-notificationsRouter.post("/test-push", async (req: AuthRequest, res) => {
+notificationsRouter.post("/test-push", requireAdmin, async (req: AuthRequest, res) => {
   const sent = await sendPushToOwner(req.ownerId!, {
     title: "Thử thông báo đẩy",
     body: "Hubsell gửi được tin về máy này. Đơn mới, khách xin hủy, hàng hoàn… sẽ báo như vậy.",
@@ -414,14 +471,22 @@ notificationsRouter.delete("/devices", async (req: AuthRequest, res) => {
   res.json({ removed: r.count });
 });
 
-/** Đánh dấu ĐÃ ĐỌC — mặc định toàn bộ; truyền ids để đánh dấu lẻ. */
+/**
+ * Đánh dấu ĐÃ ĐỌC — mặc định toàn bộ; truyền ids để đánh dấu lẻ. "Đã đọc" dùng chung
+ * cả shop; nhân viên chỉ đánh dấu được những dòng trong phạm vi của mình (bấm "đọc
+ * hết" không xóa chấm đỏ của các thông báo chỉ chủ shop thấy).
+ */
 notificationsRouter.post("/read", async (req: AuthRequest, res) => {
-  const ownerId = req.ownerId!;
+  const scope = await readScopeOf(req);
+  if (!scope) {
+    res.json({ marked: 0 });
+    return;
+  }
   const ids: unknown = req.body?.ids;
-  const where =
+  const where: Prisma.NotificationWhereInput =
     Array.isArray(ids) && ids.length > 0
-      ? { ownerId, id: { in: ids.map(String) }, readAt: null }
-      : { ownerId, readAt: null };
+      ? { ...scope, id: { in: ids.map(String) }, readAt: null }
+      : { ...scope, readAt: null };
   const updated = await prisma.notification.updateMany({
     where,
     data: { readAt: new Date() },
@@ -432,8 +497,10 @@ notificationsRouter.post("/read", async (req: AuthRequest, res) => {
 // Route DEV-ONLY để test chuông + SSE không cần chờ sự kiện thật (đơn hoàn,
 // cảnh báo điều hành). Không tồn tại trên production.
 if (process.env.NODE_ENV !== "production") {
-  notificationsRouter.post("/dev-test", async (req: AuthRequest, res) => {
+  notificationsRouter.post("/dev-test", requireAdmin, async (req: AuthRequest, res) => {
     await notify(req.ownerId!, {
+      // channelIds tùy chọn để thử phạm vi gian của nhân viên.
+      channelIds: Array.isArray(req.body?.channelIds) ? req.body.channelIds.map(String) : undefined,
       // type tùy chọn để thử icon / nhóm trên app (order_express, cancel_request, ops-alert:stockout…)
       type: typeof req.body?.type === "string" && req.body.type ? req.body.type : "system",
       dedupe: false,

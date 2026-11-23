@@ -99,6 +99,7 @@ export async function noticeLazadaDeliveryFail(
 
     await notify(ownerId, {
       type: "delivery-fail",
+      channelIds: [channel.id],
       title: `Đơn ${orderCode} Lazada báo giao không thành công — gọi khách để cứu đơn`,
       body:
         `Gian ${channel.shopName} — khách ${dbOrder.customerName}. ` +

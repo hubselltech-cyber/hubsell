@@ -755,6 +755,7 @@ async function upsertOrderTx(
   // Chuông + push "đơn mới" (gom đợt; hỏa tốc báo ngay) — chỉ đơn đặt gần đây.
   noteNewOrder({
     ownerId: channel.userId,
+    channelId: channel.id,
     shopName: channel.shopName,
     channelName: channel.channelName,
     orderCode,
