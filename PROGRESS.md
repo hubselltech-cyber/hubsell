@@ -5,6 +5,27 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 23/11 khuya — App mobile: chữ tràn / đè khi máy để cỡ chữ lớn (trần cỡ chữ) — ĐÃ OTA 1.5.0 + 1.4.3
+
+- **Anh gửi ảnh Tổng quan trên máy Android (Samsung):** "Shopee" gãy "Shope / e", "TB 147 k/" bị cắt, "giá trị đơn hôm" tràn tâm donut,
+  chữ đè nhau. **Gốc:** app chưa từng giới hạn hệ số phóng chữ theo cài đặt máy (Android cho tới 2,0×) và mọi bố cục chỉ soi ở cỡ mặc định.
+- **Sửa gốc (một chỗ cho cả app):** `hubsell-mobile/shims/react-native-font-scale.js` + `metro.config.js` trỏ mọi `import … from
+  "react-native"` trong `src/` sang tệp chặn — Text / TextInput có sẵn `maxFontSizeMultiplier = 1.2` (chữ vẫn to theo máy, dừng ở 1,2×).
+  Bẫy đã dính khi làm (ghi trong tệp): `Text.defaultProps` vô hiệu ở React 19; tệp chặn phải nằm NGOÀI `src/` (Metro nhớ kết quả tìm
+  module theo thư mục → vòng về chính nó); không dùng `export *` (gọi hết getter lười của RN → chậm khởi động + hộp vàng).
+- **Sửa bố cục Tổng quan:** tên sàn bỏ bề ngang cứng `w-16`, một dòng; dòng "% · đơn · TB/đơn" một dòng, hẹp thì co chữ (≥ 80 %);
+  chữ tâm donut gói trong lòng vòng, tự co; "giá trị đơn hôm nay" → "giá trị đơn" (tiêu đề thẻ đã có "hôm nay"). Kèm: % dòng con
+  Tài chính `w-11` → `min-w`, số mm ở Tùy chỉnh phiếu in `w-14` → `min-w-14`.
+- **Đã kiểm:** tsc sạch; dựng bản Android debug TRÊN MÁY (không tốn lượt EAS, 13 phút 51 giây) chạy máy ảo `hubsell` cỡ chữ 1,5× + mật
+  độ 480 (≈ 360 dp), tài khoản thử reviewer@hubsell.vn (phiên ký JWT local, đoạn nạp phiên tạm đã gỡ): Tổng quan / Tài chính / Quảng cáo /
+  Đơn hàng / Kho / Cấu hình sáng + tối gọn, ô nhập gõ được, 0 cảnh báo Metro; giả lập web vẫn mở được. Ảnh ở scratchpad phiên.
+- **Anh: "Commit + OTA"** → commit `71b9d2d9` (master, CHƯA push); OTA production runtime 1.5.0 group `0b9dfeff`; runtime 1.4.3 group
+  `dfa3e10d` từ nhánh `ota/1.4.3-ten-khong-cat` nay ở `ea169633` (cherry-pick, bỏ LabelTemplateScreen vì 1.4.3 không có màn đó; npm ci +
+  tsc sạch ở worktree tạm D:/wt143, đã gỡ). Rút: republish `8d5b9a7b` (1.5.0) / `68d32820` (1.4.3).
+- **Chưa:** push master; thử máy thật (khách tắt hẳn app mở lại 2 lần mới nhận OTA); iPhone (iOS cũng tôn trọng `maxFontSizeMultiplier`,
+  chưa soi). Orb Trợ lý nổi vẫn che một phần nội dung khi cuộn (như trước) — chưa đụng.
+
+---
 ## Phiên 25/11 tối — Hạn khiếu nại lát 2 (giao diện tab Đơn hoàn) LOCAL + soi lại prod — CHƯA commit / push
 
 - Tác vụ hẹn giờ 20h chạy; giữa chừng anh nhắn **"Làm luôn lát 2"** → em tự chốt 2 câu theo đề xuất: một ô = một hạn gần nhất
