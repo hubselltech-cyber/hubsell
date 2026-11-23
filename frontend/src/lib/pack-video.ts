@@ -131,9 +131,10 @@ export const PACK_VIDEO_RETURN_STATUS_META: Partial<Record<ReturnStatus, BadgeMe
   WRITTEN_OFF: { label: "Hao hụt / xóa sổ", className: "bg-zinc-200 text-zinc-700 border-zinc-300" },
 };
 
-/** Loại hoàn cho người đọc: sàn có loại hoàn = khách trả hàng; không có = kiện giao thất bại quay về. */
-export function returnTypeLabel(returnType: string | null): string {
-  return returnType ? "Khách trả hàng" : "Giao thất bại";
+/** Loại hoàn cho người đọc. (Trước 25/11 hàm đọc `returnType` như cờ có / không → máy chủ luôn gửi chuỗi
+ *  nên kiện giao thất bại cũng hiện "Khách trả hàng".) */
+export function returnTypeLabel(returnType: "FAILED_DELIVERY" | "BUYER_RETURN"): string {
+  return returnType === "FAILED_DELIVERY" ? "Giao thất bại" : "Khách trả hàng";
 }
 
 /** Nhãn nộp bằng chứng theo mốc Shopee. */

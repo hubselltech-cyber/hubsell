@@ -6,6 +6,7 @@ import { ArrowUpRight, FolderOpen, PackageSearch } from "lucide-react";
 
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { Refreshing } from "@/components/shared/refreshing";
+import { SortHeader } from "@/components/shared/sort-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -16,7 +17,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchPackVideoReturns, type PackVideoReturnCard, type PackVideoReturnRow } from "@/lib/api";
+import {
+  fetchPackVideoReturns,
+  type PackVideoReturnCard,
+  type PackVideoReturnRow,
+  type PackVideoReturnSort,
+} from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import {
   PACK_VIDEO_RETURN_STATUS_META,
@@ -29,6 +35,7 @@ import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
+import { ComplaintDueCell, useMinuteClock } from "./complaint-due-cell";
 import { ChannelBadge, CodeWithCopy, CursorPager, MetaBadge, shopNameOf, useCursorPages } from "./video-bits";
 import { ReturnVideoCards } from "./video-filters";
 
@@ -64,13 +71,20 @@ function VideoPresence({
  */
 export function ReturnsTab() {
   const [card, setCard] = React.useState<PackVideoReturnCard>("all");
+  // null = theo thẻ: thẻ "Sắp hết hạn" sắp theo hạn, còn lại mới báo hoàn trước (máy chủ quyết).
+  const [sortPick, setSortPick] = React.useState<PackVideoReturnSort | null>(null);
+  const sort: PackVideoReturnSort = sortPick ?? (card === "due_soon" ? "due" : "requested");
   const [pageSize, setPageSize] = React.useState(20);
-  const pages = useCursorPages(JSON.stringify([card, pageSize]));
+  const pages = useCursorPages(JSON.stringify([card, sort, pageSize]));
+  const nowMs = useMinuteClock();
 
   const q = useApiQuery({
-    queryKey: qk.packVideoReturns({ card, limit: pageSize, cursor: pages.cursor ?? null }),
-    queryFn: () => fetchPackVideoReturns({ card, limit: pageSize, cursor: pages.cursor }),
+    queryKey: qk.packVideoReturns({ card, sort, limit: pageSize, cursor: pages.cursor ?? null }),
+    queryFn: () => fetchPackVideoReturns({ card, sort, limit: pageSize, cursor: pages.cursor }),
   });
+  // Mũi tên cố định một chiều: hạn = gần hết nhất trước, giờ báo hoàn = mới nhất trước.
+  const sortState = { key: sort, dir: sort === "due" ? ("asc" as const) : ("desc" as const) };
+  const onSort = (s: { key: PackVideoReturnSort }) => setSortPick(s.key);
   const rows: PackVideoReturnRow[] = React.useMemo(() => q.data?.items ?? [], [q.data]);
   const nextCursor = q.data?.nextCursor ?? null;
 
@@ -78,7 +92,10 @@ export function ReturnsTab() {
     <div className="space-y-5">
       <ReturnVideoCards
         value={card}
-        onToggle={(key) => setCard((cur) => (cur === key ? "all" : key))}
+        onToggle={(key) => {
+          setCard((cur) => (cur === key ? "all" : key));
+          setSortPick(null);
+        }}
         cards={q.data?.cards ?? {}}
       />
 
@@ -109,8 +126,25 @@ export function ReturnsTab() {
                 <TableHeader className={cn(PNL_STICKY_HEAD, "bg-card")}>
                   <TableRow>
                     <TableHead>Mã đơn</TableHead>
-                    <TableHead>Loại hoàn</TableHead>
-                    <TableHead>Sàn báo hoàn lúc</TableHead>
+                    <TableHead aria-sort={sort === "due" ? "ascending" : undefined}>
+                      <SortHeader
+                        label="Hạn khiếu nại"
+                        sortKey="due"
+                        sort={sortState}
+                        onSort={onSort}
+                        firstDir="asc"
+                        title="Gần hết hạn nhất trước · đã quá hạn xếp sau · chưa có hạn xếp cuối"
+                      />
+                    </TableHead>
+                    <TableHead aria-sort={sort === "requested" ? "descending" : undefined}>
+                      <SortHeader
+                        label="Sàn báo hoàn"
+                        sortKey="requested"
+                        sort={sortState}
+                        onSort={onSort}
+                        title="Mới báo hoàn trước"
+                      />
+                    </TableHead>
                     <TableHead>Video đóng</TableHead>
                     <TableHead>Video khui</TableHead>
                     <TableHead>Tình trạng kho</TableHead>
@@ -126,23 +160,28 @@ export function ReturnsTab() {
                           <div className="flex items-center gap-2">
                             <ChannelBadge platform={o.channelPlatform} />
                             <CodeWithCopy value={o.orderCode} what="mã đơn" strong />
+                          </div>
+                          {/* Tên gian xuống dòng 2 cạnh mã vận đơn — nhường bề ngang cho cột Hạn khiếu nại (25/11). */}
+                          <div className="mt-1 flex items-center gap-2">
+                            <CodeWithCopy value={o.trackingCode} what="mã vận đơn" />
                             {shop && (
                               <span className={cn(TEXT_SUB, "max-w-40 truncate")} title={shop}>
-                                {shop}
+                                · {shop}
                               </span>
                             )}
                           </div>
-                          <div className="mt-1">
-                            <CodeWithCopy value={o.trackingCode} what="mã vận đơn" />
-                          </div>
                         </TableCell>
-                        <TableCell>{returnTypeLabel(o.returnType)}</TableCell>
+                        <TableCell>
+                          <ComplaintDueCell due={o.complaintDue} platform={o.channelPlatform} nowMs={nowMs} />
+                        </TableCell>
                         <TableCell className="tabular-nums">
                           {o.returnRequestedAt ? (
                             formatDateTime(o.returnRequestedAt)
                           ) : (
                             <span className={TEXT_SUB}>Chưa rõ</span>
                           )}
+                          {/* Loại hoàn = dòng phụ của mốc báo hoàn (gộp cột cùng chủ đề, 25/11). */}
+                          <div className={cn(TEXT_SUB, "mt-0.5")}>{returnTypeLabel(o.returnType)}</div>
                         </TableCell>
                         <TableCell>
                           <VideoPresence video={o.packVideo} missingLabel="Không có" />

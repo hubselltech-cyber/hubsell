@@ -10282,7 +10282,23 @@ export type PackVideoChip = "all" | "returns" | "unmatched" | "pending" | "expir
 /** Lý do đang giữ video (luật tự xóa W5, backend lib/pack-video-retention.ts). */
 export type PackVideoHoldReason = "RETURN_OPEN" | "RETURN_DAMAGED" | "UNBOX_UNMATCHED" | "PARCEL_RETURNING";
 /** Thẻ lọc của tab Đơn hoàn. */
-export type PackVideoReturnCard = "all" | "has_pack" | "damaged_no_unbox" | "no_video";
+export type PackVideoReturnCard = "all" | "has_pack" | "damaged_no_unbox" | "due_soon" | "no_video";
+/** Sắp tab Đơn hoàn: mới báo hoàn trước (mặc định) / hạn khiếu nại gần nhất trước. */
+export type PackVideoReturnSort = "requested" | "due";
+
+/** Hạn khiếu nại của một đơn hoàn — docs/HAN-KHIEU-NAI-DON-HOAN.md. */
+export type PackVideoReturnComplaintDue =
+  | { state: "NOT_NEEDED"; failedDelivery: boolean }
+  | { state: "NOT_STARTED"; failedDelivery: boolean }
+  | { state: "UNKNOWN"; failedDelivery: boolean }
+  | {
+      state: "DUE";
+      dueAt: string;
+      /** platform = sàn trả (chốt) · platform_provisional = sàn trả tạm · rule = luật + mốc sàn · estimate = luật + giờ kho quét */
+      source: "platform" | "platform_provisional" | "rule" | "estimate";
+      failedDelivery: boolean;
+      windowHours: number | null;
+    };
 
 /** Một dòng hàng của đơn, bản gọn đủ để nhận ra món hàng trong video. */
 export interface PackVideoOrderItem {
@@ -10410,12 +10426,12 @@ export interface PackVideoReturnRow {
   trackingCode: string | null;
   channelPlatform: ChannelName;
   shopName: string;
-  /** Loại hoàn do sàn báo; null = giao thất bại / sàn hủy khi kiện đang đi. */
-  returnType: string | null;
+  returnType: "FAILED_DELIVERY" | "BUYER_RETURN";
   returnStatus: ReturnStatus;
   returnRequestedAt: string | null;
   packVideo: { id: string; durationSec: number } | null;
   unboxVideo: { id: string; durationSec: number } | null;
+  complaintDue: PackVideoReturnComplaintDue;
 }
 
 export interface PackVideoReturnsResponse {
@@ -10425,9 +10441,15 @@ export interface PackVideoReturnsResponse {
 }
 
 /** Tab Đơn hoàn: một dòng = một đơn có hoàn, kèm video đóng / video khui nếu có. */
-export function fetchPackVideoReturns(params: { card?: PackVideoReturnCard; cursor?: string; limit?: number }) {
+export function fetchPackVideoReturns(params: {
+  card?: PackVideoReturnCard;
+  sort?: PackVideoReturnSort;
+  cursor?: string;
+  limit?: number;
+}) {
   const qs = new URLSearchParams();
   if (params.card && params.card !== "all") qs.set("card", params.card);
+  if (params.sort) qs.set("sort", params.sort);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
   return apiFetch<PackVideoReturnsResponse>(`/api/pack-videos/returns?${qs.toString()}`);

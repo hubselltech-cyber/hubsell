@@ -5,6 +5,23 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 tối — Hạn khiếu nại lát 2 (giao diện tab Đơn hoàn) LOCAL + soi lại prod — CHƯA commit / push
+
+- Tác vụ hẹn giờ 20h chạy; giữa chừng anh nhắn **"Làm luôn lát 2"** → em tự chốt 2 câu theo đề xuất: một ô = một hạn gần nhất
+  (cửa 7 ngày TikTok/Lazada chỉ trong ô chi tiết); lát này chỉ tab Đơn hoàn, trang Đối soát đơn hoàn để sau.
+- **Soi prod (SQL chỉ đọc, docs mục 10):** Shopee 100 → 774 đơn có hạn / 9 → 46 gian (129 hạn tạm, khớp mốc kiện về 72 %), TikTok
+  107 → 295 / 14 → 37 gian. Đơn kho đã quét có hạn: Shopee 107, TikTok 97. TikTok mới 9 % đơn kho quét 5 ngày có hạn sàn → phần còn lại
+  hiện "ước tính". 440 đơn Shopee quá hạn mà kho chưa quét; 17.665 đơn hoàn TikTok đang mở (phần lớn AWAITING lâu ngày).
+- **Lát 2 (docs mục 11):** máy chủ trả `complaintDue` mỗi dòng + thẻ `due_soon` (còn ≤ 24 giờ) + `sort=due`; biểu thức SQL
+  `lib/return-complaint-due-sql.ts` khớp hàm thuần 1.792 / 1.792 tổ hợp (test db). Bẫy múi giờ cột `timestamp` đã sửa. Không thêm
+  chỉ mục (lý do ở docs) → không có bước CREATE INDEX trên prod. Giao diện: cột Hạn khiếu nại sau Mã đơn (đếm ngược, đỏ/cam, dự kiến,
+  ước tính, quá hạn, chờ kiện về), ô chi tiết rê/bấm, thẻ thứ 4, sắp tại tiêu đề; gộp Loại hoàn vào ô giờ báo hoàn + tên gian xuống
+  dòng 2 để 1700 không cuộn ngang. Sửa kèm lỗi cũ: giao thất bại hiện nhầm "Khách trả hàng".
+- Đã kiểm: tsc 2 bên, eslint, test db 17 qua; local seed 14 ca soi 1280/1700 sáng + tối. Chưa kiểm: dữ liệu prod trên giao diện.
+- Tệp tạm: `backend/scripts/_tmp-hkn-seed.ts` (chạy `cleanup` rồi xóa); soi local phải chạy backend HTTP + biến R2 giả (khung trình duyệt app
+  không tin cert tự ký; R2 trống thì cổng Video đóng hàng khóa) — chỉ là biến môi trường của tiến trình, không sửa .env / launch.json.
+
+---
 ## Phiên 23/11 chiều — Cột "Hạn khiếu nại" cho đơn hoàn: tra quy định mới nhất 3 sàn + phương án, CHƯA CODE
 
 - **Anh hỏi** (ảnh tab Video đóng hàng → Đơn hoàn): hạn khiếu nại đơn trả hàng bắt đầu / kết thúc khi nào → tra quy định mới nhất

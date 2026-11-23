@@ -198,7 +198,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
     expect(stats.longest[0].id).toBe(videos.b);
 
     const returns = await listReturnOrders(scopeB(), {});
-    expect(returns.cards).toEqual({ all: 0, has_pack: 0, damaged_no_unbox: 0, no_video: 0 });
+    expect(returns.cards).toEqual({ all: 0, has_pack: 0, damaged_no_unbox: 0, due_soon: 0, no_video: 0 });
     expect(returns.items).toEqual([]);
   });
 
@@ -376,7 +376,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
 
   it("đơn hoàn: một dòng một ĐƠN (kể cả đơn không có video), số trên thẻ khớp bộ lọc", async () => {
     const all = await listReturnOrders(scopeA(), {});
-    expect(all.cards).toEqual({ all: 3, has_pack: 2, damaged_no_unbox: 2, no_video: 1 });
+    expect(all.cards).toEqual({ all: 3, has_pack: 2, damaged_no_unbox: 2, due_soon: 0, no_video: 1 });
     // Mới báo hoàn trước.
     expect(all.items.map((r) => r.orderId)).toEqual([
       orders["hoan-hong"],
@@ -407,6 +407,39 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
     expect([p1.items.length, p1.nextCursor]).toEqual([2, "2"]);
     const p2 = await listReturnOrders(scopeA(), { limit: 2, cursor: p1.nextCursor! });
     expect([p2.items.length, p2.nextCursor]).toEqual([1, null]);
+  });
+
+  it("đơn hoàn: hạn khiếu nại — thẻ Sắp hết hạn (≤ 24 giờ) + sắp theo hạn + ô hạn của dòng", async () => {
+    const now = new Date("2026-11-25T13:00:00.000Z");
+    const h = (n: number) => new Date(now.getTime() + n * 3_600_000);
+    await prisma.order.update({ where: { id: orders["hoan-cho"] }, data: { returnComplaintDueAt: h(30) } });
+    await prisma.order.update({ where: { id: orders["hoan-hong"] }, data: { returnComplaintDueAt: h(5) } });
+    await prisma.order.update({ where: { id: orders["hoan-khong-video"] }, data: { returnComplaintDueAt: h(-3) } });
+    try {
+      const all = await listReturnOrders(scopeA(), { now });
+      expect(all.cards.due_soon).toBe(1);
+      expect(all.items.find((r) => r.orderId === orders["hoan-hong"])?.complaintDue).toEqual({
+        state: "DUE",
+        dueAt: h(5).toISOString(),
+        source: "platform",
+        failedDelivery: false,
+        windowHours: null,
+      });
+      const soon = await listReturnOrders(scopeA(), { card: "due_soon", now });
+      expect(soon.items.map((r) => r.orderId)).toEqual([orders["hoan-hong"]]);
+      // Còn hạn gần nhất trước → còn hạn xa → đã quá hạn.
+      const byDue = await listReturnOrders(scopeA(), { sort: "due", now });
+      expect(byDue.items.map((r) => r.orderId)).toEqual([
+        orders["hoan-hong"],
+        orders["hoan-cho"],
+        orders["hoan-khong-video"],
+      ]);
+    } finally {
+      await prisma.order.updateMany({
+        where: { id: { in: [orders["hoan-cho"], orders["hoan-hong"], orders["hoan-khong-video"]] } },
+        data: { returnComplaintDueAt: null },
+      });
+    }
   });
 
   it("thống kê: chỉ video đã lên kho; cộng theo ngày giờ VN, người quay, gian; video dài nhất đứng đầu", async () => {

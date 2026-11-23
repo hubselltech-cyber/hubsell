@@ -19,6 +19,8 @@ import { PACK_VIDEO_GET_EXPIRES_SEC, PACK_VIDEO_PAGE_DEFAULT, PACK_VIDEO_PAGE_MA
 import { CANCELLED_AFTER_SHIP } from "../../integrations/cancelled-after-ship";
 import { getR2Storage } from "../../integrations/r2/client";
 import type { DateRangeFilter } from "../../lib/date-range";
+import { complaintDueOf, type ComplaintDue } from "../../lib/return-complaint-due";
+import { complaintDueSql } from "../../lib/return-complaint-due-sql";
 import { loadVariantNames } from "../../lib/order-line-names";
 import { keyBelongsToOwner, packVideoDownloadName } from "../../lib/pack-video-key";
 import { escapeLikePrefix, type PackVideoKind, type PackVideoStatus } from "../../lib/pack-video-rules";
@@ -561,8 +563,37 @@ export async function ordersWithVideo(scope: PackVideoScope, orderIds: string[])
 
 // ───────── Đơn hoàn ─────────
 
-export const RETURN_CARDS = ["all", "has_pack", "damaged_no_unbox", "no_video"] as const;
+export const RETURN_CARDS = ["all", "has_pack", "damaged_no_unbox", "due_soon", "no_video"] as const;
 export type ReturnCard = (typeof RETURN_CARDS)[number];
+export const RETURN_SORTS = ["requested", "due"] as const;
+export type ReturnSort = (typeof RETURN_SORTS)[number];
+
+/** Thẻ "Sắp hết hạn khiếu nại" = còn hạn và còn ≤ 24 giờ (cùng mốc tô đỏ của ô hạn, cùng mốc chuông lát 3). */
+export const COMPLAINT_DUE_SOON_HOURS = 24;
+
+/** Hạn khiếu nại gửi giao diện — `complaintDueOf` dạng JSON. */
+export type ReturnComplaintDueView =
+  | { state: "NOT_NEEDED" | "NOT_STARTED" | "UNKNOWN"; failedDelivery: boolean }
+  | {
+      state: "DUE";
+      dueAt: string;
+      source: "platform" | "platform_provisional" | "rule" | "estimate";
+      failedDelivery: boolean;
+      windowHours: number | null;
+    };
+
+function complaintDueView(d: ComplaintDue): ReturnComplaintDueView {
+  if (d.state === "DUE") {
+    return {
+      state: "DUE",
+      dueAt: d.dueAt.toISOString(),
+      source: d.source,
+      failedDelivery: d.failedDelivery,
+      windowHours: d.windowHours,
+    };
+  }
+  return { state: d.state, failedDelivery: d.state === "NOT_NEEDED" ? false : d.failedDelivery };
+}
 
 export interface ReturnOrderRow {
   orderId: string;
@@ -576,6 +607,8 @@ export interface ReturnOrderRow {
   returnRequestedAt: string | null;
   packVideo: { id: string; durationSec: number } | null;
   unboxVideo: { id: string; durationSec: number } | null;
+  /** Hạn khiếu nại (docs/HAN-KHIEU-NAI-DON-HOAN.md): hạn sàn trả trước, thiếu thì theo luật. */
+  complaintDue: ReturnComplaintDueView;
 }
 
 /**
@@ -587,11 +620,20 @@ export interface ReturnOrderRow {
  */
 export async function listReturnOrders(
   scope: PackVideoScope,
-  page: { card?: ReturnCard; cursor?: string; limit?: number }
+  page: { card?: ReturnCard; sort?: ReturnSort; cursor?: string; limit?: number; now?: Date }
 ): Promise<{ cards: Record<ReturnCard, number>; items: ReturnOrderRow[]; nextCursor: string | null }> {
   const limit = clampLimit(page.limit);
   const offset = Math.max(0, Number.parseInt(page.cursor ?? "0", 10) || 0);
   const card = page.card ?? "all";
+  const now = page.now ?? new Date();
+  // Thẻ "Sắp hết hạn" mặc định sắp theo hạn — gần hết hạn nhất lên đầu.
+  const sort: ReturnSort = page.sort ?? (card === "due_soon" ? "due" : "requested");
+  const due = complaintDueSql("o", "c");
+  // Cột thời gian của Order là `timestamp` KHÔNG múi giờ (giờ UTC). So với tham số Date thì Postgres
+  // đổi cột theo múi giờ của phiên → lệch 7 giờ khi phiên chạy giờ VN. Ép tham số về timestamp UTC.
+  const utc = (d: Date) => Prisma.sql`(${d.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+  const nowTs = utc(now);
+  const soonUntil = utc(new Date(now.getTime() + COMPLAINT_DUE_SOON_HOURS * 3_600_000));
 
   const base = [Prisma.sql`c."userId" = ${scope.ownerId}`, Prisma.sql`o."returnStatus" <> 'NONE'`];
   if (scope.allowedChannelIds) {
@@ -611,6 +653,7 @@ export async function listReturnOrders(
     all: null,
     has_pack: pack,
     damaged_no_unbox: Prisma.sql`o."returnStatus" = 'DAMAGED' AND NOT ${unbox}`,
+    due_soon: Prisma.sql`${due} > ${nowTs} AND ${due} <= ${soonUntil}`,
     no_video: Prisma.sql`NOT ${pack} AND NOT ${unbox}`,
   };
 
@@ -618,6 +661,7 @@ export async function listReturnOrders(
     SELECT count(*)::int AS "all",
            count(*) FILTER (WHERE ${cardConds.has_pack})::int AS "has_pack",
            count(*) FILTER (WHERE ${cardConds.damaged_no_unbox})::int AS "damaged_no_unbox",
+           count(*) FILTER (WHERE ${cardConds.due_soon})::int AS "due_soon",
            count(*) FILTER (WHERE ${cardConds.no_video})::int AS "no_video"
     FROM "Order" o JOIN "Channel" c ON c."id" = o."channelId"
     WHERE ${and(base)}`);
@@ -633,13 +677,25 @@ export async function listReturnOrders(
       returnStatus: string;
       returnRequestedAt: Date | null;
       platformReturnStatus: string | null;
+      returnedAt: Date | null;
+      returnDeliveredAt: Date | null;
+      returnTrackingCode: string | null;
+      returnComplaintDueAt: Date | null;
+      returnComplaintDueProvisional: boolean;
     }[]
   >(Prisma.sql`
     SELECT o."id", o."orderCode", o."trackingCode", c."channelName"::text AS "channelName", c."shopName",
-           o."returnStatus"::text AS "returnStatus", o."returnRequestedAt", o."platformReturnStatus"
+           o."returnStatus"::text AS "returnStatus", o."returnRequestedAt", o."platformReturnStatus",
+           o."returnedAt", o."returnDeliveredAt", o."returnTrackingCode",
+           o."returnComplaintDueAt", o."returnComplaintDueProvisional"
     FROM "Order" o JOIN "Channel" c ON c."id" = o."channelId"
     WHERE ${and(where)}
-    ORDER BY o."returnRequestedAt" DESC NULLS LAST, o."id" DESC
+    ORDER BY ${
+      sort === "due"
+        ? // Còn hạn (gần hết nhất trước) → đã quá hạn → không có hạn.
+          Prisma.sql`(${due} < ${nowTs}) ASC NULLS LAST, ${due} ASC NULLS LAST, o."returnRequestedAt" DESC NULLS LAST, o."id" DESC`
+        : Prisma.sql`o."returnRequestedAt" DESC NULLS LAST, o."id" DESC`
+    }
     LIMIT ${limit + 1} OFFSET ${offset}`);
   const pageRows = rows.slice(0, limit);
 
@@ -658,7 +714,7 @@ export async function listReturnOrders(
   }
 
   return {
-    cards: counts[0] ?? { all: 0, has_pack: 0, damaged_no_unbox: 0, no_video: 0 },
+    cards: counts[0] ?? { all: 0, has_pack: 0, damaged_no_unbox: 0, due_soon: 0, no_video: 0 },
     items: pageRows.map((r) => ({
       orderId: r.id,
       orderCode: r.orderCode,
@@ -671,6 +727,18 @@ export async function listReturnOrders(
       returnRequestedAt: r.returnRequestedAt ? r.returnRequestedAt.toISOString() : null,
       packVideo: latest.get(`${r.id}|PACK`) ?? null,
       unboxVideo: latest.get(`${r.id}|UNBOX`) ?? null,
+      complaintDue: complaintDueView(
+        complaintDueOf({
+          platform: r.channelName,
+          returnStatus: r.returnStatus as ReturnStatus,
+          returnedAt: r.returnedAt,
+          returnDeliveredAt: r.returnDeliveredAt,
+          platformReturnStatus: r.platformReturnStatus,
+          returnTrackingCode: r.returnTrackingCode,
+          returnComplaintDueAt: r.returnComplaintDueAt,
+          returnComplaintDueProvisional: r.returnComplaintDueProvisional,
+        })
+      ),
     })),
     nextCursor: rows.length > limit ? String(offset + limit) : null,
   };

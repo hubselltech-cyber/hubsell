@@ -1,6 +1,6 @@
 "use client";
 
-import { PackageCheck, PackageX, VideoOff } from "lucide-react";
+import { AlarmClock, PackageCheck, PackageX, VideoOff } from "lucide-react";
 
 import { FilterCard } from "@/components/warehouse/returns-filters";
 import type { PackVideoChip, PackVideoReturnCard } from "@/lib/api";
@@ -89,12 +89,13 @@ export function ReturnVideoCards({
   const hasPack = cards.has_pack ?? 0;
   const damaged = cards.damaged_no_unbox ?? 0;
   const noVideo = cards.no_video ?? 0;
+  const dueSoon = cards.due_soon ?? 0;
   const card = (key: Exclude<PackVideoReturnCard, "all">) => ({
     active: value === key,
     onToggle: () => onToggle(key),
   });
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <FilterCard
         {...card("has_pack")}
         title="Có hoàn · có video đóng"
@@ -111,6 +112,15 @@ export function ReturnVideoCards({
         tone={damaged > 0 ? "negative" : "neutral"}
         featured={damaged > 0}
         subtitle="Kho báo hỏng nhưng chưa quay lúc mở kiện"
+      />
+      <FilterCard
+        {...card("due_soon")}
+        title="Sắp hết hạn khiếu nại"
+        value={formatNumber(dueSoon)}
+        icon={AlarmClock}
+        tone={dueSoon > 0 ? "negative" : "neutral"}
+        featured={dueSoon > 0}
+        subtitle="Còn ≤ 24 giờ để kiểm hàng / khiếu nại sàn"
       />
       <FilterCard
         {...card("no_video")}

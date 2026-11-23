@@ -287,3 +287,62 @@ latest commit cho web; `/health` báo `9d131697` lúc ~15:25. Bẫy đã ghi và
   từ trước (vd gian chạy thử mục 7) chưa thấy hạn — đợi lượt quét của gian đó rồi kiểm lại.
 
 **Chưa làm:** soi lại sau vài giờ (đủ gian, đơn kho đã quét có hạn chưa); lát 2 giao diện chờ anh chốt 2 câu mục 5.
+
+## 10. Soi lại prod 25/11 tối (tác vụ hẹn giờ, SQL chỉ đọc qua Supabase SQL Editor trên Chrome của anh)
+
+Một câu SQL gom theo sàn trên toàn bộ đơn có `returnStatus` ≠ NONE (chạy một lần, đừng lặp):
+
+| Sàn | Đơn có hạn (23/11 → 25/11) | Số gian | Hạn tạm | Hạn chốt khớp mốc kiện về + 48 giờ (± 1 giờ) | Có hạn mà kho đã quét | Quá hạn, kho chưa quét | Còn ≤ 24 giờ | Kho quét 5 ngày qua → có hạn | Đơn hoàn đang mở → có hạn |
+|---|---|---|---|---|---|---|---|---|---|
+| Shopee | 100 → **774** | 9 → **46** | 129 | 455 / 635 (72 %, 23/11: 44 %) | 107 | **440** | 65 | 164 → 100 (61 %), 7 gian | 2.580 → 750 (29 %) |
+| TikTok | 107 → **295** | 14 → **37** | 0 | 294 / 295 | 97 | 18 | 121 | 1.031 → 97 (9 %), 15 gian | 17.665 → 291 (1,6 %) |
+| Lazada | 0 | 0 | — | — | — | — | — | 3 → 0 | 24 → 0 |
+
+- **Đã phủ thêm gian**: Shopee 9 → 46 gian, TikTok 14 → 37 gian. Đơn kho đã quét có hạn rồi (Shopee 107, TikTok 97).
+- **Shopee khớp mốc kiện về tốt hơn** (72 %) vì đơn mới có mốc tốt hơn; phần lệch vẫn là mốc `returnDeliveredAt` Hubsell lưu trễ —
+  không ảnh hưởng hạn hiển thị (lấy thẳng của sàn). Vẫn KHÔNG sửa `returnDeliveredAt` trong lát này.
+- **TikTok chỉ 9 % đơn kho quét 5 ngày có hạn sàn** — đúng thiết kế lát 1 (TikTok chỉ lưu hạn khi bắt được lúc kiện về, đơn cũ không
+  điền lại). 934 đơn còn lại sẽ hiện "**ước tính** đến …" (luật 48 giờ từ giờ kho quét — hạn thật có thể sớm hơn, ô có ghi chữ).
+- **17.665 đơn hoàn TikTok đang mở** (phần lớn `AWAITING` lâu ngày) → hiện "Chưa tính · chờ kiện về". Đây là số lớn nhất bảng, không
+  phải lỗi lát 2; đáng xem riêng ở lát sau (đơn treo AWAITING có còn là hoàn thật không).
+- **440 đơn Shopee quá hạn mà kho chưa quét** (23/11: 48) — shop không dùng màn quét kho hoặc lỡ hạn thật; chưa phân biệt được.
+  Con số này là lý do thẻ "Sắp hết hạn" chỉ đếm đơn **còn** hạn (không gộp đơn đã quá hạn vào thẻ).
+
+## 11. Lát 2 giao diện (25/11 tối) — LOCAL, CHƯA commit / push
+
+Anh nhắn "Làm luôn lát 2" khi tác vụ hẹn giờ đang chạy → em tự chốt 2 câu mục 5 theo đề xuất:
+1. **Một ô = một hạn gần nhất** (hạn kiểm hàng 2 ngày với kiện khách trả). Cửa khiếu nại 7 ngày của TikTok / Lazada chỉ nằm trong ô
+   chi tiết (rê / bấm), không thêm số thứ hai.
+2. **Chỉ tab Đơn hoàn (Video đóng hàng)** trong lát này. Trang Đối soát đơn hoàn để lát sau nếu anh muốn — nói lại một câu là em làm
+   (hàm máy chủ `complaintDueSql` + ô `ComplaintDueCell` dùng lại được ngay).
+
+**Máy chủ** (`services/pack-video/library.ts` `listReturnOrders`, route `GET /api/pack-videos/returns?sort=`):
+- Mỗi dòng có thêm `complaintDue` = `complaintDueOf` (lát 1) dạng JSON: state + dueAt + nguồn + số giờ luật.
+- Thẻ mới `due_soon` "Sắp hết hạn khiếu nại" = ca còn mở (AWAITING / RECEIVED / DAMAGED), hạn **> bây giờ và ≤ 24 giờ** nữa
+  (cùng mốc tô đỏ, cùng mốc chuông lát 3). Mốc là mặc định em chọn theo docs 3.1, chưa có số đo.
+- `sort=due`: còn hạn gần nhất trước → đã quá hạn → không có hạn; thẻ "Sắp hết hạn" mặc định sắp theo hạn.
+- Biểu thức SQL `lib/return-complaint-due-sql.ts` `complaintDueSql()` — bản SQL của `complaintDueOf`, đọc số giờ từ cùng bảng
+  `COMPLAINT_WINDOW_HOURS`. Test `lib/__tests__/return-complaint-due-sql-db.test.ts` so SQL với hàm thuần trên **1.792 tổ hợp**
+  (4 sàn × 7 tình trạng kho × có/không hạn sàn × mốc kho × 4 mốc sàn × 4 trạng thái sàn) — khớp 100 %.
+- ⚠️ **Bẫy đã gặp**: cột thời gian của `Order` là `timestamp` KHÔNG múi giờ; so với tham số Date thì Postgres đổi cột theo múi phiên
+  → lệch 7 giờ trên database local (phiên giờ VN). Đã ép tham số về `(… ::timestamptz AT TIME ZONE 'UTC')`. Test db bắt được.
+- **Không thêm chỉ mục** → không có bước `CREATE INDEX CONCURRENTLY` trên prod trước khi push. Lý do: thẻ đếm + lọc + sắp chạy
+  trên đúng tập đơn hoàn của MỘT shop mà 4 thẻ cũ đã quét sẵn (cùng câu `count(*) FILTER`), biểu thức `COALESCE(hạn sàn, luật)`
+  không dùng được chỉ mục B-tree trên một cột; cả hệ thống có ~20 nghìn đơn hoàn đang mở cộng MỌI shop nên tập của một shop nhỏ hơn nhiều (chưa đo thời gian câu trên prod — đo khi lên). Khi lát 3
+  (chuông quét MỌI shop) cần thì dựng chỉ mục một phần `(channelId, returnComplaintDueAt) WHERE returnStatus IN (…)` lúc đó.
+
+**Giao diện** (`components/orders/videos/returns-tab.tsx`, `complaint-due-cell.tsx`, `video-filters.tsx`, `lib/return-complaint-due.ts`):
+- Cột **Hạn khiếu nại** đứng ngay sau Mã đơn (ở 1280 bảng vốn phải cuộn ngang — cột quan trọng nhất phải thấy không cần cuộn).
+- Ô theo docs 3.1: "Còn 1 ngày 4 giờ" + dòng phụ "đến 14:30 25/11 · Shopee 2 ngày"; đỏ ≤ 24 giờ, cam ≤ 48 giờ; "dự kiến đến 23:59
+  26/11 · Shopee" (hạn tạm); "ước tính đến …" (nguồn kho quét); "Quá hạn 3 giờ" + "hết lúc …"; "Chưa tính · chờ kiện về";
+  "Không cần"; "Chưa rõ". Đếm ngược làm tròn XUỐNG, tự nhảy mỗi phút. Rê / bấm = ô chi tiết (luật, nguồn hạn, cửa 7 ngày TikTok/Lazada).
+- Thẻ thứ 4 "Sắp hết hạn khiếu nại" (đỏ nổi khi > 0); bốn thẻ một hàng từ 1280.
+- Sắp xếp tại tiêu đề cột: "Hạn khiếu nại" (gần hết hạn trước) / "Sàn báo hoàn" (mới nhất trước).
+- Để vừa 1700 không cuộn ngang với dữ liệu rộng nhất (mã TikTok 18 số + tên gian dài): gộp **Loại hoàn** thành dòng phụ dưới giờ báo
+  hoàn, **tên gian** xuống dòng 2 cạnh mã vận đơn. Đo: 1700 → bảng 1.348 / khung 1.348 px.
+- **Sửa kèm một lỗi có sẵn**: `returnTypeLabel` đọc `returnType` như cờ có / không trong khi máy chủ luôn gửi chuỗi → kiện giao thất
+  bại cũng hiện "Khách trả hàng". Giờ so đúng `"FAILED_DELIVERY"`.
+
+**Đã kiểm**: tsc backend + frontend sạch, eslint sạch, test db 17 qua (cô lập video + thẻ mới + sắp theo hạn + so SQL ↔ hàm thuần);
+local seed 14 ca (`backend/scripts/_tmp-hkn-seed.ts`, TỆP TẠM — chạy `cleanup` rồi xóa) soi 1280 + 1700, sáng + tối, ô chi tiết, thẻ lọc;
+không lỗi console. **Chưa kiểm**: dữ liệu prod thật trên giao diện; trang Đối soát đơn hoàn; app mobile.

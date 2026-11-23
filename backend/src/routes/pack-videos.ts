@@ -32,6 +32,7 @@ import { getHoursOverview } from "../services/pack-video/hours";
 import {
   PACK_VIDEO_CHIPS,
   RETURN_CARDS,
+  RETURN_SORTS,
   listReturnOrders,
   listVideos,
   matchTem,
@@ -44,6 +45,7 @@ import {
   type PackVideoFilters,
   type PackVideoScope,
   type ReturnCard,
+  type ReturnSort,
 } from "../services/pack-video/library";
 import {
   PackVideoError,
@@ -184,9 +186,11 @@ router.get(
   "/returns",
   handle(async (req, res) => {
     const card = str(req.query.card) as ReturnCard;
+    const sort = str(req.query.sort) as ReturnSort;
     res.json(
       await listReturnOrders(scopeOf(req), {
         card: RETURN_CARDS.includes(card) ? card : "all",
+        sort: RETURN_SORTS.includes(sort) ? sort : undefined,
         cursor: str(req.query.cursor) || undefined,
         limit: Number(req.query.limit),
       })
