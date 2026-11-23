@@ -50,6 +50,7 @@ import { searchReturns, type TikTokReturnOrder } from "./client";
 import { getValidAccessToken } from "./service";
 import type { SyncCompleteness } from "../sync-contract";
 import { expandReturnKeys, needsReturnKeyExpand, returnedQtyOf } from "../order-line-keys";
+import { complaintDuePatch } from "../../lib/return-complaint-due";
 
 /** Trần trang mỗi lượt (50 yêu cầu/trang). */
 const MAX_PAGES = 40;
@@ -133,6 +134,31 @@ export function tiktokReturnParcelArrivedAt(
   return new Date(updated * 1000);
 }
 
+/**
+ * HẠN KHIẾU NẠI sàn trả cho kiện trả ĐÃ VỀ shop = hạn SELLER_RESPOND_RECEIVE_PACKAGE (quá hạn
+ * sàn tự hoàn tiền cho khách) — null khi kiện chưa về / sàn không cho hạn.
+ *
+ * Chỉ nhận hạn khi nó đúng là "kiện về + 48 giờ": so với update_time (lượt đọc ngay lúc kiện
+ * về) hoặc với mốc kiện về đã lưu (yêu cầu bị cập nhật thêm sau đó, update_time trôi đi).
+ * Kiện còn trên đường thì cùng trường này mang "khách gửi + 14 ngày" — không phải hạn khiếu
+ * nại, không lấy (docs/HAN-KHIEU-NAI-DON-HOAN.md mục 1.2).
+ */
+export function tiktokReturnSellerDue(
+  ro: Pick<TikTokReturnOrder, "return_status" | "update_time" | "seller_next_action_response">,
+  deliveredAt: Date | null
+): Date | null {
+  if ((ro.return_status ?? "").toUpperCase() !== "BUYER_SHIPPED_ITEM") return null;
+  const next = Array.isArray(ro.seller_next_action_response) ? ro.seller_next_action_response : [];
+  const receive = next.find((a) => (a?.action ?? "").toUpperCase() === "SELLER_RESPOND_RECEIVE_PACKAGE");
+  const deadline = Number(receive?.deadline ?? 0);
+  if (!(deadline > 0)) return null;
+  const anchors = [Number(ro.update_time ?? 0), deliveredAt ? Math.floor(deliveredAt.getTime() / 1000) : 0];
+  const matches = anchors.some(
+    (a) => a > 0 && Math.abs(deadline - a - RECEIVE_PACKAGE_WINDOW_SEC) <= RECEIVE_PACKAGE_TOLERANCE_SEC
+  );
+  return matches ? new Date(deadline * 1000) : null;
+}
+
 /** Trạng thái hoàn hiện tại của đơn — phần planner cần nhìn (mirror Lazada). */
 export interface TiktokReturnFlagState {
   returnStatus: ReturnStatus;
@@ -142,6 +168,9 @@ export interface TiktokReturnFlagState {
   platformRefundAmount?: number;
   platformReturnStatus?: string | null;
   returnDeliveredAt?: Date | null;
+  /** Hạn khiếu nại sàn trả đang lưu (23/11/2026) — thiếu = chưa có. */
+  returnComplaintDueAt?: Date | null;
+  returnComplaintDueProvisional?: boolean;
 }
 
 export interface TiktokReturnUpdatePlan {
@@ -153,6 +182,8 @@ export interface TiktokReturnUpdatePlan {
     platformRefundAmount?: number;
     platformReturnStatus?: string | null;
     returnDeliveredAt?: Date | null;
+    returnComplaintDueAt?: Date | null;
+    returnComplaintDueProvisional?: boolean;
   };
   flagged: boolean;
   unflagged: boolean;
@@ -223,6 +254,8 @@ export function planTiktokReturnUpdate(
       const st = (newestOf(relevant)?.return_status ?? "").toUpperCase() || null;
       if (st !== (order.platformReturnStatus ?? null)) plan.data.platformReturnStatus = st;
     }
+    // Yêu cầu chết hết → không còn hạn khiếu nại nào.
+    Object.assign(plan.data, complaintDuePatch(null, order));
     return plan;
   }
 
@@ -288,6 +321,15 @@ export function planTiktokReturnUpdate(
     plan.data.returnDeliveredAt = null;
   }
 
+  // Hạn khiếu nại sàn trả: chỉ có khi kiện trả đã về shop (hạn 48 giờ kiểm hàng). Yêu cầu
+  // đóng rồi thì sàn thôi trả trường này → giữ hạn đã lưu. Khách giữ hàng → xóa.
+  if (refundOnly) {
+    Object.assign(plan.data, complaintDuePatch(null, order));
+  } else if (tiktokReturnSolutionOf(newest) === ReturnSolution.RETURN_REFUND) {
+    const due = tiktokReturnSellerDue(newest, plan.data.returnDeliveredAt ?? order.returnDeliveredAt ?? null);
+    Object.assign(plan.data, complaintDuePatch(due ? { dueAt: due, provisional: false } : "keep", order));
+  }
+
   const map = new Map<string, number>();
   const bySkuId = new Map<string, number>();
   if (!refundOnly) {
@@ -340,6 +382,8 @@ const RETURN_ORDER_SELECT = {
   platformRefundAmount: true,
   platformReturnStatus: true,
   returnDeliveredAt: true,
+  returnComplaintDueAt: true,
+  returnComplaintDueProvisional: true,
   returnLookupAt: true,
   items: { select: { id: true, channelSku: true, externalId: true, returnedQuantity: true } },
 } satisfies Prisma.OrderSelect;
@@ -405,6 +449,8 @@ async function applyTiktokReturnGroups(
           platformRefundAmount: Number(order.platformRefundAmount),
           platformReturnStatus: order.platformReturnStatus,
           returnDeliveredAt: order.returnDeliveredAt,
+          returnComplaintDueAt: order.returnComplaintDueAt,
+          returnComplaintDueProvisional: order.returnComplaintDueProvisional,
         },
         nowMs,
         opts

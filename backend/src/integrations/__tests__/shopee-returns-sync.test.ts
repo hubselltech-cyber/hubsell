@@ -365,3 +365,95 @@ describe("planReturnUpdate — quét bù (skipAwaiting)", () => {
     expect(isShopeeReturnParcelDelivered(null)).toBe(false);
   });
 });
+
+// ---------- Hạn khiếu nại sàn trả: return_seller_due_date (23/11/2026) ----------
+// Số lấy từ payload THẬT (scripts/return-due-date-probe.ts chạy trên prod 23/11/2026):
+//   · kiện trên đường: hạn tạm 1795885199 = 28/11 23:59:59 giờ VN;
+//   · kiện đã về 18/11 12:37:05 → hạn chốt 1795153025 = 20/11 12:37:05 (đúng + 48 giờ).
+describe("planReturnUpdate — hạn khiếu nại sàn trả", () => {
+  const PROVISIONAL = 1_795_885_199;
+  const FINAL = 1_795_153_025;
+  const awaiting: ReturnFlagState = {
+    returnStatus: ReturnStatus.AWAITING,
+    returnRequestedAt: new Date((NOW_SEC - 3600) * 1000),
+    returnTrackingCode: "SPXVN123",
+    returnSolution: ReturnSolution.RETURN_REFUND,
+    platformRefundAmount: 0,
+    platformReturnStatus: "PROCESSING",
+  };
+  const entry = (over: Record<string, unknown>) => ({
+    return_sn: "R1",
+    status: "PROCESSING",
+    return_solution: 0,
+    create_time: NOW_SEC - 3600,
+    update_time: NOW_SEC - 100,
+    tracking_number: "SPXVN123",
+    ...over,
+  });
+
+  it("khách chưa gửi (sàn trả 0) → không ghi hạn", () => {
+    const plan = planReturnUpdate([entry({ return_seller_due_date: 0 })], awaiting, NOW_SEC);
+    expect(plan.data.returnComplaintDueAt).toBeUndefined();
+    expect(plan.data.returnComplaintDueProvisional).toBeUndefined();
+  });
+
+  it("kiện trên đường → ghi hạn TẠM", () => {
+    const plan = planReturnUpdate([entry({ return_seller_due_date: PROVISIONAL })], awaiting, NOW_SEC);
+    expect(plan.data.returnComplaintDueAt).toEqual(new Date(PROVISIONAL * 1000));
+    expect(plan.data.returnComplaintDueProvisional).toBe(true);
+  });
+
+  it("kiện về, sàn đặt lại hạn → ghi hạn CHỐT, hạ cờ tạm; không đụng trục kho", () => {
+    const plan = planReturnUpdate(
+      [entry({ return_seller_due_date: FINAL })],
+      { ...awaiting, returnComplaintDueAt: new Date(PROVISIONAL * 1000), returnComplaintDueProvisional: true },
+      NOW_SEC
+    );
+    expect(plan.data.returnComplaintDueAt).toEqual(new Date(FINAL * 1000));
+    expect(plan.data.returnComplaintDueProvisional).toBe(false);
+    expect(plan.data.returnStatus).toBeUndefined();
+  });
+
+  it("đã lưu đúng hạn → không ghi lại (idempotent), kể cả khi yêu cầu sang ACCEPTED", () => {
+    const plan = planReturnUpdate(
+      [entry({ status: "ACCEPTED", return_seller_due_date: FINAL })],
+      {
+        ...awaiting,
+        platformReturnStatus: "ACCEPTED",
+        returnComplaintDueAt: new Date(FINAL * 1000),
+        returnComplaintDueProvisional: false,
+      },
+      NOW_SEC
+    );
+    expect(plan.data).toEqual({});
+  });
+
+  it("kho đã nhận kiện (RECEIVED) vẫn ghi hạn — hạn là thứ kho cần để kịp khiếu nại", () => {
+    const plan = planReturnUpdate(
+      [entry({ return_seller_due_date: FINAL })],
+      { ...awaiting, returnStatus: ReturnStatus.RECEIVED },
+      NOW_SEC
+    );
+    expect(plan.data.returnComplaintDueAt).toEqual(new Date(FINAL * 1000));
+    expect(plan.data.returnStatus).toBeUndefined();
+  });
+
+  it("chỉ hoàn tiền (khách giữ hàng) → xóa hạn đã lưu", () => {
+    const plan = planReturnUpdate(
+      [entry({ return_solution: 1, return_seller_due_date: FINAL })],
+      { ...awaiting, returnComplaintDueAt: new Date(FINAL * 1000) },
+      NOW_SEC
+    );
+    expect(plan.data.returnComplaintDueAt).toBeNull();
+  });
+
+  it("mọi yêu cầu đã hủy → xóa hạn đã lưu", () => {
+    const plan = planReturnUpdate(
+      [entry({ status: "CANCELLED", return_seller_due_date: PROVISIONAL })],
+      { ...awaiting, returnComplaintDueAt: new Date(PROVISIONAL * 1000), returnComplaintDueProvisional: true },
+      NOW_SEC
+    );
+    expect(plan.data.returnComplaintDueAt).toBeNull();
+    expect(plan.data.returnComplaintDueProvisional).toBe(false);
+  });
+});

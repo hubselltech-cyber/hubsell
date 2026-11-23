@@ -118,6 +118,28 @@ describe("TikTok — hỏi yêu cầu hoàn đúng đơn (màn quét kho)", () =
     expect(after.returnStatus).toBe(ReturnStatus.NONE);
   });
 
+  it("kiện trả vừa về shop → ghi xuống DB cả mốc kiện về lẫn HẠN KHIẾU NẠI sàn trả; yêu cầu bị hủy → xóa hạn", async () => {
+    // Payload thật 23/11/2026: kiện về 22/11 09:07:27, hạn nhận kiện 24/11 09:07:27 (giờ VN).
+    const o = await createDeliveredOrder();
+    const arrived = (c: string) =>
+      pendingReturn(c, {
+        return_status: "BUYER_SHIPPED_ITEM",
+        update_time: 1_795_313_247,
+        seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_795_486_047 }],
+      });
+    api.respond = (ids) => ids.map(arrived);
+    await syncTiktokReturnsForOrders(await channel(), [o.code]);
+    const after = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(after.returnDeliveredAt?.toISOString()).toBe("2026-11-22T02:07:27.000Z");
+    expect(after.returnComplaintDueAt?.toISOString()).toBe("2026-11-24T02:07:27.000Z");
+    expect(after.returnComplaintDueProvisional).toBe(false);
+
+    api.respond = (ids) => ids.map((c) => pendingReturn(c, { return_status: "RETURN_OR_REFUND_REQUEST_CANCEL" }));
+    await syncTiktokReturnsForOrders(await channel(), [o.code]);
+    const cancelled = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(cancelled.returnComplaintDueAt).toBeNull();
+  });
+
   it("sàn không có yêu cầu nào / đơn chưa có trong DB / mã rỗng → không ghi, không ném lỗi", async () => {
     const o = await createDeliveredOrder();
     expect(await syncTiktokReturnsForOrders(await channel(), [o.code])).toMatchObject({ scanned: 0, withReturns: 0 });

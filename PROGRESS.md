@@ -24,7 +24,18 @@
   thêm `seller_evidence_deadline`, `seller_compensation_due_date`, `offer_due_date`. Hubsell chưa đọc trường nào. Chưa kiểm giá trị
   thật → viết script chỉ đọc `backend/scripts/return-due-date-probe.ts` (3 sàn, tsc sạch), **chưa commit / chưa chạy** (local không
   có token gian thật; cần push + Render Shell worker).
-- **⏳ Chờ anh:** 3 câu ở mục 5 tài liệu.
+- **Anh: "Push và chạy đi" →** push `e359d476`, chạy script trên Render Shell worker 14:29 (docs mục 7). **Shopee: `return_seller_due_date`
+  ĐÚNG là hạn khiếu nại** — 66 yêu cầu của một gian: khách chưa gửi thì trống (10), kiện trên đường là hạn tạm 23:59 theo ngày dự kiến
+  (11), kiện đã về = `update_time` + đúng 48,0 giờ (13 / 13); có sẵn trong `get_return_list` → 0 call thêm. Mốc kiện về Hubsell đang
+  lưu có khi trễ 1–2 giờ. Thấy luôn ca lỡ hạn thật: kiện về 18/11, hạn 20/11 12:37, kho quét 17:04 (sau hạn 4,5 giờ). Lazada: 3 gian
+  không có yêu cầu trả hàng nào trong 10 ngày → `sla` chưa soi được. Mục 7 docs + dòng này CHƯA commit.
+- **Anh: "Duyệt, làm lát 1" → ĐÃ CODE LOCAL, chưa commit / chưa prod (docs mục 8).** Hai cột `Order.returnComplaintDueAt` +
+  `returnComplaintDueProvisional` (migration `20261123160000_order_return_complaint_due`, chỉ thêm cột, chưa chỉ mục); lượt đồng bộ
+  hoàn Shopee ghi `return_seller_due_date` (23:59:59 giờ VN = hạn tạm), TikTok ghi hạn nhận kiện khi kiện đã về; yêu cầu hủy / chỉ
+  hoàn tiền thì xóa; hàm thuần `lib/return-complaint-due.ts` (`complaintDueOf`: hạn sàn trả → luật → ước tính từ giờ kho quét). 0 call
+  sàn thêm, không đụng sổ cái. Test mới 23 + 15 + 1 ca database, tsc sạch; cả bộ backend 2.947 qua / 24 trượt ở 12 tệp sổ cái, xóa
+  gian, giữ video — 3 tệp chạy lại trên mã chưa sửa vẫn trượt y hệt (dòng sổ bẩn trong database local), có từ trước.
+- **⏳ Chờ anh:** duyệt commit + push lát 1; 2 câu ở mục 5 tài liệu (ô hiện hạn nào, đặt cột ở đâu).
 
 ---
 ## Phiên 23/11 trưa — Đối soát đơn hoàn: đơn TikTok `587267766969206097` sàn báo kiện trả đã về, Hubsell vẫn "Đang hoàn về" — gốc đã tìm bằng payload thật, ĐÃ SỬA, LÊN PROD 23/11 ~10:50 (`64563bc2`)

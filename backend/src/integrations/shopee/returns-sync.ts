@@ -47,6 +47,7 @@ import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 import { mapShopeeEscrowFields } from "./settlements";
 import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 import type { SyncCompleteness } from "../sync-contract";
+import { complaintDuePatch, shopeeSellerDue } from "../../lib/return-complaint-due";
 import { expandReturnKeys, needsReturnKeyExpand, returnedQtyOf, shopeeLineExternalId } from "../order-line-keys";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
@@ -69,6 +70,9 @@ export interface ReturnFlagState {
   returnSolution?: ReturnSolution | null;
   platformRefundAmount?: number;
   platformReturnStatus?: string | null;
+  /** Hạn khiếu nại sàn trả đang lưu (23/11/2026) — thiếu = chưa có. */
+  returnComplaintDueAt?: Date | null;
+  returnComplaintDueProvisional?: boolean;
 }
 
 export interface ReturnUpdatePlan {
@@ -80,6 +84,8 @@ export interface ReturnUpdatePlan {
     platformRefundAmount?: number;
     platformReturnStatus?: string | null;
     returnDeliveredAt?: Date | null;
+    returnComplaintDueAt?: Date | null;
+    returnComplaintDueProvisional?: boolean;
   };
   flagged: boolean;
   unflagged: boolean;
@@ -234,6 +240,15 @@ export function planReturnUpdate(
       plan.itemReturns = map;
       plan.itemReturnsByExternalId = byExt;
     }
+    // Hạn khiếu nại sàn trả (return_seller_due_date của yêu cầu sống mới nhất). Khách giữ
+    // hàng → không có kiện nào về để khiếu nại → xóa hạn nếu trước đó đã lưu.
+    Object.assign(
+      plan.data,
+      complaintDuePatch(
+        refundOnly || !latest ? null : shopeeSellerDue(latest.return_seller_due_date, order),
+        order
+      )
+    );
   } else {
     if (order.returnStatus === ReturnStatus.AWAITING) {
       // Mọi yêu cầu hoàn của đơn trong cửa sổ đều đã hủy → hạ cờ để danh sách
@@ -255,6 +270,8 @@ export function planReturnUpdate(
       const deadStatus = (dead?.status ?? "").toUpperCase() || null;
       if (deadStatus !== order.platformReturnStatus) plan.data.platformReturnStatus = deadStatus;
     }
+    // Yêu cầu chết hết → không còn hạn khiếu nại nào.
+    Object.assign(plan.data, complaintDuePatch(null, order));
   }
 
   return plan;
@@ -311,6 +328,8 @@ const RETURN_ORDER_SELECT = {
   platformRefundAmount: true,
   platformReturnStatus: true,
   returnDeliveredAt: true,
+  returnComplaintDueAt: true,
+  returnComplaintDueProvisional: true,
   returnLookupAt: true,
   isSettled: true,
   refundedAmount: true,
@@ -397,6 +416,8 @@ async function applyShopeeReturnGroup(
       returnSolution: order.returnSolution,
       platformRefundAmount: Number(order.platformRefundAmount),
       platformReturnStatus: order.platformReturnStatus,
+      returnComplaintDueAt: order.returnComplaintDueAt,
+      returnComplaintDueProvisional: order.returnComplaintDueProvisional,
     },
     nowSec,
     { skipAwaiting: finishedBeforeSeen }

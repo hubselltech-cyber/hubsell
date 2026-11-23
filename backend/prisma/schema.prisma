@@ -1679,6 +1679,16 @@ model Order {
   /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
   returnDeliveredAt    DateTime?
+  /// HẠN KHIẾU NẠI do SÀN TRẢ cho yêu cầu trả hàng (23/11/2026, docs/HAN-KHIEU-NAI-DON-HOAN.md):
+  /// hạn người bán kiểm kiện trả + khiếu nại. Shopee `return_seller_due_date` (get_return_list);
+  /// TikTok hạn SELLER_RESPOND_RECEIVE_PACKAGE khi kiện đã về shop. Cả hai = giờ kiện về + 48 giờ
+  /// (payload thật 23/11). Null = sàn chưa / không cho hạn (khách chưa gửi, kiện giao thất bại,
+  /// Lazada, đơn có từ trước 23/11) → lib/return-complaint-due.ts tính theo luật khi cần hiện.
+  /// Sổ cái đơn, Lãi/Lỗ, quảng cáo KHÔNG đọc cột này.
+  returnComplaintDueAt          DateTime?
+  /// true = hạn TẠM của Shopee lúc kiện còn trên đường (sàn tính theo ngày nhận hàng hoàn dự kiến,
+  /// luôn rơi vào 23:59:59 giờ VN); kiện về thì sàn đặt lại hạn chốt và cờ này về false.
+  returnComplaintDueProvisional Boolean   @default(false)
   /// Mốc Hubsell ĐÃ ĐỌC yêu cầu hoàn của sàn cho đơn này (02/10/2026). Null =
   /// chưa đọc lần nào → lượt quét bù theo mã đơn của TikTok / Shopee sẽ hỏi sàn
   /// nếu đơn có tiền hoàn trên sao kê; mỗi đơn chỉ hỏi một lần (cơ chế:

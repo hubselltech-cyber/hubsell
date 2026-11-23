@@ -16,6 +16,7 @@ import {
   isTiktokBuyerKeepsItem,
   planTiktokReturnUpdate,
   tiktokReturnParcelArrivedAt,
+  tiktokReturnSellerDue,
   tiktokReturnSolutionOf,
 } from "../tiktok/returns-sync";
 import type { TikTokReturnOrder } from "../tiktok/client";
@@ -381,5 +382,95 @@ describe("tiktokReturnParcelArrivedAt — hạn 48 giờ kiểm hàng = kiện t
     const plan = planTiktokReturnUpdate([ro({ ...ARRIVED, can_buyer_keep_item: true })], NONE, NOW);
     expect(plan.delivered).toBe(false);
     expect(plan.data.returnDeliveredAt).toBeUndefined();
+  });
+});
+
+// ---------- Hạn khiếu nại sàn trả cho kiện trả đã về shop (23/11/2026) ----------
+// Cùng payload thật với khối trên: kiện về 22/11 09:07:27 → hạn nhận kiện 24/11 09:07:27 (giờ VN).
+describe("tiktokReturnSellerDue — hạn 48 giờ kiểm hàng là hạn khiếu nại", () => {
+  const ARRIVED = {
+    return_status: "BUYER_SHIPPED_ITEM",
+    update_time: 1_795_313_247,
+    seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_795_486_047 }],
+  };
+  const IN_TRANSIT = {
+    return_status: "BUYER_SHIPPED_ITEM",
+    update_time: 1_795_401_683,
+    seller_next_action_response: [{ action: "SELLER_RESPOND_RECEIVE_PACKAGE", deadline: 1_796_611_277 }],
+  };
+  const AWAITING_ORDER = {
+    returnStatus: ReturnStatus.AWAITING,
+    returnRequestedAt: new Date(1_795_231_633_000),
+    returnTrackingCode: "854172952136",
+    returnSolution: ReturnSolution.RETURN_REFUND,
+    platformRefundAmount: 291_750,
+    platformReturnStatus: "BUYER_SHIPPED_ITEM",
+    returnDeliveredAt: null,
+  };
+  const DUE_ISO = "2026-11-24T02:07:27.000Z";
+  const line = { return_tracking_number: "854172952136", refund_amount: { refund_total: "291750" } };
+
+  it("kiện đã về → hạn = hạn sàn trả; kiện trên đường (khách gửi + 14 ngày) → null", () => {
+    expect(tiktokReturnSellerDue(ARRIVED, null)?.toISOString()).toBe(DUE_ISO);
+    expect(tiktokReturnSellerDue(IN_TRANSIT, null)).toBeNull();
+  });
+
+  it("yêu cầu bị cập nhật thêm sau khi kiện về (update_time trôi) → vẫn nhận nhờ mốc kiện về đã lưu", () => {
+    const drifted = { ...ARRIVED, update_time: ARRIVED.update_time + 5 * 3600 };
+    expect(tiktokReturnSellerDue(drifted, null)).toBeNull();
+    expect(tiktokReturnSellerDue(drifted, new Date("2026-11-22T02:07:27.000Z"))?.toISOString()).toBe(DUE_ISO);
+  });
+
+  it("trạng thái khác / thiếu trường → null", () => {
+    expect(tiktokReturnSellerDue({ ...ARRIVED, return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE" }, null)).toBeNull();
+    expect(tiktokReturnSellerDue({ return_status: "BUYER_SHIPPED_ITEM", update_time: 1_795_313_247 }, null)).toBeNull();
+  });
+
+  it("planner: kiện vừa về → ghi cả mốc kiện về lẫn hạn khiếu nại", () => {
+    const plan = planTiktokReturnUpdate([ro({ ...ARRIVED, ...line })], AWAITING_ORDER, NOW);
+    expect(plan.data.returnDeliveredAt?.toISOString()).toBe("2026-11-22T02:07:27.000Z");
+    expect(plan.data.returnComplaintDueAt?.toISOString()).toBe(DUE_ISO);
+    expect(plan.data.returnComplaintDueProvisional).toBeUndefined();
+  });
+
+  it("planner: kiện trên đường → không ghi hạn", () => {
+    const plan = planTiktokReturnUpdate([ro({ ...IN_TRANSIT, ...line })], AWAITING_ORDER, NOW);
+    expect(plan.data.returnComplaintDueAt).toBeUndefined();
+  });
+
+  it("planner: yêu cầu đã đóng (sàn thôi trả hạn) → GIỮ hạn đã lưu", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ ...line, return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE", update_time: 1_795_480_000 })],
+      {
+        ...AWAITING_ORDER,
+        returnDeliveredAt: new Date("2026-11-22T02:07:27.000Z"),
+        returnComplaintDueAt: new Date(DUE_ISO),
+      },
+      NOW
+    );
+    expect(plan.data.returnComplaintDueAt).toBeUndefined();
+  });
+
+  it("planner: đã lưu đúng hạn → không ghi lại", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ ...ARRIVED, ...line })],
+      {
+        ...AWAITING_ORDER,
+        returnDeliveredAt: new Date("2026-11-22T02:07:27.000Z"),
+        returnComplaintDueAt: new Date(DUE_ISO),
+        returnComplaintDueProvisional: false,
+      },
+      NOW
+    );
+    expect(plan.data).toEqual({});
+  });
+
+  it("planner: yêu cầu bị hủy → xóa hạn đã lưu", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ ...line, return_status: "RETURN_OR_REFUND_REQUEST_CANCEL" })],
+      { ...AWAITING_ORDER, returnComplaintDueAt: new Date(DUE_ISO) },
+      NOW
+    );
+    expect(plan.data.returnComplaintDueAt).toBeNull();
   });
 });

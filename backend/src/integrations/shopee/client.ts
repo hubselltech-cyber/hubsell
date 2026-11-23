@@ -592,6 +592,16 @@ export interface ShopeeReturnEntry {
   return_solution?: number;
   /** true = kiện phải gửi về seller (có/không tích hợp vận chuyển). */
   needs_logistics?: boolean;
+  /**
+   * Hạn người bán xử lý sau khi khách đã gửi hàng (giây) = HẠN KHIẾU NẠI. Payload thật
+   * 23/11/2026: 0 khi khách chưa gửi; hạn tạm 23:59:59 giờ VN khi kiện trên đường; kiện về
+   * thì = update_time + 48 giờ và giữ nguyên sau khi đóng (lib/return-complaint-due.ts).
+   */
+  return_seller_due_date?: number;
+  /** Hạn cuối người bán phản hồi yêu cầu (≈ lúc tạo + 2 ngày). Chưa dùng. */
+  due_date?: number;
+  /** Hạn khách gửi hàng trả. Chưa dùng. */
+  return_ship_due_date?: number;
   /** Dòng hàng trong yêu cầu hoàn — `amount` = SỐ LƯỢNG trả của dòng. */
   item?: ShopeeReturnItem[];
   [k: string]: unknown;
