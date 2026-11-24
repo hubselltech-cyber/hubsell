@@ -2135,7 +2135,7 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
 - Tệp: backend `config/pack-video.ts`, `lib/pack-video-hour-pricing.ts` (chú thích), `services/pack-video/hours.ts`,
   `middleware/require-pack-video.ts`, 3 tệp test; frontend `hours-balance.tsx`, `stats-tab.tsx`, `hour-ledger.tsx`.
 
-## 28. Quay video cho NHÂN VIÊN theo quyền có sẵn (24/11/2026 — dựng local, web + máy chủ CHƯA commit / push; app ở nhánh thử, TestFlight 1.5.1 (44))
+## 28. Quay video cho NHÂN VIÊN theo quyền có sẵn (24/11/2026 — web + máy chủ LÊN PROD `2fd1599a`; app ở nhánh thử, TestFlight 1.5.1 (44) VALID)
 
 > Anh Trung 24/11: "Em làm phân quyền cho nhân viên đi". Anh chốt 4 câu (hộp hỏi): **theo quyền có sẵn** (không thêm ô
 > quyền mới) · nhân viên trên web **"Quay + xem danh sách"** · **"Thấy số, không nút mua"** · **"Làm cả app luôn"**.
@@ -2197,3 +2197,13 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
 - ❌ CHƯA: push máy chủ + web (app bản 44 gọi prod → nhân viên chỉ dùng được SAU khi push); chưa nhìn bản 44 trên máy;
   chưa soi bố cục tiêu đề Đơn hàng có chuông (nhân viên không có Trang chủ) trên app; chưa quay thật bằng tài khoản
   nhân viên; webcam của nhân viên chưa thử.
+
+### 28.5 Lên prod 24/11/2026 (anh: "Commit và push")
+
+- Commit `2fd1599a` (máy chủ + web + docs + mục PROGRESS của lượt này; mục PROGRESS / `HAN-KHIEU-NAI-DON-HOAN.md` đang dở của
+  phiên khác để nguyên). Render `/health` báo `2fd1599a` lúc 16:15:46; chưa đăng nhập → `/api/pack-videos/*` 401. Gói mã web
+  `app.hubsell.vn/orders/videos/record` có chữ mới lúc 16:26 (dò tệp tĩnh, không đăng nhập — `app.hubsell.tech` chuyển 307
+  sang `.vn`, dò phải theo `.vn`).
+- App: EAS `fcc7d6ce` dựng xong 16:16:54, lượt nộp hẹn sẵn tự chạy → App Store Connect build **44 VALID** (tải lên 16:20).
+- ❌ Chưa đăng nhập prod bằng tài khoản nhân viên (admin@hubsell.vn hiện có nhân viên nào / quyền gì em chưa xem); chưa nhìn
+  bản 44 trong app TestFlight.

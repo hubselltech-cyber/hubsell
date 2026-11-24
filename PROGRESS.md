@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 24/11 chiều — Video đóng hàng: quay cho NHÂN VIÊN theo quyền có sẵn — web + máy chủ LOCAL (chưa commit), app TestFlight 1.5.1 (44)
+## Phiên 24/11 chiều — Video đóng hàng: quay cho NHÂN VIÊN theo quyền có sẵn — LÊN PROD `2fd1599a`, app TestFlight 1.5.1 (44) VALID
 
 - **Anh hỏi** phần Quay video gói hàng còn gì chưa làm → em liệt kê (chờ thử / chưa làm / phải xong trước khi mở cho khách). Anh nhắc
   "phần 5" (đường quay trễ 1 giây, docs 25.7) tưởng đã làm → không: thứ anh đã thử là cách C (mã hiện trễ 1 giây, `e749f7ce`);
@@ -21,8 +21,8 @@
   EAS `fcc7d6ce` = 1.5.1 (44), lượt nộp TestFlight hẹn sẵn `83b50320`.
 - **Đã kiểm:** tsc 3 bên; vitest cổng 17/17 + HTTP 7/7; soi local 3 vai (nhân viên Đóng hàng, nhân viên Khui, chủ) sáng + tối, nhân viên
   thử + script tạm đã xóa. Bộ đầy đủ: 23 ca sổ cái trên DB dev + 2 ca `retention-db` đỏ sẵn, không dính phần này.
-- **Chưa:** commit + push máy chủ / web (app 44 gọi prod nên nhân viên chỉ dùng được sau khi push); chưa nhìn bản 44 trên máy; chưa
-  quay thật bằng tài khoản nhân viên.
+- **Anh: "Commit và push" → `2fd1599a`**: Render 16:15, gói mã web `app.hubsell.vn` có bản mới 16:26; build 44 VALID 16:20.
+- **Chưa:** chưa nhìn bản 44 trên máy; chưa quay thật bằng tài khoản nhân viên trên prod.
 
 ---
 ## Phiên 23/11 khuya — App mobile: chữ tràn / đè khi máy để cỡ chữ lớn (trần cỡ chữ) — ĐÃ OTA 1.5.0 + 1.4.3
