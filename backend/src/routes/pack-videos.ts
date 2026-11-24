@@ -19,10 +19,21 @@
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
 // Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
+//
+// QUYỀN TỪNG ĐƯỜNG (24/11/2026 — nhân viên của chủ đã mở được vào, docs VIDEO-DONG-HANG-THIET-KE mục 28;
+// cổng tổng + `req.packVideoCaps` ở middleware/require-pack-video.ts):
+//   quay ĐÓNG (PACK)  = chủ, hoặc nhân viên có quyền Đơn hàng          → POST / · GET /match (theo `kind`)
+//   quay KHUI (UNBOX) = chủ, hoặc nhân viên có quyền Đối soát đơn hoàn → như trên
+//   ký mảnh / báo tải xong: nhân viên chỉ video CHÍNH MÌNH quay (upload.ts)
+//   xem danh sách / số chip / hồ sơ đơn / cờ đơn / xem video: ai qua cổng cũng được (theo gian được giao)
+//   tải về (`download=1`), thống kê, tab đơn hoàn: CHỈ chủ shop (`manage`)
+//   /hours: nhân viên thấy SỐ GIỜ, không thấy sổ tiền; mua giờ: chỉ chủ (requireAdmin)
 // ============================================================
 
 import { Router, type NextFunction, type Response } from "express";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
+import type { PackVideoRequest } from "../middleware/require-pack-video";
+import { NO_PACK_VIDEO_CAPS, type PackVideoCaps } from "../services/pack-video/access";
 import { R2Error } from "../integrations/r2/client";
 import { prisma } from "../lib/prisma";
 import { CheckoutError, createPackHoursCheckout } from "../services/gateway-checkout";
@@ -60,8 +71,33 @@ const router = Router();
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ORDER_FLAGS_MAX = 100;
 
+function capsOf(req: AuthRequest): PackVideoCaps {
+  return (req as PackVideoRequest).packVideoCaps ?? NO_PACK_VIDEO_CAPS;
+}
+
 function actorOf(req: AuthRequest): PackVideoActor {
-  return { ownerId: req.ownerId!, userId: req.userId! };
+  return { ownerId: req.ownerId!, userId: req.userId!, staff: !capsOf(req).manage };
+}
+
+function denied(message: string): PackVideoError {
+  return new PackVideoError(403, "PERMISSION_DENIED", message);
+}
+
+/** Việc của chủ shop (tải về, thống kê, tab đơn hoàn). */
+function requireManage(req: AuthRequest): void {
+  if (!capsOf(req).manage) throw denied("Chỉ chủ shop xem được mục này");
+}
+
+/** Quay đúng kiểu mình có quyền: đóng hàng cần quyền Đơn hàng, khui hàng hoàn cần quyền Đối soát đơn hoàn. */
+function requireRecordKind(req: AuthRequest, kind: PackVideoKind): void {
+  const caps = capsOf(req);
+  if (kind === "UNBOX" ? !caps.unbox : !caps.pack) {
+    throw denied(
+      kind === "UNBOX"
+        ? "Tài khoản này chưa có quyền Đối soát đơn hoàn để quay khui hàng"
+        : "Tài khoản này chưa có quyền Đơn hàng để quay video đóng hàng"
+    );
+  }
 }
 
 function scopeOf(req: AuthRequest): PackVideoScope {
@@ -127,6 +163,7 @@ router.post(
   handle(async (req, res) => {
     const parsed = parseBeginInput(req.body);
     if (!parsed.ok) throw new PackVideoError(400, "BAD_INPUT", parsed.error);
+    requireRecordKind(req, parsed.value.kind);
     res.json(await beginUpload(actorOf(req), parsed.value));
   })
 );
@@ -185,6 +222,7 @@ router.get(
 router.get(
   "/returns",
   handle(async (req, res) => {
+    requireManage(req);
     const card = str(req.query.card) as ReturnCard;
     const sort = str(req.query.sort) as ReturnSort;
     res.json(
@@ -201,15 +239,19 @@ router.get(
 router.get(
   "/stats",
   handle(async (req, res) => {
+    requireManage(req);
     res.json(await videoStats(scopeOf(req), parseDateRange(req.query)));
   })
 );
 
 // Số giờ là của CHỦ SHOP (không theo gian) — nhân viên bị giới hạn gian vẫn thấy cùng một số dư.
+// Nhân viên (anh Trung 24/11/2026: "Thấy số, không nút mua"): giữ số dư, bỏ sổ (có số tiền + số hóa đơn),
+// salesOpen = false để không vẽ hộp mua.
 router.get(
   "/hours",
   handle(async (req, res) => {
-    res.json(await getHoursOverview(req.ownerId!));
+    const overview = await getHoursOverview(req.ownerId!);
+    res.json(capsOf(req).manage ? overview : { ...overview, salesOpen: false, ledger: [] });
   })
 );
 
@@ -245,8 +287,9 @@ router.get(
       throw new PackVideoError(400, "BAD_INPUT", "Mã vận đơn không hợp lệ");
     }
     // Chế độ đang quay: PACK (mặc định) hay UNBOX — khui hàng hoàn thì thử thêm mã vận đơn chiều hoàn.
-    const kind = str(req.query.kind).toUpperCase();
-    res.json(await matchTem(scopeOf(req), code, kind === "UNBOX" ? "UNBOX" : "PACK"));
+    const kind: PackVideoKind = str(req.query.kind).toUpperCase() === "UNBOX" ? "UNBOX" : "PACK";
+    requireRecordKind(req, kind);
+    res.json(await matchTem(scopeOf(req), code, kind));
   })
 );
 
@@ -261,6 +304,8 @@ router.get(
   "/:id/url",
   handle(async (req, res) => {
     const download = str(req.query.download) === "1";
+    // Nhân viên xem được, không tải về (anh Trung 24/11/2026).
+    if (download) requireManage(req);
     res.json(await videoUrl(scopeOf(req), requireId(req.params.id), download));
   })
 );

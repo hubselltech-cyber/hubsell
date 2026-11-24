@@ -37,9 +37,35 @@ function OnOffLabel({ on, onText, offText }: { on: boolean; onText: string; offT
  * Đang quay thì KHÓA công tắc (không biết clip dở thuộc loại nào); muốn đổi loại của clip đang quay thì dùng câu
  * hỏi "Chuyển sang quay khui hàng?" dưới khung hình.
  */
-function ModeCard({ state, onChange }: { state: RecorderState; onChange: (kind: ClipKind) => void }) {
+function ModeCard({
+  state,
+  kinds,
+  onChange,
+}: {
+  state: RecorderState;
+  kinds: readonly ClipKind[];
+  onChange: (kind: ClipKind) => void;
+}) {
   const recording = state.phase === "recording";
   const unbox = state.kind === "UNBOX";
+  // Nhân viên chỉ có một trong hai quyền (24/11/2026): không vẽ công tắc, chỉ nói rõ đang quay kiểu gì + vì sao.
+  if (kinds.length === 1) {
+    return (
+      <Card className={cn("[--card-spacing:--spacing(4)]", unbox && "border-violet-300")}>
+        <CardContent className="space-y-1">
+          <p className={cn("flex items-center gap-2 text-sm font-semibold", unbox && KIND_ACCENT.UNBOX.text)}>
+            {unbox ? <PackageOpen className="size-4" aria-hidden /> : <Package className="size-4" aria-hidden />}
+            {unbox ? "Khui hàng hoàn" : "Đóng hàng"}
+          </p>
+          <p className={TEXT_SUB}>
+            {unbox
+              ? "Tài khoản của bạn được quay khui hàng hoàn (quyền Đối soát đơn hoàn). Quay đủ 6 mặt kiện trước khi mở."
+              : "Tài khoản của bạn được quay video đóng hàng (quyền Đơn hàng)."}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card className={cn("[--card-spacing:--spacing(4)]", unbox && "border-violet-300")}>
       <CardContent className="space-y-2">
@@ -325,6 +351,7 @@ export function ControlPanel({
   state,
   diskFull,
   closeup,
+  kinds,
   onKind,
   onToggleCamera,
   onSelectCamera,
@@ -336,6 +363,8 @@ export function ControlPanel({
   closeup: CloseupControls;
   /** Ổ đĩa đã ghi hỏng thật → không mở video mới (dải báo phía trên nói lý do). */
   diskFull: boolean;
+  /** Kiểu quay người này được phép (theo quyền) — một kiểu thì khóa công tắc. */
+  kinds: readonly ClipKind[];
   onKind: (kind: ClipKind) => void;
   onToggleCamera: () => void;
   onSelectCamera: (deviceId: string) => void;
@@ -350,7 +379,7 @@ export function ControlPanel({
     <div className="flex min-w-0 flex-col gap-3">
       {/* Cụm trên giãn (ô Camera toàn cảnh lấp phần giữa); ô Tự cắt + nút lớn nằm sát đáy, bằng đáy cột trái. */}
       <div className="flex flex-1 flex-col gap-3">
-        <ModeCard state={state} onChange={onKind} />
+        <ModeCard state={state} kinds={kinds} onChange={onKind} />
         <CameraCard state={state} closeup={closeup} onToggle={onToggleCamera} onSelect={onSelectCamera} />
       </div>
       <AutoCutCard state={state} onChange={onAutoCut} />

@@ -545,6 +545,8 @@ chưa làm.
 
 ## 17. Quay video trên app cho NHÂN VIÊN — phương án (18/11/2026, ĐỀ XUẤT, anh CHƯA duyệt, chưa code)
 
+> **24/11/2026: ĐÃ LÀM theo mục 28** — anh chốt theo quyền có sẵn, các câu C1–C7 / D1–D3 dưới đây hết hiệu lực.
+
 > Anh Trung (thử TestFlight 1.5.0 build 34): "Phần quay video này đang ở tab tổng quan, nhưng với nhân viên kho thì lại không được cung cấp
 > quyền xem tổng quan nên cần em thiết kế phương án hợp lý".
 
@@ -1569,7 +1571,7 @@ biết R2 mình full hay không còn kịp gia hạn nữa."
 
 | # | Việc | Đang ở đâu | Chờ gì |
 |---|---|---|---|
-| 1 | **Quay cho nhân viên** (app + web) | thiết kế xong mục 17.2 (lát N1–N5), chưa code | anh chốt C1–C7 |
+| 1 | **Quay cho nhân viên** (app + web) | **24/11 ĐÃ DỰNG — mục 28** (theo quyền có sẵn; web + máy chủ local, app TestFlight 1.5.1 (44)) | anh bảo push + thử |
 | 2 | **Hàng đợi** (hàng chờ bền M1) | M1 lên prod 19/11 (22.10); **M1b cứu clip dở + K-6 gửi tiếp ở mọi trang đã dựng LOCAL 19/11 (mục 24)** | anh bảo push; anh thử webcam thật + rút mạng thật (24.5); trả lời K-1, K-3; lát kế M2 (máy chủ gộp lô) |
 | 3 | **Nhiều camera trên một máy** (màn Nhiều bàn, M3) | đo M0 xong (18.7–18.9), chưa dựng | xem ghi chú dưới |
 | 4 | **HQ theo dõi R2** | chưa có gì | xem ghi chú dưới |
@@ -2132,3 +2134,66 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
   thông báo "bạn được tặng 2 giờ" (khách thấy qua số dư + sổ giờ); hoa hồng giới thiệu cho khoản mua giờ vẫn chờ anh (mục 20.6).
 - Tệp: backend `config/pack-video.ts`, `lib/pack-video-hour-pricing.ts` (chú thích), `services/pack-video/hours.ts`,
   `middleware/require-pack-video.ts`, 3 tệp test; frontend `hours-balance.tsx`, `stats-tab.tsx`, `hour-ledger.tsx`.
+
+## 28. Quay video cho NHÂN VIÊN theo quyền có sẵn (24/11/2026 — dựng local, web + máy chủ CHƯA commit / push; app ở nhánh thử, TestFlight 1.5.1 (44))
+
+> Anh Trung 24/11: "Em làm phân quyền cho nhân viên đi". Anh chốt 4 câu (hộp hỏi): **theo quyền có sẵn** (không thêm ô
+> quyền mới) · nhân viên trên web **"Quay + xem danh sách"** · **"Thấy số, không nút mua"** · **"Làm cả app luôn"**.
+> Thay cho các câu treo C1–C7 / D1–D3 ở mục 17. Đường quay trễ 1 giây (25.7): anh chốt **"Tạm thời giữ cách C"** — chưa làm.
+
+### 28.1 Luật (một nguồn: `backend/src/services/pack-video/access.ts`)
+
+| | Chủ shop đã mở | NV quyền **Đơn hàng** (`orders`) | NV quyền **Đối soát đơn hoàn** (`warehouse.returns`) | NV khác / chủ chưa mở |
+|---|---|---|---|---|
+| Quay đóng hàng (PACK) | ✅ | ✅ | ❌ | ❌ cổng khóa |
+| Quay khui hàng (UNBOX) | ✅ | ❌ | ✅ | ❌ |
+| Xem danh sách / số chip / hồ sơ đơn / xem video | ✅ | ✅ (theo gian được giao) | ✅ | ❌ |
+| Tải video về · Thống kê · tab Đơn hoàn | ✅ | ❌ 403 `PERMISSION_DENIED` | ❌ | ❌ |
+| Số giờ còn lại | ✅ + sổ có tiền | số dư, **sổ rỗng**, không hộp mua | như trái | ❌ |
+| Mua giờ | ✅ | ❌ (requireAdmin có sẵn) | ❌ | ❌ |
+
+- Cổng mở theo **email CHỦ shop** nằm trong `PACK_VIDEO_PILOT_EMAILS` + R2 đủ biến. Nhân viên → tra email chủ (một câu
+  theo khóa chính, đệm 60 giây trong máy: `services/pack-video/subject.ts`); quyền của nhân viên KHÔNG đệm (đọc tươi ở
+  requireAuth). Có quyền mà không thuộc hai quyền trên → vẫn `FEATURE_LOCKED`.
+- Ký mảnh / báo tải xong / gọi lại cùng clientId: nhân viên chỉ chạm video **do chính mình quay** (`upload.ts`
+  `ownOnly`). Hết giờ: câu của nhân viên là "báo chủ shop mua thêm giờ".
+- Giờ quay trừ vào sổ của CHỦ (như cũ); giờ tặng 2 giờ cũng ghi cho chủ khi nhân viên chạm lần đầu.
+- `/api/auth/*` trả thêm `features.packVideoCaps = { pack, unbox, manage }`; `features.packVideo` = "open" khi quay
+  được ít nhất một kiểu → mục "Video đóng hàng" trên sidebar web hết mờ với nhân viên quyền Đơn hàng. App 1.4.3 / 1.5.0
+  không đọc khối này.
+- C5 (mục 17.2) giữ đề nghị cũ: nhân viên bị giới hạn gian quay kiện của gian khác → video vẫn gắn vào đơn.
+
+### 28.2 Web (`frontend`)
+
+- `lib/features.ts` `packVideoCapsOf` + `lib/use-feature.ts` `usePackVideoCaps()` (hỏng thì đóng: thiếu khối → cả ba false).
+- Trang Video đóng hàng: nhân viên chỉ có tab **Video đóng hàng**; ẩn nút **Tải về** (bảng + hồ sơ đơn) và nút **Mua thêm
+  giờ** (`BuyHoursButton` tự ẩn); số giờ vẫn hiện. Nút "Quay video" của người chỉ có quyền khui mở thẳng `?mode=unbox`.
+- Màn quay: có đúng một quyền → **không có công tắc**, thẻ ghi "Tài khoản của bạn được quay … (quyền …)"; `?mode=unbox`
+  của người không có quyền khui bị bỏ qua; câu "Chuyển sang quay khui hàng?" không hiện với người không có quyền khui.
+  Hết giờ: câu "báo chủ shop mua thêm giờ quay", không nút mua.
+- Nút "Quay khui hàng" ở Đối soát đơn hoàn: theo `caps.unbox` (trước theo cổng chung).
+
+### 28.3 App (nhánh thử `thu/video-dong-goi-lat-0`, `D:\HubsellVideo`, commit TẠI MÁY, KHÔNG đẩy)
+
+- `51058b7c` khóa cứng 3:4 · 800k (việc 25.14 chờ gộp) · `adc336a4` gộp master 35 commit — xung đột tiêu đề tab Đơn hàng:
+  chuông nhân viên của master đặt TRONG ba cột tiêu đề, nút Quay video giữ đúng cột thứ tư · `c92f156c` quyền:
+  `lib/video-test-flag.ts` `packVideoRecordCaps(user)`; nút "Quay video" ở tab Đơn hàng theo quyền (không còn hiện cho
+  mọi tài khoản trên bản thử); nút mới **"Quay video khui hàng"** (viền tím) dưới nút quét đơn hoàn ở Kho → Đơn hoàn;
+  màn quay khóa chế độ khi chỉ có một quyền (app thử Android chưa đăng nhập: giữ cả hai, máy chủ là rào thật).
+- EAS `fcc7d6ce` = **1.5.1 (44)** profile `thuVideo`, lượt nộp TestFlight hẹn sẵn `83b50320`. ⛔ CHỈ TestFlight;
+  ⚠️ đừng gắn build 41–44 khi nộp App Store.
+
+### 28.4 Đã kiểm / chưa kiểm
+
+- ✅ tsc backend + frontend + app; eslint web sạch, app chỉ còn lỗi setState-in-effect mức nền; vitest cổng 17/17, HTTP
+  7/7 (thêm ca: nhân viên quyền kho khác → khóa mọi đường; /me từng vai; nhân viên xem 200, tải về / thống kê / đơn hoàn
+  403, sổ giờ rỗng; quyền khui hỏi tem PACK 403, UNBOX 200). Sửa luôn ca test HTTP cũ còn mong 4 thẻ đơn hoàn (nay 5).
+- Bộ đầy đủ: 23 ca đỏ đều là test sổ cái trên DB dev + 2 ca `retention-db` đỏ sẵn; ca "HẾT GIỜ" `upload-db` chập chờn khi
+  chạy chung, chạy riêng qua cả bản cũ lẫn bản mới.
+- ✅ Soi local (backend HTTP 4010 + web 3000, DB dev, 2 nhân viên thử của admin@hubsell.vn đã xóa sau khi soi): nhân viên
+  Đóng hàng — sidebar mở mục Video, 1 tab, 0 nút tải về, không nút mua, "Còn … giờ", màn quay khóa Đóng hàng kể cả vào
+  bằng `?mode=unbox`; nhân viên Khui — có nút Quay khui hàng ở Đối soát đơn hoàn, màn quay khóa Khui (sáng + tối);
+  chủ shop — 3 tab, 20 nút tải về, nút mua.
+- ❌ CHƯA: push máy chủ + web (app bản 44 gọi prod → nhân viên chỉ dùng được SAU khi push); chưa nhìn bản 44 trên máy;
+  chưa soi bố cục tiêu đề Đơn hàng có chuông (nhân viên không có Trang chủ) trên app; chưa quay thật bằng tài khoản
+  nhân viên; webcam của nhân viên chưa thử.

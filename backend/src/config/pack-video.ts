@@ -8,7 +8,7 @@
 /**
  * Tài khoản THÍ ĐIỂM được mở tính năng (anh Trung 16/11: "chỉ mở cho một mình tài khoản
  * admin@hubsell.vn, còn lại mọi người sẽ chỉ thấy mờ"). So khớp không phân biệt hoa thường,
- * và chỉ CHỦ tài khoản — nhân viên của tài khoản này cũng bị khóa (services/pack-video/access.ts).
+ * theo email CHỦ shop — 24/11/2026 nhân viên của chủ này vào được theo quyền có sẵn (services/pack-video/access.ts).
  * Tắt gấp: để mảng rỗng → mọi đường /api/pack-videos trả 403, mục con trên sidebar mờ với mọi người.
  */
 export const PACK_VIDEO_PILOT_EMAILS: readonly string[] = ["admin@hubsell.vn"];

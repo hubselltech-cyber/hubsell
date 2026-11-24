@@ -32,6 +32,7 @@ import {
   type HoursLevel,
 } from "@/lib/pack-video";
 import { qk } from "@/lib/query-keys";
+import { usePackVideoCaps } from "@/lib/use-feature";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
@@ -140,6 +141,8 @@ export function BuyHoursButton({
   resumeFromUrl?: boolean;
 }) {
   const qc = useQueryClient();
+  // Nhân viên thấy số giờ nhưng KHÔNG mua (anh Trung 24/11/2026: "Thấy số, không nút mua"); máy chủ cũng chỉ cho chủ.
+  const { manage } = usePackVideoCaps();
   const [buying, setBuying] = React.useState(false);
   const [checkout, setCheckout] = React.useState<GatewayCheckout | null>(null);
 
@@ -171,6 +174,7 @@ export function BuyHoursButton({
       .catch(() => {});
   }, [resumeFromUrl]);
 
+  if (!manage) return null;
   return (
     <>
       <Button size="sm" variant={variant} onClick={() => setBuying(true)}>

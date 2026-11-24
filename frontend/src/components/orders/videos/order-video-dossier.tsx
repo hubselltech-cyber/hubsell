@@ -21,6 +21,7 @@ import {
 import { qk } from "@/lib/query-keys";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
+import { usePackVideoCaps } from "@/lib/use-feature";
 import { cn } from "@/lib/utils";
 
 import { ChannelBadge, CodeWithCopy, MetaBadge, VideoProductsCell, shopNameOf } from "./video-bits";
@@ -38,6 +39,8 @@ function orderVideos(videos: PackVideoRow[]): PackVideoRow[] {
 /** Một video trong hồ sơ: trình phát + dòng mô tả + nhãn cách nộp + nút tải về. */
 function DossierVideo({ video }: { video: PackVideoRow }) {
   const [downloading, setDownloading] = React.useState(false);
+  // Nhân viên xem được, không tải về (anh Trung 24/11/2026) — máy chủ cũng chặn download=1.
+  const { manage } = usePackVideoCaps();
   const playable = isPackVideoPlayable(video.status);
   const hint = evidenceUploadHint(video.durationSec);
   return (
@@ -66,25 +69,27 @@ function DossierVideo({ video }: { video: PackVideoRow }) {
           >
             {hint.label}
           </span>
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={downloading}
-              onClick={async () => {
-                setDownloading(true);
-                await downloadPackVideo(video.id);
-                setDownloading(false);
-              }}
-            >
-              {downloading ? (
-                <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
-              ) : (
-                <Download className="size-3.5" />
-              )}
-              Tải {PACK_VIDEO_KIND_LABEL[video.kind].toLowerCase()} về
-            </Button>
-          </div>
+          {manage && (
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={downloading}
+                onClick={async () => {
+                  setDownloading(true);
+                  await downloadPackVideo(video.id);
+                  setDownloading(false);
+                }}
+              >
+                {downloading ? (
+                  <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                Tải {PACK_VIDEO_KIND_LABEL[video.kind].toLowerCase()} về
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

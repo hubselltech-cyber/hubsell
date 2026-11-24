@@ -19,3 +19,23 @@ export function featureState(
 ): FeatureState {
   return user?.features?.[key] === "open" ? "open" : "locked";
 }
+
+/**
+ * Người đang đăng nhập được làm gì với Video đóng hàng (máy chủ quyết, `features.packVideoCaps`):
+ *  · pack   — quay video đóng hàng (chủ, hoặc nhân viên có quyền Đơn hàng);
+ *  · unbox  — quay video khui hàng hoàn (chủ, hoặc nhân viên có quyền Đối soát đơn hoàn);
+ *  · manage — việc của CHỦ: tải video về, tab Đơn hoàn, Thống kê, sổ giờ có tiền, mua giờ.
+ * Nhân viên quay được thì XEM được danh sách video (không tải về) và thấy số giờ còn lại.
+ * HỎNG THÌ ĐÓNG: cổng không mở / thiếu khối → cả ba false.
+ */
+export interface PackVideoCaps {
+  pack: boolean;
+  unbox: boolean;
+  manage: boolean;
+}
+
+export function packVideoCapsOf(user: Pick<AuthUser, "features"> | null | undefined): PackVideoCaps {
+  if (featureState(user, "packVideo") !== "open") return { pack: false, unbox: false, manage: false };
+  const c = user?.features?.packVideoCaps;
+  return { pack: c?.pack === true, unbox: c?.unbox === true, manage: c?.manage === true };
+}

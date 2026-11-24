@@ -57,6 +57,11 @@ export interface PackVideoActor {
   ownerId: string;
   /** Người đang đăng nhập trên máy quay. */
   userId: string;
+  /**
+   * true = NHÂN VIÊN (24/11/2026): chỉ chạm được video do CHÍNH MÌNH quay (ký mảnh / báo tải xong / gọi lại
+   * cùng clientId), câu hết giờ nói "báo chủ shop" thay cho "mua thêm giờ". Bỏ trống = chủ shop.
+   */
+  staff?: boolean;
 }
 
 export interface PackVideoDeps {
@@ -108,12 +113,17 @@ function expiresAt(now: Date): string {
   return new Date(now.getTime() + PACK_VIDEO_PUT_EXPIRES_SEC * 1000).toISOString();
 }
 
-function findByClientId(ownerId: string, clientId: string): Promise<Row | null> {
-  return prisma.packVideo.findFirst({ where: { ownerId, clientId }, select: ROW_SELECT });
+function findByClientId(actor: PackVideoActor, clientId: string): Promise<Row | null> {
+  return prisma.packVideo.findFirst({ where: { ownerId: actor.ownerId, clientId, ...ownOnly(actor) }, select: ROW_SELECT });
 }
 
-function findOwned(ownerId: string, id: string): Promise<Row | null> {
-  return prisma.packVideo.findFirst({ where: { ownerId, id }, select: ROW_SELECT });
+/** Nhân viên chỉ thấy video của chính mình ở các đường GHI. */
+function ownOnly(actor: PackVideoActor): { recordedById?: string } {
+  return actor.staff ? { recordedById: actor.userId } : {};
+}
+
+function findOwned(ownerId: string, id: string, actor?: PackVideoActor): Promise<Row | null> {
+  return prisma.packVideo.findFirst({ where: { ownerId, id, ...(actor ? ownOnly(actor) : {}) }, select: ROW_SELECT });
 }
 
 /** Chốt chặn cuối trước mọi lệnh ký / xóa: tệp phải nằm dưới tiền tố của đúng chủ shop. */
@@ -218,13 +228,19 @@ export async function beginUpload(
 ): Promise<{ video: VideoRef; upload: UploadPlan | null }> {
   const now = (deps.now ?? (() => new Date()))();
 
-  let row = await findByClientId(actor.ownerId, input.clientId);
+  let row = await findByClientId(actor, input.clientId);
   let resumed = row !== null;
 
   if (!row) {
     const allowed = await canOpenNewVideo(actor.ownerId, input.recordedAt, now);
     if (!allowed.ok) {
-      throw new PackVideoError(402, "OUT_OF_HOURS", "Đã hết giờ quay — mua thêm giờ để quay video mới");
+      throw new PackVideoError(
+        402,
+        "OUT_OF_HOURS",
+        actor.staff
+          ? "Đã hết giờ quay — báo chủ shop mua thêm giờ"
+          : "Đã hết giờ quay — mua thêm giờ để quay video mới"
+      );
     }
     const match = await matchOrderByTrackingCode(actor.ownerId, input.trackingCode, input.kind);
     const id = randomUUID().replace(/-/g, "");
@@ -257,7 +273,7 @@ export async function beginUpload(
     } catch (err) {
       // Lượt gọi lặp chạy song song đã chèn trước → đọc lại dòng của nó.
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
-      row = await findByClientId(actor.ownerId, input.clientId);
+      row = await findByClientId(actor, input.clientId);
       if (!row) throw err;
       resumed = true;
     }
@@ -288,7 +304,7 @@ export async function signUploadParts(
   partNumbers: unknown,
   deps: PackVideoDeps = {}
 ): Promise<{ parts: SignedPart[]; uploadedParts: number[]; expiresAt: string }> {
-  const row = await findOwned(actor.ownerId, id);
+  const row = await findOwned(actor.ownerId, id, actor);
   if (!row) throw new PackVideoError(404, "NOT_FOUND", "Không tìm thấy video");
   if (row.status !== "PENDING" || !row.uploadId) {
     throw new PackVideoError(409, "UPLOAD_STATE", "Video không ở trạng thái tải theo mảnh");
@@ -330,7 +346,7 @@ export async function completeUpload(
   parts: unknown,
   deps: PackVideoDeps = {}
 ): Promise<{ video: VideoRef }> {
-  const row = await findOwned(actor.ownerId, id);
+  const row = await findOwned(actor.ownerId, id, actor);
   if (!row) throw new PackVideoError(404, "NOT_FOUND", "Không tìm thấy video");
   if (row.status === "STORED") return { video: refOf(row) };
   if (row.status !== "PENDING") {

@@ -1,7 +1,11 @@
 // ============================================================
-// Gác nhóm /api/pack-videos: chỉ tài khoản được mở Video đóng hàng mới đi tiếp.
-// Đặt SAU requireAuth (cần req.userEmail / req.userId / req.ownerId).
+// Gác nhóm /api/pack-videos: chỉ người được quay Video đóng hàng mới đi tiếp.
+// Đặt SAU requireAuth (cần req.userEmail / req.userId / req.ownerId / req.permissions).
 // Trả 403 kèm code FEATURE_LOCKED — web / app bắt code này để vẽ trạng thái "chưa mở".
+//
+// Qua cửa thì gắn `req.packVideoCaps` (access.ts) — từng đường trong routes/pack-videos.ts tự kiểm thêm:
+// quay đóng hàng / khui hàng / việc của chủ shop (tải về, thống kê, đơn hoàn, sổ tiền, mua giờ).
+// 24/11/2026: nhân viên của chủ đã mở được vào theo quyền có sẵn (docs VIDEO-DONG-HANG-THIET-KE mục 28).
 //
 // Qua cửa rồi thì bảo đảm chủ shop đã nhận GIỜ QUAY TẶNG (anh Trung 21/11/2026: "tặng cho mỗi khách hàng 2 giờ
 // quay miễn phí") — một lần cho mỗi chủ shop, chống trùng bằng chỉ mục duy nhất (services/pack-video/hours.ts).
@@ -10,20 +14,35 @@
 
 import type { NextFunction, Response } from "express";
 import type { AuthRequest } from "./auth";
-import { packVideoAccess } from "../services/pack-video/access";
+import { capsAccess, type PackVideoCaps } from "../services/pack-video/access";
 import { ensureWelcomeHours } from "../services/pack-video/hours";
+import { capsForUser } from "../services/pack-video/subject";
 
-export function requirePackVideo(req: AuthRequest, res: Response, next: NextFunction): void {
-  // requireAuth đặt ownerId = id chủ shop; trùng userId nghĩa là chính chủ đang đăng nhập.
-  const staffOwnerId = req.ownerId && req.ownerId !== req.userId ? req.ownerId : null;
-  if (packVideoAccess({ email: req.userEmail, ownerId: staffOwnerId }) !== "open") {
+export type PackVideoRequest = AuthRequest & { packVideoCaps?: PackVideoCaps };
+
+export async function requirePackVideo(req: PackVideoRequest, res: Response, next: NextFunction): Promise<void> {
+  let caps: PackVideoCaps;
+  try {
+    caps = await capsForUser({
+      id: req.userId ?? "",
+      email: req.userEmail ?? null,
+      // requireAuth đặt ownerId = id chủ shop; trùng userId nghĩa là chính chủ đang đăng nhập.
+      ownerId: req.ownerId ?? null,
+      permissions: req.permissions,
+    });
+  } catch (err) {
+    next(err);
+    return;
+  }
+  if (capsAccess(caps) !== "open") {
     res.status(403).json({
       error: "Tính năng Video đóng hàng chưa mở cho tài khoản này",
       code: "FEATURE_LOCKED",
     });
     return;
   }
-  // req.ownerId = id CHỦ shop (kể cả khi sau này mở cho nhân viên) — giờ tặng ghi cho chủ shop.
+  req.packVideoCaps = caps;
+  // req.ownerId = id CHỦ shop (kể cả khi nhân viên gọi) — giờ tặng ghi cho chủ shop.
   const ownerId = req.ownerId ?? req.userId;
   if (!ownerId) {
     next();

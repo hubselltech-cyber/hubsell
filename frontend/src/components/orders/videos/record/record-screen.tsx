@@ -7,6 +7,8 @@ import { ArrowLeft } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { PACK_VIDEOS_PATH } from "@/lib/pack-video";
+import type { ClipKind } from "@/lib/pack-video-recorder/types";
+import { usePackVideoCaps } from "@/lib/use-feature";
 
 import { CameraStage } from "./camera-stage";
 import { ControlPanel } from "./control-panel";
@@ -15,6 +17,10 @@ import { QueueNotice } from "./queue-notice";
 import { OutOfHoursNotice, RecordHoursSummary } from "./record-hours";
 import { SessionCard } from "./session-card";
 import { usePackRecorder } from "./use-pack-recorder";
+
+const BOTH_KINDS: readonly ClipKind[] = ["PACK", "UNBOX"];
+const ONLY_PACK: readonly ClipKind[] = ["PACK"];
+const ONLY_UNBOX: readonly ClipKind[] = ["UNBOX"];
 
 /**
  * MÀN QUAY VIDEO ĐÓNG HÀNG BẰNG WEBCAM (/orders/videos/record) — docs/VIDEO-DONG-HANG-THIET-KE.md mục 13.
@@ -35,7 +41,12 @@ import { usePackRecorder } from "./use-pack-recorder";
  */
 export function RecordScreen() {
   const mode = useSearchParams().get("mode");
-  const recorder = usePackRecorder(mode === "unbox" ? "UNBOX" : "PACK");
+  // Nhân viên chỉ quay được kiểu mình có quyền (24/11/2026, docs mục 28): quyền Đơn hàng → đóng hàng, quyền Đối
+  // soát đơn hoàn → khui hàng. Thiếu một kiểu thì khóa chế độ ở kiểu còn lại (máy chủ cũng từ chối kiểu thiếu quyền).
+  const caps = usePackVideoCaps();
+  const kinds = caps.pack && caps.unbox ? BOTH_KINDS : caps.unbox ? ONLY_UNBOX : ONLY_PACK;
+  const wanted: ClipKind = mode === "unbox" ? "UNBOX" : "PACK";
+  const recorder = usePackRecorder(kinds.includes(wanted) ? wanted : kinds[0]);
   const currentClip = recorder.clips.find((c) => c.status === "recording") ?? null;
   // "Chỉnh vị trí" ô cận cảnh: chỉ có nghĩa khi camera cận đang chạy và KHÔNG có clip đang quay (bộ quay cũng từ
   // chối đổi bố cục giữa clip) → clip vừa mở hay camera cận vừa mất thì tự thoát chế độ chỉnh.
@@ -67,6 +78,7 @@ export function RecordScreen() {
           closeupVideoRef={recorder.closeupVideoRef}
           adjustingPip={adjusting}
           session={<SessionCard clips={recorder.clips} />}
+          canSwitchToUnbox={kinds.includes("UNBOX")}
           onPip={recorder.setPip}
           onTurnOn={() => void recorder.toggleCamera()}
           onSwitchToUnbox={recorder.switchCurrentToUnbox}
@@ -82,6 +94,7 @@ export function RecordScreen() {
             onAdjusting: setAdjustWanted,
             onPip: recorder.setPip,
           }}
+          kinds={kinds}
           onKind={recorder.setKind}
           onToggleCamera={() => void recorder.toggleCamera()}
           onSelectCamera={(deviceId) => void recorder.selectCamera(deviceId)}

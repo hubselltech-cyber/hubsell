@@ -266,8 +266,13 @@ export interface AuthUser {
   /**
    * CỔNG TÍNH NĂNG do máy chủ quyết (login + /me) — web chỉ hiển thị theo. Vắng mặt = chưa mở.
    * packVideo: "Video đóng hàng" (docs/VIDEO-DONG-HANG-THIET-KE.md mục 3). Đọc qua lib/features.ts.
+   * packVideoCaps (24/11/2026, mục 28): người này quay đóng / quay khui / làm việc của chủ (tải về, thống kê,
+   * đơn hoàn, sổ tiền, mua giờ) được không — nhân viên của chủ đã mở vào được theo quyền có sẵn.
    */
-  features?: { packVideo?: "open" | "locked" };
+  features?: {
+    packVideo?: "open" | "locked";
+    packVideoCaps?: { pack?: boolean; unbox?: boolean; manage?: boolean };
+  };
 }
 
 export interface AuthResponse {

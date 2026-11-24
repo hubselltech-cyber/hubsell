@@ -1,9 +1,9 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { STORED_USER_EVENT, getStoredUser } from "./api";
-import { featureState, type FeatureKey, type FeatureState } from "./features";
+import { featureState, packVideoCapsOf, type FeatureKey, type FeatureState, type PackVideoCaps } from "./features";
 
 function subscribe(onChange: () => void) {
   window.addEventListener(STORED_USER_EVENT, onChange);
@@ -29,4 +29,19 @@ export function useFeature(key: FeatureKey): FeatureState {
     () => featureState(getStoredUser(), key),
     () => "locked"
   );
+}
+
+/** Ba cờ gói thành một chuỗi để useSyncExternalStore so được bằng === (đối tượng mới mỗi lần sẽ vẽ lại mãi). */
+function capsKey(): string {
+  const c = packVideoCapsOf(getStoredUser());
+  return `${c.pack ? 1 : 0}${c.unbox ? 1 : 0}${c.manage ? 1 : 0}`;
+}
+
+/**
+ * Quyền Video đóng hàng của người đang đăng nhập (lib/features.ts `packVideoCapsOf`) — cùng nguồn, cùng cách tự cập
+ * nhật như useFeature. Lượt vẽ đầu / phía máy chủ: cả ba false.
+ */
+export function usePackVideoCaps(): PackVideoCaps {
+  const key = useSyncExternalStore<string>(subscribe, capsKey, () => "000");
+  return useMemo(() => ({ pack: key[0] === "1", unbox: key[1] === "1", manage: key[2] === "1" }), [key]);
 }

@@ -27,7 +27,7 @@ import { findReferrerByCode } from "../services/referral-wallet";
 import { ensureDefaultSubscription, getDefaultTrialDays } from "../services/subscription-service";
 import { sendPasswordChangedMail, sendWelcomeMail } from "../services/customer-mails";
 import { deleteOwnAccount } from "../services/account-deletion";
-import { userFeatures } from "../services/pack-video/access";
+import { userFeatures } from "../services/pack-video/subject";
 import {
   SocialLoginError,
   isAppleSignInConfigured,
@@ -309,7 +309,7 @@ router.post("/register", async (req, res, next) => {
     // Tài khoản vừa đăng ký luôn là chủ shop thường — không thuộc khu điều hành.
     res.status(201).json({
       token: signToken(user.id),
-      user: { ...user, platformWorkspace: false, features: userFeatures(user) },
+      user: { ...user, platformWorkspace: false, features: await userFeatures(user) },
     });
   } catch (err) {
     next(err);
@@ -427,7 +427,7 @@ router.post("/login", async (req, res, next) => {
         // điều hành (homePathFor) — không đợi được tới lượt fetch /me.
         platformWorkspace: await isPlatformWorkspace(user),
         // Tính năng mở theo tài khoản (Video đóng hàng) — FE vẽ mục mở / mờ theo đây.
-        features: userFeatures(user),
+        features: await userFeatures(user),
       },
     });
   } catch (err) {
@@ -460,7 +460,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
         // Đã liên kết đăng nhập Google / Apple (1.3.0) — Cài đặt hiện trạng thái.
         linked: { google: googleId !== null, apple: appleUserId !== null },
         platformWorkspace: await isPlatformWorkspace(user),
-        features: userFeatures(user),
+        features: await userFeatures(user),
       },
       hasChannels: channelCount > 0,
     });
@@ -577,7 +577,7 @@ router.put("/me/avatar", requireAuth, async (req: AuthRequest, res, next) => {
     // Kèm platformWorkspace như /me — FE setStoredUser nguyên object này,
     // thiếu cờ là sidebar Điều hành "nhảy" về sidebar shop sau khi đổi avatar.
     res.json({
-      user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: userFeatures(user) },
+      user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: await userFeatures(user) },
     });
   } catch (err) {
     next(err);
@@ -664,7 +664,7 @@ router.put("/me/contact", requireAuth, async (req: AuthRequest, res, next) => {
     }
     // Kèm platformWorkspace như /me — FE setStoredUser nguyên object này.
     res.json({
-      user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: userFeatures(user) },
+      user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: await userFeatures(user) },
     });
   } catch (err) {
     next(err);
@@ -887,7 +887,7 @@ async function socialLoginResponse(userId: string) {
   });
   return {
     token: signToken(user.id),
-    user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: userFeatures(user) },
+    user: { ...user, platformWorkspace: await isPlatformWorkspace(user), features: await userFeatures(user) },
   };
 }
 

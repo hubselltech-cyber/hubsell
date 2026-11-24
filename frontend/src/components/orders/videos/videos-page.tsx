@@ -11,8 +11,8 @@ import { AppShell } from "@/components/shell/app-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import { getToken } from "@/lib/api";
-import { PACK_VIDEOS_PATH } from "@/lib/pack-video";
-import { useFeature } from "@/lib/use-feature";
+import { PACK_VIDEO_UNBOX_RECORD_PATH, PACK_VIDEOS_PATH } from "@/lib/pack-video";
+import { useFeature, usePackVideoCaps } from "@/lib/use-feature";
 import { cn } from "@/lib/utils";
 
 import { HoursBalanceBar } from "./hours-balance";
@@ -37,6 +37,8 @@ const TABS: readonly PageTabItem<TabKey>[] = [
   { key: "returns", label: "Đơn hoàn" },
   { key: "stats", label: "Thống kê" },
 ];
+
+const STAFF_TABS: readonly PageTabItem<TabKey>[] = [TABS[0]];
 
 /**
  * KHUNG CHUNG của hai trang video: kiểm đăng nhập + CỔNG TÍNH NĂNG (tầng 2).
@@ -81,6 +83,12 @@ function PackVideoGate({ children }: { children: React.ReactNode }) {
  */
 export function PackVideosPage() {
   const [tab, setTab] = React.useState<TabKey>("videos");
+  // Nhân viên (24/11/2026, docs mục 28): chỉ tab Video đóng hàng (xem, không tải về); Đơn hoàn + Thống kê là của chủ.
+  const caps = usePackVideoCaps();
+  const tabs = caps.manage ? TABS : STAFF_TABS;
+  const shown: TabKey = caps.manage ? tab : "videos";
+  // Chỉ có quyền khui → nút quay mở thẳng chế độ khui.
+  const recordHref = !caps.pack && caps.unbox ? PACK_VIDEO_UNBOX_RECORD_PATH : `${PACK_VIDEOS_PATH}/record`;
   return (
     <PackVideoGate>
       <div className="space-y-5">
@@ -91,14 +99,14 @@ export function PackVideosPage() {
           <PageTabs
             ariaLabel="Các phần của trang Video đóng hàng"
             className="mt-2 border-b-0"
-            tabs={TABS}
-            value={tab}
+            tabs={tabs}
+            value={shown}
             onChange={setTab}
             // Giờ còn lại + nút mua hiện ở MỌI tab (anh Trung 16/11); nút Quay video mở màn quay bằng webcam.
             trailing={
               <div className="flex items-center gap-3">
                 <Link
-                  href={`${PACK_VIDEOS_PATH}/record`}
+                  href={recordHref}
                   className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mb-1.5")}
                 >
                   <Video className="size-4" />
@@ -110,9 +118,9 @@ export function PackVideosPage() {
           />
         </PageHeaderBand>
 
-        {tab === "videos" && <VideosTab />}
-        {tab === "returns" && <ReturnsTab />}
-        {tab === "stats" && <StatsTab />}
+        {shown === "videos" && <VideosTab />}
+        {shown === "returns" && <ReturnsTab />}
+        {shown === "stats" && <StatsTab />}
       </div>
     </PackVideoGate>
   );

@@ -5,6 +5,26 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 24/11 chiều — Video đóng hàng: quay cho NHÂN VIÊN theo quyền có sẵn — web + máy chủ LOCAL (chưa commit), app TestFlight 1.5.1 (44)
+
+- **Anh hỏi** phần Quay video gói hàng còn gì chưa làm → em liệt kê (chờ thử / chưa làm / phải xong trước khi mở cho khách). Anh nhắc
+  "phần 5" (đường quay trễ 1 giây, docs 25.7) tưởng đã làm → không: thứ anh đã thử là cách C (mã hiện trễ 1 giây, `e749f7ce`);
+  **anh chốt "Tạm thời giữ cách C"**.
+- **Anh: "Em làm phân quyền cho nhân viên đi"** + chốt 4 câu: theo quyền CÓ SẴN (Đơn hàng → quay đóng; Đối soát đơn hoàn → quay khui),
+  web nhân viên "Quay + xem danh sách", "Thấy số, không nút mua", "Làm cả app luôn". Chi tiết docs `VIDEO-DONG-HANG-THIET-KE.md` **mục 28**.
+- **Máy chủ:** cổng theo email CHỦ shop (`access.ts` `packVideoCaps`, `subject.ts` tra email chủ + đệm 60 giây), từng đường kiểm quyền
+  (`routes/pack-videos.ts`: tải về / thống kê / đơn hoàn = chủ; `/hours` nhân viên sổ rỗng), nhân viên chỉ chạm video mình quay
+  (`upload.ts`), `/api/auth` trả `features.packVideoCaps`. Không migration.
+- **Web:** nhân viên 1 tab, ẩn Tải về + Mua thêm giờ, màn quay khóa chế độ theo quyền, nút Quay khui hàng theo quyền khui.
+- **App (nhánh thử, commit TẠI MÁY, không đẩy):** `51058b7c` khóa 3:4 · 800k · `adc336a4` gộp master (xung đột tiêu đề Đơn hàng: chuông
+  vào trong ô tiêu đề) · `c92f156c` nút Quay video theo quyền + nút mới "Quay video khui hàng" ở Kho → Đơn hoàn + khóa chế độ.
+  EAS `fcc7d6ce` = 1.5.1 (44), lượt nộp TestFlight hẹn sẵn `83b50320`.
+- **Đã kiểm:** tsc 3 bên; vitest cổng 17/17 + HTTP 7/7; soi local 3 vai (nhân viên Đóng hàng, nhân viên Khui, chủ) sáng + tối, nhân viên
+  thử + script tạm đã xóa. Bộ đầy đủ: 23 ca sổ cái trên DB dev + 2 ca `retention-db` đỏ sẵn, không dính phần này.
+- **Chưa:** commit + push máy chủ / web (app 44 gọi prod nên nhân viên chỉ dùng được sau khi push); chưa nhìn bản 44 trên máy; chưa
+  quay thật bằng tài khoản nhân viên.
+
+---
 ## Phiên 23/11 khuya — App mobile: chữ tràn / đè khi máy để cỡ chữ lớn (trần cỡ chữ) — ĐÃ OTA 1.5.0 + 1.4.3
 
 - **Anh gửi ảnh Tổng quan trên máy Android (Samsung):** "Shopee" gãy "Shope / e", "TB 147 k/" bị cắt, "giá trị đơn hôm" tràn tâm donut,

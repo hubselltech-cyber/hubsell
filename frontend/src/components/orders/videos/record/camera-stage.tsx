@@ -175,6 +175,7 @@ export function CameraStage({
   session,
   onPip,
   onTurnOn,
+  canSwitchToUnbox,
   onSwitchToUnbox,
   onKeepPack,
 }: {
@@ -192,6 +193,8 @@ export function CameraStage({
   boxRef: React.RefObject<HTMLCanvasElement | null>;
   onTurnOn: () => void;
   /** "Chuyển sang khui": đổi loại của clip đang quay rồi chuyển chế độ. */
+  /** Người này có quyền quay khui không (nhân viên thiếu quyền Đối soát đơn hoàn → không hỏi "Chuyển sang khui"). */
+  canSwitchToUnbox: boolean;
   onSwitchToUnbox: () => void;
   /** "Vẫn là đóng hàng": gạt câu hỏi, không hỏi lại cho cùng tem trong lượt. */
   onKeepPack: (clip: SessionClip) => void;
@@ -256,7 +259,7 @@ export function CameraStage({
           {state.problem}
         </p>
       )}
-      {currentClip?.returnPrompt && (
+      {currentClip?.returnPrompt && canSwitchToUnbox && (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"

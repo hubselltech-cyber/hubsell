@@ -3,6 +3,7 @@
 import { Clock } from "lucide-react";
 
 import { formatHoursBalance } from "@/lib/pack-video";
+import { usePackVideoCaps } from "@/lib/use-feature";
 
 import { BuyHoursButton, HoursSummary, usePackVideoHours } from "../hours-balance";
 
@@ -29,6 +30,8 @@ export function RecordHoursSummary() {
  */
 export function OutOfHoursNotice() {
   const hours = usePackVideoHours().data;
+  // Nhân viên không mua giờ (24/11/2026) → câu nhắc báo chủ shop; nút mua tự ẩn (BuyHoursButton).
+  const { manage } = usePackVideoCaps();
   if (!hours || hours.remainingSeconds > 0) return null;
   return (
     <div
@@ -44,8 +47,9 @@ export function OutOfHoursNotice() {
           )}
         </p>
         <p className="text-sm text-rose-700">
-          Không mở được video mới. Video đang quay dở vẫn quay nốt; phần thời gian vượt gói sẽ khấu trừ vào lần
-          thanh toán tiếp theo.
+          {manage
+            ? "Không mở được video mới. Video đang quay dở vẫn quay nốt; phần thời gian vượt gói sẽ khấu trừ vào lần thanh toán tiếp theo."
+            : "Không mở được video mới — báo chủ shop mua thêm giờ quay. Video đang quay dở vẫn quay nốt."}
         </p>
       </div>
       <BuyHoursButton hours={hours} />

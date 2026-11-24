@@ -29,6 +29,7 @@ import {
   packVideoOrderPath,
 } from "@/lib/pack-video";
 import { TEXT_SUB } from "@/lib/typography";
+import { usePackVideoCaps } from "@/lib/use-feature";
 import { cn } from "@/lib/utils";
 
 import {
@@ -69,6 +70,8 @@ export function VideoTable({
 }) {
   const [sort, setSort] = React.useState<SortState<VideoSortKey>>(initialSort);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+  // Nhân viên xem được, không tải về (anh Trung 24/11/2026) — máy chủ cũng chặn download=1.
+  const { manage } = usePackVideoCaps();
 
   const showRetention = React.useMemo(() => rows.some((r) => r.deleteAfter !== null || r.holdReason !== null), [rows]);
 
@@ -223,21 +226,23 @@ export function VideoTable({
                       <span className="hidden 2xl:inline">Hồ sơ</span>
                     </Link>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!playable || downloadingId === v.id}
-                    onClick={() => void handleDownload(v)}
-                    title="Tải video về máy"
-                    aria-label={`Tải video ${v.trackingCode} về máy`}
-                  >
-                    {downloadingId === v.id ? (
-                      <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
-                    ) : (
-                      <Download className="size-3.5" />
-                    )}
-                    <span className="hidden 2xl:inline">Tải về</span>
-                  </Button>
+                  {manage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!playable || downloadingId === v.id}
+                      onClick={() => void handleDownload(v)}
+                      title="Tải video về máy"
+                      aria-label={`Tải video ${v.trackingCode} về máy`}
+                    >
+                      {downloadingId === v.id ? (
+                        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+                      ) : (
+                        <Download className="size-3.5" />
+                      )}
+                      <span className="hidden 2xl:inline">Tải về</span>
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>
