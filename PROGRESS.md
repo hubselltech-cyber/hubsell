@@ -5,6 +5,22 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 24/11 khuya — HQ Kế toán nội bộ: ô tìm sổ quỹ theo GÓI / EMAIL khách — ĐÃ PUSH master (anh: "commit và push")
+
+- **Anh:** "Hubsell HQ anh muốn thêm thanh tìm kiếm, mục đích để tìm kiếm theo gói và email khách mua gói" (khoanh chỗ trống dưới thẻ
+  Chi phí cố định).
+- **Làm:** `frontend/src/components/admin/ledger-section.tsx` — thẻ "Tìm theo gói / email khách" ở cột trái dưới Chi phí cố định
+  (xem quý/năm thì đứng một mình ở cột trái). Một ô gõ: khớp diễn giải + email + tên khách + người mua trên hóa đơn + email nhận HĐ +
+  số HĐ + NCC, bỏ dấu, nhiều từ = phải đủ cả. Chip gói (Beta / Business / Pro…) rút từ diễn giải phiếu thu máy tự ghi ("Thu phí gói X…",
+  "… — gói X"), kèm số dòng. Dòng kết quả: số dòng · số khách · khách trả (không cộng dòng tiền về của đợt Apple chuyển để khỏi đếm 2 lần)
+  + nút **Tìm cả năm** (đổi kỳ sang năm, giữ từ khóa) + Bỏ lọc. Bảng sổ quỹ và **Xuất Excel** đi theo dòng đang lọc (tệp đuôi `-loc`).
+- **Phạm vi:** lọc trên dữ liệu KỲ đang xem (sổ vài chục dòng/tháng) — không thêm API, không đụng backend, không gọi thêm.
+- **Đã kiểm:** tsc + eslint sạch, `grep dark:` không thêm lớp nào. Local 1280 / 1440 / 1700, sáng + tối (chip chọn trong tối nền sáng chữ
+  tối), đo JS tràn trong thẻ = 0; thử gõ "huong" (không dấu), email `newshop@…`, chip Business, Tìm cả năm, ca 0 dòng.
+- **Dữ liệu thử local:** `backend/scripts/_tmp-hq-search-seed.ts` (6 phiếu thu đánh dấu `TMP-HQ-SEARCH` + 1 khách email dài) — chạy
+  `cleanup` rồi xóa tệp sau khi anh xem xong.
+
+---
 ## Phiên 24/11 chiều — Video đóng hàng: quay cho NHÂN VIÊN theo quyền có sẵn — LÊN PROD `2fd1599a`, app TestFlight 1.5.1 (44) VALID
 
 - **Anh hỏi** phần Quay video gói hàng còn gì chưa làm → em liệt kê (chờ thử / chưa làm / phải xong trước khi mở cho khách). Anh nhắc

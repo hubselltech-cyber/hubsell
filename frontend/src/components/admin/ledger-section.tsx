@@ -10,7 +10,7 @@
 // (không tự sinh bút toán — số thật phải theo chứng từ từng tháng). Xuất Excel
 // đúng layout sổ thu/chi kèm sheet tổng hợp khoản mục để nộp kê khai thuế.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   CalendarClock,
@@ -19,9 +19,11 @@ import {
   NotebookPen,
   Pencil,
   ReceiptText,
+  Search,
   Settings2,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -63,7 +65,14 @@ import {
   type PlatformLedgerResponse,
 } from "@/lib/api";
 import { AccountingPeriodPicker } from "@/components/shared/accounting-period-picker";
-import { formatPeriodPhrase, parseDateKey, periodSlug } from "@/lib/accounting-period";
+import {
+  detectPeriod,
+  formatPeriodPhrase,
+  parseDateKey,
+  periodSlug,
+  yearPeriod,
+} from "@/lib/accounting-period";
+import { normalizeText } from "@/lib/text";
 import type { DateRange } from "@/lib/date-range";
 import { exportLedgerToExcel } from "@/lib/excel";
 import { formatDateTime } from "@/lib/format";
@@ -653,6 +662,172 @@ function CategoryBreakdown({
   );
 }
 
+// ---------- Tìm phiếu thu theo gói / email khách ----------
+
+/** Tên gói rút từ diễn giải phiếu thu máy tự ghi:
+ *  "Thu phí gói Business 3.000 đơn/tháng — 1 tháng", "… — gói Pro".
+ *  Chỉ đọc dòng THU nguồn gói dịch vụ; dòng ghi tay khác thì null. */
+function ledgerPlanName(e: PlatformLedgerEntry): string | null {
+  if (e.direction !== "IN" || e.source !== "SUBSCRIPTION" || !e.note) return null;
+  const m = e.note.match(/gói\s+(.+?)(?=\s+\d|\s+—|\s*$)/i);
+  const name = m?.[1]?.trim();
+  return name ? name : null;
+}
+
+/** Mọi chữ tìm được của một dòng sổ, đã bỏ dấu + chữ thường. */
+function ledgerHaystack(e: PlatformLedgerEntry): string {
+  return normalizeText(
+    [
+      e.note,
+      e.customer?.email,
+      e.customer?.fullName,
+      e.invoiceBuyerName,
+      e.invoiceEmailTo,
+      e.invoiceNo,
+      e.vendorName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+/** Dòng tiền về của đợt Apple chuyển — tiền khách trả đã nằm ở các dòng bán, không cộng lần 2. */
+function isAppleSettlementLine(e: PlatformLedgerEntry): boolean {
+  return Boolean(e.appleSettlementId) && e.packagePaymentId === null;
+}
+
+function LedgerSearchPanel({
+  query,
+  onQueryChange,
+  plan,
+  onPlanChange,
+  plans,
+  matched,
+  active,
+  phrase,
+  canWiden,
+  onWiden,
+}: {
+  query: string;
+  onQueryChange: (v: string) => void;
+  plan: string | null;
+  onPlanChange: (v: string | null) => void;
+  /** Các gói có phiếu thu trong kỳ + số dòng của mỗi gói. */
+  plans: { name: string; count: number }[];
+  matched: PlatformLedgerEntry[];
+  active: boolean;
+  phrase: string;
+  /** Đang xem kỳ hẹp hơn năm → mời tìm cả năm. */
+  canWiden: number | null;
+  onWiden: () => void;
+}) {
+  const paid = matched
+    .filter((e) => e.direction === "IN" && !isAppleSettlementLine(e))
+    .reduce((s, e) => s + e.amount, 0);
+  const customers = new Set(
+    matched.filter((e) => e.direction === "IN" && e.customer).map((e) => e.customer!.id)
+  ).size;
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <Search className="size-4" />
+            Tìm theo gói / email khách
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Lọc bảng sổ quỹ bên dưới trong {phrase} — gõ email, tên khách, tên gói hoặc số hóa đơn.
+          </p>
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8 pr-8"
+            placeholder="vd: khach@gmail.com, Business, Nguyễn Văn A…"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              title="Xóa ô tìm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => onQueryChange("")}
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+        {plans.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Gói:</span>
+            <Button
+              size="xs"
+              variant={plan === null ? "default" : "outline"}
+              onClick={() => onPlanChange(null)}
+            >
+              Tất cả
+            </Button>
+            {plans.map((p) => (
+              <Button
+                key={p.name}
+                size="xs"
+                variant={plan === p.name ? "default" : "outline"}
+                onClick={() => onPlanChange(plan === p.name ? null : p.name)}
+              >
+                {p.name}
+                <span className="tabular-nums opacity-70">{p.count}</span>
+              </Button>
+            ))}
+          </div>
+        )}
+        {active && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200/80 bg-slate-50 px-3 py-2 text-sm">
+            {matched.length > 0 ? (
+              <p>
+                Khớp <span className="font-semibold tabular-nums">{formatCount(matched.length)}</span> dòng
+                {customers > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold tabular-nums">{formatCount(customers)}</span> khách
+                  </>
+                )}
+                {paid > 0 && (
+                  <>
+                    {" · khách trả "}
+                    <span className="font-semibold tabular-nums text-emerald-700">
+                      {formatMoney(paid)}
+                    </span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">Không có dòng nào khớp trong {phrase}.</p>
+            )}
+            <div className="flex items-center gap-1.5">
+              {canWiden !== null && (
+                <Button size="xs" variant="outline" onClick={onWiden}>
+                  Tìm cả năm {canWiden}
+                </Button>
+              )}
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  onQueryChange("");
+                  onPlanChange(null);
+                }}
+              >
+                Bỏ lọc
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ---------- Dialog quản lý danh mục chi cố định ----------
 
 const EMPTY_RECURRING_FORM = {
@@ -956,6 +1131,44 @@ export function LedgerSection({
   /** Bút toán phiếu thu của đợt Apple chuyển đang hỏi hủy. */
   const [cancelApple, setCancelApple] = useState<PlatformLedgerEntry | null>(null);
   const [cancellingApple, setCancellingApple] = useState(false);
+  // Tìm theo gói / email khách — lọc ngay trên dữ liệu kỳ đang xem (sổ vài
+  // chục dòng/tháng, không cần gọi lại máy chủ). Đổi kỳ vẫn giữ từ khóa.
+  const [query, setQuery] = useState("");
+  const [planFilter, setPlanFilter] = useState<string | null>(null);
+
+  const planOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of data?.entries ?? []) {
+      const p = ledgerPlanName(e);
+      if (p) counts.set(p, (counts.get(p) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "vi"));
+  }, [data]);
+
+  // Gói đang chọn không còn trong kỳ mới → coi như chưa chọn (không lọc rỗng oan).
+  const activePlan =
+    planFilter && planOptions.some((p) => p.name === planFilter) ? planFilter : null;
+  const filtering = query.trim() !== "" || activePlan !== null;
+
+  const shownEntries = useMemo(() => {
+    const all = data?.entries ?? [];
+    // Mỗi từ gõ vào phải có mặt (bỏ dấu, không phân biệt hoa/thường).
+    const tokens = normalizeText(query).split(/\s+/).filter(Boolean);
+    if (tokens.length === 0 && !activePlan) return all;
+    return all.filter((e) => {
+      if (activePlan && ledgerPlanName(e) !== activePlan) return false;
+      if (tokens.length === 0) return true;
+      const hay = ledgerHaystack(e);
+      return tokens.every((t) => hay.includes(t));
+    });
+  }, [data, query, activePlan]);
+
+  // Đang xem tháng/quý/khoảng trong MỘT năm → nút "Tìm cả năm" khi lọc.
+  const sameYear = shownPeriod.from.getFullYear() === shownPeriod.to.getFullYear();
+  const widenYear =
+    sameYear && detectPeriod(shownPeriod).kind !== "year" ? shownPeriod.from.getFullYear() : null;
 
   async function handleCancelApple() {
     if (!cancelApple?.appleSettlementId) return;
@@ -988,6 +1201,15 @@ export function LedgerSection({
   function handleExport() {
     if (!data || data.entries.length === 0) {
       toast.info("Sổ quỹ kỳ này chưa có bút toán nào để xuất");
+      return;
+    }
+    if (filtering) {
+      if (shownEntries.length === 0) {
+        toast.info("Không có dòng nào khớp ô tìm để xuất");
+        return;
+      }
+      exportLedgerToExcel(shownEntries, `${periodSlug(shownPeriod)}-loc`);
+      toast.success(`Đã xuất ${formatCount(shownEntries.length)} dòng đang lọc ${phrase} ra Excel`);
       return;
     }
     exportLedgerToExcel(data.entries, periodSlug(shownPeriod));
@@ -1080,18 +1302,32 @@ export function LedgerSection({
         </div>
       )}
 
-      {/* Checklist chi cố định chỉ có nghĩa theo THÁNG — xem quý/năm/khoảng
-          tùy chọn thì ẩn, cơ cấu chi giãn hết hàng. */}
+      {/* Cột trái: checklist chi cố định (chỉ có nghĩa theo THÁNG — xem
+          quý/năm/khoảng tùy chọn thì ẩn) + ô tìm theo gói/email. Cột phải: cơ cấu chi. */}
       {data && (
-        <div className={cn("grid items-start gap-4", data.month && "xl:grid-cols-2")}>
-          {data.month && (
-            <RecurringPanel
-              rows={data.recurring}
-              month={data.month}
-              onLog={(preset) => setDialog({ mode: "create", preset })}
-              onManage={() => setRecurringOpen(true)}
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          <div className="space-y-4">
+            {data.month && (
+              <RecurringPanel
+                rows={data.recurring}
+                month={data.month}
+                onLog={(preset) => setDialog({ mode: "create", preset })}
+                onManage={() => setRecurringOpen(true)}
+              />
+            )}
+            <LedgerSearchPanel
+              query={query}
+              onQueryChange={setQuery}
+              plan={activePlan}
+              onPlanChange={setPlanFilter}
+              plans={planOptions}
+              matched={shownEntries}
+              active={filtering}
+              phrase={phrase}
+              canWiden={widenYear}
+              onWiden={() => widenYear !== null && onPeriodChange(yearPeriod(widenYear))}
             />
-          )}
+          </div>
           <CategoryBreakdown
             byCategory={data.byCategory}
             totalOut={data.totals.out}
@@ -1111,6 +1347,10 @@ export function LedgerSection({
               Kỳ này chưa có bút toán nào — bấm &ldquo;Ghi phiếu thu/chi&rdquo; để
               ghi khoản đầu tiên.
             </p>
+          ) : data && shownEntries.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              Không có dòng nào khớp ô tìm trong {phrase}.
+            </p>
           ) : data ? (
             <Table>
               <TableHeader>
@@ -1126,7 +1366,7 @@ export function LedgerSection({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.entries.map((e) => (
+                {shownEntries.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateTime(e.occurredAt)}
