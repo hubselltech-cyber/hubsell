@@ -18,7 +18,7 @@ import { ALL_LEAF_KEYS, PERMISSION_PRESETS } from "../../config/permission-regis
  */
 
 const ALL_CATEGORIES = NOTIFICATION_GROUPS.flatMap((g) => g.items.map((it) => it.key));
-const OWNER_ONLY = ["pack_video", "channel_disconnected", "sync_stalled", "plan", "system_other"];
+const OWNER_ONLY = ["channel_disconnected", "sync_stalled", "plan", "system_other"];
 const preset = (key: string) => PERMISSION_PRESETS.find((p) => p.key === key)!.permissions;
 
 describe("mục thông báo ↔ quyền nhân viên", () => {

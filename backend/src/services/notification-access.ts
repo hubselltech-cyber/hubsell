@@ -35,8 +35,6 @@ export const CATEGORY_PERMISSIONS: Record<NotificationCategoryKey, readonly stri
   return: ["warehouse.returns", "orders"],
   delivery_fail: ["orders"],
   auto_arrange: ["orders"],
-  // Video đóng hàng sắp tự xóa: việc cần làm là TẢI VỀ — chỉ chủ shop tải được (routes/pack-videos.ts).
-  pack_video: null,
   // Tài chính — cùng quyền với trang Báo cáo dòng tiền (nơi các con số này nằm)
   weekly_report: ["finance.analytics"],
   finance_alert: ["finance.analytics"],

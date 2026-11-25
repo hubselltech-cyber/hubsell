@@ -161,28 +161,20 @@ export function hardCapOf(recordedDate: string): string {
 }
 
 /** Hạn xóa đã tính → kẹp giữa SÀN (ngày quay + 7) và TRẦN (ngày quay + 60). Chạm trần thì luật là L6. */
-function datedWithin(recordedDate: string, deleteAfter: string, rule: RetentionRule, ignoreCap: boolean): RetentionDecision {
+function dated(recordedDate: string, deleteAfter: string, rule: RetentionRule): RetentionDecision {
   const cap = hardCapOf(recordedDate);
   const floored = maxKey(deleteAfter, addDays(recordedDate, RETENTION_DAYS.MIN_AFTER_RECORDING));
-  return floored >= cap && !ignoreCap
+  return floored >= cap
     ? { kind: "DELETE_AFTER", deleteAfter: cap, rule: "L6" }
     : { kind: "DELETE_AFTER", deleteAfter: floored, rule };
 }
 
 /** Đang GIỮ / đang chờ: sát trần (≤ CAP_NOTICE ngày) thì chốt hạn = trần; chưa thì giữ nguyên quyết định. */
-function keptUntilCap(recordedDate: string, today: string, decision: RetentionDecision, ignoreCap: boolean): RetentionDecision {
+function kept(recordedDate: string, today: string, decision: RetentionDecision): RetentionDecision {
   const cap = hardCapOf(recordedDate);
-  return today >= addDays(cap, -RETENTION_DAYS.CAP_NOTICE) && !ignoreCap
+  return today >= addDays(cap, -RETENTION_DAYS.CAP_NOTICE)
     ? { kind: "DELETE_AFTER", deleteAfter: cap, rule: "L6" }
     : decision;
-}
-
-export interface RetentionOptions {
-  /**
-   * true = tính như KHÔNG có trần 60 ngày. Chỉ dùng để hỏi "video chạm trần này lẽ ra còn đang được GIỮ làm bằng
-   * chứng không" (chuông báo trước khi xóa — services/pack-video/cap-notice.ts). Việc gán hạn KHÔNG bao giờ đặt cờ này.
-   */
-  ignoreCap?: boolean;
 }
 
 /**
@@ -192,15 +184,11 @@ export interface RetentionOptions {
 export function decideRetention(
   video: RetentionVideo,
   order: RetentionOrder | null,
-  now: Date,
-  opts: RetentionOptions = {}
+  now: Date
 ): RetentionDecision {
   const today = vnDateKey(now);
   const rec = video.recordedDate;
   const plus3 = (key: string) => addDays(key, RETENTION_DAYS.AFTER_DEADLINE);
-  const ignoreCap = opts.ignoreCap === true;
-  const dated = (r: string, deleteAfter: string, rule: RetentionRule) => datedWithin(r, deleteAfter, rule, ignoreCap);
-  const kept = (r: string, t: string, decision: RetentionDecision) => keptUntilCap(r, t, decision, ignoreCap);
 
   // Video chưa khớp đơn (hoặc có mã đơn mà đơn đã mất khỏi sổ).
   if (!video.orderId || !order) {

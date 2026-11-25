@@ -5007,11 +5007,10 @@ model PackVideo {
   // recordedDate đứng CUỐI: chỉ mục duy nhất này cũng là đường tra (ownerId, clientId) qua mọi mảnh.
   @@unique([ownerId, clientId, recordedDate], map: "pack_videos_client_key")
   @@index([ownerId, recordedAt(sort: Desc), id(sort: Desc)], map: "pack_videos_owner_recorded_idx")
-  // Bốn chỉ mục nữa chỉ khai trong SQL migration (Prisma không diễn tả được lớp toán tử / điều kiện WHERE):
+  // Ba chỉ mục nữa chỉ khai trong SQL migration (Prisma không diễn tả được lớp toán tử / điều kiện WHERE):
   //   "pack_videos_owner_tracking_idx" ("ownerId", "trackingCode" text_pattern_ops) — tìm theo tiền tố;
   //   "pack_videos_order_idx" ("orderId") WHERE "orderId" IS NOT NULL — nối với đơn;
-  //   "pack_videos_delete_after_idx" ("deleteAfter") WHERE status = 'STORED' — việc dọn;
-  //   "pack_videos_cap_idx" ("deleteAfter") WHERE status = 'STORED' AND "deleteRule" = 'L6' — chuông báo chạm trần.
+  //   "pack_videos_delete_after_idx" ("deleteAfter") WHERE status = 'STORED' — việc dọn.
   @@map("pack_videos")
 }
 
