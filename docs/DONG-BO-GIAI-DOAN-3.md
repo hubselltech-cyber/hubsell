@@ -756,3 +756,92 @@ lượt thứ hai cùng khóa nhận chung Promise, xong là xóa — không th�
 
 **Sau khi lên prod cần đo:** log web không còn `[Rào] sku-products` cho gian nhỏ; `[Bộ nhớ]` khi gian `…yxnvdy` mở trang Quảng cáo;
 OOM web 7 ngày (lớp 3, chưa làm).
+
+### 8.4. Lên prod `9d9706e1` (25/11/2026 14:23–14:24)
+
+- Push 14:21; worker Deploy live 14:23, web `/health` = `9d9706e1` lúc 14:24, máy web mới `rqp9v` boot 14:23:35 RSS 174 MB.
+- Log: máy cũ `f9vkj` còn `[Rào] sku-products: từ chối` tới 14:23:30 (RSS 448 MB). Máy mới 14:24:00 + 14:24:01: một shop 2.877 dòng tải
+  thành công (757 ms rồi 224 ms, RSS 247 MB) — chính shop đang bị từ chối liên tục trước đó.
+- CHƯA đo: RSS lúc gian `…yxnvdy` mở trang Quảng cáo trên prod; chưa kiểm bundle Vercel có câu toast mới; lớp 3 (7 ngày không OOM) chưa làm.
+- 14:32 SQL chỉ đọc: khách TikTok đăng ký 13:17 (user `cmwvqetk4024clr3autw0p00o`) từ 0/31 dòng có giá vốn (13:30) lên **24/31** — khách đã nhập được sau bản sửa.
+
+### 8.5. Rà mã `9d9706e1` theo quy mô lớn + đo log prod (25/11/2026 20:30, lượt lịch tự động — chỉ đọc, KHÔNG sửa / commit)
+
+**Kết luận ngắn:** mã của `9d9706e1` không tạo rủi ro mới cho mô hình lớn (không vòng for gọi DB, Map gộp lượt có giới hạn tự nhiên).
+NHƯNG lớp 2 **chưa đủ** để web hết đầy RAM: máy mới vẫn lên ~455 MB trong 30 phút, **OOM 1 lần lúc 18:24**, 20:24 RSS lại 474 MB. Nghi
+phạm kế tiếp đã có số: `GET /api/quang-cao/shopee/recommendations` (`ads-recommend-data.ts`) vẫn nạp nguyên dòng toàn 0 — ~120 nghìn
+dòng/lượt ở 2 gian lớn — và có mặt ở MỌI lần SÁT TRẦN sau deploy.
+
+#### 8.5.1. Rà mã (đã kiểm bằng đọc mã + EXPLAIN prod)
+
+1. **groupBy `adsCampaignId IN (ids)`** (`integrations/shopee/ads-insights.ts:263–281`).
+   - Số tham số: ids ≤ số chiến dịch được nạp (trần `MAX_CAMPAIGNS` 5.000) ≪ 32.767 tham số Postgres. Không phải rủi ro mới: chính
+     `include: { dailyPerf }` (dòng 226–229) đã gửi cùng danh sách id đó từ trước (Prisma nạp quan hệ bằng `IN`). → **Không cần chia lô.**
+   - Kế hoạch (EXPLAIN ANALYZE BUFFERS prod, gian `…yxnvdy`, CA XẤU NHẤT = cả 3.955 chiến dịch, cửa sổ 30 ngày): Index Only Scan trên
+     unique `AdsCampaignDailyPerf_adsCampaignId_date_key` → 114.434 dòng, **Heap Fetches 149.087** (bản đồ hiển thị cũ vì worker upsert
+     dòng số hằng ngày), ~76 nghìn buffer (hit 70–72 nghìn, đọc đĩa 4,3–6,1 nghìn ≈ 35–48 MB), **0,73–0,89 s**. Lượt thật chỉ đưa ~996 id
+     (đã lọc `campaignsWorthLoading`) → ước ~¼ số đó.
+   - Tải DB: mỗi lượt mở trang giờ quét cùng một dải chỉ mục **3 lần** (include lọc khác 0 + 2 groupBy) thay vì 1, nhưng KHÔNG gửi
+     ~30 nghìn dòng qua mạng nữa. Phần lớn là hit bộ đệm; đọc đĩa thêm cỡ chục MB/lượt ở gian lớn nhất — với Disk IO từng cạn (28/10) thì
+     đáng biết, chưa đáng sửa. Nếu sau này cần: gộp 2 groupBy thành 1 câu SQL (`min(date)` + `array_agg(distinct date)`) — CHỈ NÊU.
+2. **Map `inFlightInsights`** (`ads-insights.ts:182–203`): xóa trong `.finally()` → chạy cả khi lỗi; tính khóa có ném lỗi thì ném TRƯỚC
+   `set` nên không rò. Khóa = (gian, mốc nạp, nguồn biên, ngày VN, chế độ) và chỉ sống khi lượt đang chạy → số mục ≤ số lượt đồng thời,
+   không phình. Người gọi (grep đủ 6): `routes/ads.ts:147`, `assistant.ts:787`, `ops-alerts.ts:1142`, `ads-auto-execute.ts:603`,
+   `ads-margin-compare.ts:92`, `ads-scorecard-data.ts:23` — đều chỉ đọc `items` / `config` / `shop` (`.filter/.map/.reduce` tạo mảng mới;
+   `sort` ở `ads-auto-execute.ts:178` chạy sau `filter`, `ads-scorecard.ts:120` sort mảng riêng) → **không ai sửa kết quả dùng chung.**
+   Nhiều tiến trình (web + worker, sau này nhiều máy) thì mỗi tiến trình gộp riêng: đây là tối ưu, không phải khóa đúng-sai, nên không
+   vi phạm luật "không mutex RAM".
+   - Ghi nhận cũ (KHÔNG thuộc commit này): `ops-alerts.ts:1142` gọi `computeChannelAdsInsights` trong vòng `for` tuần tự qua các gian của
+     MỘT chủ shop.
+3. **Rào sku-products chỉ cho gian > 5.000 dòng** (`routes/finance.ts:1271–1275`).
+   - `totalRows` đếm theo CHỦ SHOP (mọi gian sàn), không theo từng gian.
+   - **Số prod sau deploy:** 16:20 một chủ shop **4.871 dòng** tải lúc RSS **451 MB**; 16:51 một chủ shop 3.894 dòng lúc RSS 448 MB — cả
+     hai đi qua vì < 5.000 (rào cũ sẽ chặn). Không chết lúc đó, nhưng xác nhận lượt cỡ vừa giờ chạy khi máy đã sát trần.
+   - Ước cỡ: 2.877 dòng ứng RSS 247 MB lúc máy mới (nền 174) — số đó lẫn request khác, chỉ ước thô ~+15–25 MB/1.000 dòng → 5.000 dòng
+     ~+75–125 MB/lượt (CHƯA đo riêng). 2–3 khách cỡ 4.999 mở cùng lúc khi máy đang ~450 MB là đủ vượt 512.
+   - Lỗ cũ (không thuộc commit): `channel=offline` và `channel=all` khi chưa cắt → `product.findMany` sản phẩm kho chưa nối **không
+     `take`, không rào** (`finance.ts:1414–1418`) — chủ shop có hàng chục nghìn SP kho nội bộ sẽ nạp hết.
+   - **Đề xuất (CHỈ NÊU, anh quyết):** trần ĐỒNG THỜI riêng cho lượt cỡ vừa (ví dụ ≤ 2–3 lượt sku-products > ~1.000 dòng cùng lúc, xếp
+     hàng thay vì 503) — không dựa vào RSS (RSS không trả lại sau đỉnh, mục 8.1). Con số 1.000 là mặc định tự chọn, chưa có căn cứ đo.
+4. **Chỗ khác đọc `AdsCampaignDailyPerf` vẫn nạp dòng toàn 0 (nghi phạm OOM kế tiếp)** — số dòng đo bằng SQL chỉ đọc 25/11 ~20:40:
+
+   | Chỗ đọc | Phạm vi nạp | Gian lớn nhất (dòng/lượt) | Mức |
+   |---|---|---|---|
+   | `shopee/ads-recommend-data.ts:89–93` (`/api/quang-cao/shopee/recommendations`, cả `ads-margin-compare`) | MỌI chiến dịch có `itemIds` (KHÔNG lọc `campaignsWorthLoading`) × 30 ngày, 2 cột | `…wfg4v8` **122.444** (0 dòng khác 0); `…yxnvdy` **118.389** (1.988 khác 0); gian kế 12.587 | **CAO** — có mặt ở cả 3 lần SÁT TRẦN sau deploy (14:53, 15:13, 19:01) |
+   | `tiktok-ads/breakeven-source.ts:57–70` | mọi chiến dịch TikTok × 60 ngày, 3 cột | 4.643 chiến dịch, 3.229 dòng (TikTok không ghi dòng 0) | thấp |
+   | `routes/ads-tiktok.ts:347` | mọi chiến dịch × khoảng xem, đủ cột + autoRule | 4.643 chiến dịch, ≤ 3.243 dòng/90 ngày | thấp–vừa (nạp 4,6 nghìn chiến dịch) |
+   | `routes/ads-tiktok.ts:236`, `:674`; `advice-inputs.ts:92`; `auto-run.ts:284` | theo id / chỉ chiến dịch hạ nấc | nhỏ | thấp |
+   | `tiktok-ads/advice-alerts.ts:83` | chỉ chiến dịch `ongoing` | nhỏ | thấp |
+   | `lazada/ads-spend.ts:100` | mọi dòng của gian × N ngày, 2 cột | Lazada lớn nhất 6 chiến dịch, 0 dòng | thấp |
+
+   Đối chiếu kế hoạch: cùng loại việc với lớp 2a (anh đã chốt 25/11); không thuộc pha nào của đại tu 5e hay KIEN-TRUC. Việc "để sau" ở 8.2
+   (không ghi dòng số 0 ở worker) sẽ gỡ tận gốc cho mọi chỗ đọc nhưng đụng luồng kéo.
+
+#### 8.5.2. Số log prod (Claude in Chrome; Render Logs chọn "Last 24 hours" bằng menu — `r=24h` gõ trên URL tự về 1h)
+
+- **Events:** sau deploy 14:23 có **1 lần OOM web: 18:24** (máy `rqp9v`). Trong ngày trước deploy: 12:11, 12:56, **13:45** (lần 13:45 chưa
+  ghi ở 8.1).
+- **`[Rào]`:** dòng cuối 14:23:30 (máy cũ). **0 dòng từ chối trên máy mới** → lớp 1 đạt.
+- **`[Bộ nhớ]` (RSS / heap MB):** máy cũ ổn **228–263 / 87–106** từ 06:15 tới 11:15; nhảy 421→452 lúc 11:38
+  (`/api/quang-cao/shopee/assistant-scorecard`, sau khi gian `…yxnvdy` về 11:05). Máy mới: boot 14:23 **174** → 14:53 256 rồi SÁT TRẦN
+  **455** (heap 150; đang chạy `/api/orders` 14 s, **`/recommendations`**, finance/analytics, `/api/quang-cao/shopee`) → 15:13 470 (SÁT
+  TRẦN, `/recommendations` + `/api/orders` 19 s) → 15:23–18:23 kẹt **390–455, heap 92–107** → **OOM 18:24** (nhịp 18:23 = 455/107; log không
+  có request giết máy) → boot 173 → 18:54 248 → 19:01 SÁT TRẦN **459–466** (heap 145–152; `/recommendations`, `/api/orders`,
+  `/api/finance/*`, `/api/warehouse/returns`) → 19:24 457 → 19:54 472 → **20:24 474 / heap 87**.
+- So mốc trưa (boot 173 → 461 sau 5 phút): nay 174 → 455 sau 30 phút — chậm hơn nhưng **vẫn kẹt ~450–474 và vẫn OOM**; heap về 75–107
+  trong khi RSS không xuống → ~350 MB native (giả thuyết engine Prisma, CHƯA đo) vẫn còn.
+- **`quang-cao`:** sau deploy không còn cặp 2 lượt `/api/quang-cao/shopee` chạy song song, nhưng log không ghi gian nên **CHƯA chứng minh**
+  gian `…yxnvdy` đã mở trang trên máy mới.
+- `/api/orders` 14–19 s xuất hiện cùng 2 lần SÁT TRẦN — chưa rà (ngoài phạm vi commit).
+
+#### 8.5.3. Chưa kiểm
+- Request nào giết máy 18:24 (không có nhịp log nào giữa 18:23 và lúc chết).
+- RSS riêng một lượt `/recommendations` trên gian cỡ `…yxnvdy` (đo dev như 8.3 sẽ biết; theo 8.3 đoán ~+100 MB/lượt — CHƯA đo).
+- Lớp 3 (log `[ads-load]`) chưa làm → vẫn không biết gian nào đang mở trang.
+
+#### 8.5.4. Đề xuất để anh chốt (em KHÔNG làm)
+1. **Lớp 2c:** áp khuôn 2a cho `ads-recommend-data.ts` — chỉ nạp chiến dịch đáng nạp + chỉ dòng khác 0 (hàm chỉ CỘNG `expense`,
+   `broadGmv`, dòng 0 không góp gì), test đối chứng cũ = mới như 8.3. Lợi: ~120 nghìn → ~2 nghìn dòng/lượt ở 2 gian lớn.
+2. Lớp 3 log `[ads-load]` (đã có trong phương án 8.2) để lần sau chỉ đúng gian.
+3. Trần đồng thời cho lượt sku-products cỡ vừa (8.5.1 mục 3) — xếp hàng, không theo RSS.
+⛔ Không nâng máy / gói; không chỉnh số 400 / 5.000.

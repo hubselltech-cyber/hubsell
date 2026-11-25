@@ -1572,7 +1572,7 @@ biết R2 mình full hay không còn kịp gia hạn nữa."
 | # | Việc | Đang ở đâu | Chờ gì |
 |---|---|---|---|
 | 1 | **Quay cho nhân viên** (app + web) | **24/11 ĐÃ DỰNG — mục 28** (theo quyền có sẵn; web + máy chủ local, app TestFlight 1.5.1 (44)) | anh bảo push + thử |
-| 2 | **Hàng đợi** (hàng chờ bền M1) | M1 lên prod 19/11 (22.10); **M1b cứu clip dở + K-6 gửi tiếp ở mọi trang đã dựng LOCAL 19/11 (mục 24)** | anh bảo push; anh thử webcam thật + rút mạng thật (24.5); trả lời K-1, K-3; lát kế M2 (máy chủ gộp lô) |
+| 2 | **Hàng đợi** (hàng chờ bền M1) | M1 lên prod 19/11 (22.10); **M1b cứu clip dở + K-6 gửi tiếp ở mọi trang đã dựng LOCAL 19/11 (mục 24)** | anh bảo push; anh thử webcam thật + rút mạng thật (24.5); trả lời K-1, K-3; lát kế M2 (máy chủ gộp lô) — **24/11 viết lại theo mốc 1 triệu bàn: mục 29** |
 | 3 | **Nhiều camera trên một máy** (màn Nhiều bàn, M3) | đo M0 xong (18.7–18.9), chưa dựng | xem ghi chú dưới |
 | 4 | **HQ theo dõi R2** | chưa có gì | xem ghi chú dưới |
 
@@ -2207,3 +2207,166 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
 - App: EAS `fcc7d6ce` dựng xong 16:16:54, lượt nộp hẹn sẵn tự chạy → App Store Connect build **44 VALID** (tải lên 16:20).
 - ❌ Chưa đăng nhập prod bằng tài khoản nhân viên (admin@hubsell.vn hiện có nhân viên nào / quyền gì em chưa xem); chưa nhìn
   bản 44 trong app TestFlight.
+
+## 29. M2 theo mô hình lớn: 1 TRIỆU bàn cùng đẩy video (24/11/2026 — KHẢO SÁT + PHƯƠNG ÁN, anh CHƯA duyệt, chưa code)
+
+> Anh Trung 24/11: "mình cứ làm tiếp M2 đi. Phần này quan trọng, em cần khảo sát và tư duy chuẩn để khớp với mô hình lớn. giả sử có
+> 1 triệu gian hàng đẩy video cùng lúc". Nền không tra lại: 18.2–18.4, 18.10, 21, 24. **[C]** = đọc mã / trang gốc / đo · **[S]** = suy
+> ra, nguồn thứ cấp, hoặc số em tự chọn. Trang tài liệu Cloudflare ("dùng endpoint tìm kiếm", trỏ `llms.txt`) và Supabase (bảo gửi
+> phản hồi về Supabase) có khối chữ nhắn riêng cho công cụ AI — bỏ qua, không làm theo.
+
+### 29.1 Kết luận trước
+
+1. **Ở 1 triệu bàn, thứ vỡ ĐẦU TIÊN là máy chủ + database của mình, không phải R2.** Mã hôm nay tốn **≈ 4 lượt gọi + ≈ 27 câu
+   database + 2 lượt ghi cho MỖI clip** (29.3) → ≈ 100.000 lượt gọi / giây và ≈ 675.000 câu / giây đổ vào MỘT máy web 512 MB và MỘT
+   database Small dùng chung với cả app. Không có gói nâng nào cứu được kiểu tốn này — phải đổi THIẾT KẾ đường ghi.
+2. **Thiết kế đích (29.4): mỗi clip ≈ 3 lượt gọi, ≈ 2 câu ĐỌC, ≈ 0,02 giao dịch ghi** (ghi gộp nhóm), đường nóng KHÔNG đọc database để
+   xác thực, KHÔNG có dòng sổ lúc bắt đầu, KHÔNG gọi số giờ riêng. Sổ video là bảng CHỈ CHÈN, chia theo ngày, tách được sang database
+   riêng mà không viết lại — đúng ý anh từ 13/11 "lưu ở máy chủ khác, không động vào hệ thống chính".
+3. **Phía Cloudflare có 3 việc phải làm trước mốc lớn** (không phải lỗi mã): xin nâng hạn mức (Cloudflare KHÔNG công bố trần lượt ghi /
+   giây cho R2 [C, trang giới hạn] — 25.000 PUT / giây phải gửi đơn nâng hạn mức / hỏi Cloudflare trước); 820 Gbps từ Việt Nam ra là ≈ 2 % tổng băng thông quốc tế cả nước (≈ 45 Tbps, báo dẫn Cục Viễn thông 02/2026 [S]) và ≈ 2,6 % khi mất 30 % như đợt 25/08/2026 → phải nói
+   chuyện với Cloudflare + nhà mạng từ mốc ≈ 100.000 bàn; tiền lưu là khoản lớn nhất (≈ 300.000 USD / tháng ở 20 PB) nhưng vẫn ≈ 7 %
+   doanh thu giờ quay ở cùng mốc (29.6).
+4. **M2 chia 6 lát nhỏ (29.5), lát nào cũng có ích ngay với hạ tầng hôm nay**, không lát nào bắt mua thêm dịch vụ. Tách database
+   video + nhiều máy web là bước SAU, quyết bằng số đo M4, không đoán.
+
+### 29.2 Bài toán bằng số
+
+Giả định [S], lấy từ số đo thật 20/11 (mục 25.13): một bàn đang đóng hàng ra **1 clip / ≈ 40 giây** (clip trung bình 35,8 giây + nghỉ);
+clip ≈ 0,4 MB cố định + 6,14 MB / phút (web) → **≈ 4,1 MB / clip**; một bàn ≈ 200 clip / ngày. "1 triệu gian cùng đẩy" em hiểu là 1 triệu
+BÀN đang quay cùng lúc (một chủ shop nhiều gian thường đóng ở một bàn → số chủ shop ít hơn số gian).
+
+| | 10.000 bàn | 100.000 bàn | **1.000.000 bàn** |
+|---|---|---|---|
+| Clip mới / giây | 250 | 2.500 | **25.000** |
+| Dữ liệu đổ lên R2 | 8 Gbps | 82 Gbps | **≈ 820 Gbps (≈ 100 GB / giây)** |
+| Clip / ngày | 2 triệu | 20 triệu | **200 triệu** |
+| Lưu 25 ngày | 205 TB | 2 PB | **≈ 20 PB** |
+| Lượt gọi máy chủ — mã hiện tại (≈ 4 / clip) | 1.000 / giây | 10.000 / giây | **100.000 / giây** |
+| Câu database — mã hiện tại (≈ 27 / clip) | 6.750 / giây | 67.500 / giây | **675.000 / giây** |
+| Lượt ghi database — mã hiện tại (2 / clip) | 500 / giây | 5.000 / giây | **50.000 / giây** |
+| Lượt gọi máy chủ — thiết kế đích (3 / clip) | 750 / giây | 7.500 / giây | **75.000 / giây** (nhiều máy, không đọc DB để xác thực) |
+| Câu ĐỌC — thiết kế đích (≈ 2 / clip) | 500 / giây | 5.000 / giây | **50.000 / giây** (bản sao đọc + DB video) |
+| Giao dịch GHI — thiết kế đích (gộp ≈ 100 clip / giao dịch) | ≈ 3 / giây | ≈ 25 / giây | **≈ 250 / giây** |
+
+Trần hôm nay [S, tính từ mã + cấu hình]: máy web Starter 512 MB, **bể 5 kết nối database** (`DB_CONNECTION_LIMIT`, `lib/prisma.ts`),
+Supabase Small 1.000 IOPS → ≈ 27 câu / clip nghĩa là cỡ **vài nghìn bàn** là chạm — khớp kết luận 18.10.
+
+### 29.3 Mã hiện tại tốn gì cho MỘT clip [C, đọc mã 24/11]
+
+| Lượt | Câu database | Gọi R2 | Ghi chú |
+|---|---|---|---|
+| `GET /match` (giơ tem) | xác thực 1–2 (`requireAuth` đọc `User` + `StaffChannel` MỖI lượt) · tra `Order` 1–2 (lọc qua `channel.userId`, chưa có chỉ mục theo mã vận đơn — V4) · `Channel` 1 · `Order.returnStatus` 1 · `pack_videos` 1 | — | ≈ 5–7 câu |
+| `POST /` (quay xong, xin vé) | xác thực 1–2 · tìm theo `clientId` 1 · **tính số dư giờ từ đầu** 4 (cộng `pack_hour_grants` + giao dịch: mốc + cộng video sống + cộng bảng ngày) · tra `Order` LẦN HAI 1–2 · **chèn dòng PENDING** 1 | ký vé; > 32 MB thì `CreateMultipartUpload` | ≈ 9–11 câu, 1 ghi |
+| PUT thẳng lên R2 | — | 1 PutObject (Class A) | máy mình không chạm byte |
+| `POST /:id/complete` | xác thực 1–2 · tìm dòng 1 · **cập nhật STORED** 1 | HeadObject (Class B) | ≈ 3–4 câu, 1 ghi |
+| làm mới số giờ (≤ 1 lần / 30 giây / tab ≈ 1 lần / clip) | xác thực 1–2 · số dư 4 · sổ giờ 1 · chứng từ 1 | — | ≈ 7–8 câu |
+| **Cộng** | **≈ 25–30 câu, 2 ghi** | 1 A + 1 B | 4 lượt gọi |
+
+Ngoài lượt nóng: dọn hằng 6 giờ (gộp giờ theo ngày, gán hạn giữ, luật xóa) đi từng dòng; xóa tệp R2 từng tệp một (DeleteObject — MIỄN
+PHÍ [C, trang giá R2]).
+
+### 29.4 Thiết kế đích
+
+**Ba quan sát làm nên thiết kế:**
+- (Q1) Luật tiền đã CHO PHÉP lố: anh chốt 14/11 "quay nốt, phần vượt trừ lần gia hạn sau" → số dư giờ không cần chính xác tới từng giây
+  lúc mở clip → đọc từ đệm vài chục giây được, không cần giao dịch khóa.
+- (Q2) Dòng PENDING lúc bắt đầu không còn việc gì: từ M1, hàng chờ bền nằm ở MÁY QUAY (trình duyệt / app), `clientId` cố định → máy chủ
+  không cần nhớ "đang tải" → **vé tải lên KHÔNG cần ghi database** (ký từ `chủ shop + ngày + clientId`).
+- (Q3) Clip lên xong chỉ cần ghi MỘT lần và không sửa nữa (đổi duy nhất về sau là xóa theo luật giữ) → **sổ CHỈ CHÈN**, gộp được nhiều clip
+  vào một giao dịch, chia theo ngày, xóa bằng bỏ cả phần ngày.
+
+**Đường nóng mới (mỗi clip):**
+
+| Bước | Làm gì | Database | R2 |
+|---|---|---|---|
+| 0. Mở màn quay (một lần / ≈ 10 phút) | `POST /session` qua xác thực thường → **vé phiên quay** (JWT ngắn hạn ký riêng: chủ shop, người quay, quyền đóng / khui, gian được giao, hạn 10 phút [S]) | 1–2 câu / 10 phút | — |
+| 1. Giơ tem | `GET /match` xác thực bằng vé phiên (KHÔNG đọc `User`) → tra mã vận đơn ở **bản sao đọc** của DB chính bằng chỉ mục riêng phần `trackingCode` + hỏi "đơn đã có video chưa" ở DB video | 2 câu đọc | — |
+| 2. Quay xong | `POST /ticket` → ký vé PUT từ `chủ + ngày + clientId`; hết giờ hay chưa đọc từ **đệm số dư theo chủ shop** (≤ 15 giây cũ, Q1) | 0 (đệm) | (> 32 MB: CreateMultipart) |
+| 3. Tải | PUT thẳng R2 (clip ≈ 4 MB < 5 MiB mảnh tối thiểu → luôn một lượt) | — | 1 Class A |
+| 4. Báo xong | `POST /complete` → HeadObject kiểm cỡ → đưa vào **lô ghi chung** của máy (gom ≤ 100 clip hoặc ≤ 200 ms), một câu `INSERT … ON CONFLICT (clientId) DO NOTHING` + cộng giờ đã dùng theo chủ shop trong CÙNG giao dịch → **xong giao dịch mới trả lời** (không mất gì nếu máy chết: chưa trả lời thì máy quay tự gửi lại, trùng thì bỏ qua). Trả kèm số dư giờ mới | ≈ 0,01–0,02 giao dịch / clip | 1 Class B |
+
+→ 3 lượt gọi, ≈ 2 câu đọc, ≈ 0,02 giao dịch ghi / clip; số giờ đi kèm câu trả lời nên **bỏ hẳn lượt làm mới số giờ**.
+
+**Khớp 8 nguyên tắc (KIEN-TRUC mục 5):**
+- (4) Việc nền là bản ghi bền: lô ghi chỉ trả lời SAU khi giao dịch xong — RAM chỉ giữ câu trả lời đang chờ, không giữ việc.
+- (5) Nhiều bản song song: vé phiên + vé PUT không trạng thái; khóa chống trùng là `UNIQUE` trong database; số dư là số trong database, máy
+  chỉ đệm đọc vài giây (lệch tối đa = vài giây quay, luật Q1 cho phép). Ngoại lệ có chủ ý: chặn gọi dồn (N11) đếm THEO MÁY → trần thật =
+  trần × số máy; nó chỉ để chống vòng lặp lỗi, không dùng tính tiền — ghi rõ ở mã.
+- (8) Thêm sức bằng thêm máy: đường nóng không trạng thái → thêm máy web; đọc → thêm bản sao đọc; ghi → một DB video riêng, gộp nhóm.
+- (3) Không trần im lặng: hết sức thì trả 429 / 503 kèm `Retry-After` (M1 đã có chỗ nhận), đếm lên HQ.
+
+**Sổ video ở quy mô lớn:**
+- Bảng chỉ chèn, **chia theo ngày quay** (`recordedDate` đã nằm trong khóa duy nhất `pack_videos_client_key` → chia được) [C].
+- Luật giữ theo trạng thái đơn (19 / 18.10): phần lớn clip hết hạn theo mặc định → bỏ cả phần ngày (không `DELETE` từng dòng, không phình
+  Disk IO — đúng bài học 28/10); clip phải GIỮ (đơn hoàn / khiếu nại) là thiểu số → chép sang bảng giữ riêng trước khi bỏ phần ngày.
+- Tệp trên R2: khóa theo tiền tố ngày → **luật vòng đời R2 xóa theo tiền tố + tuổi** (tối đa 1.000 luật / bucket, thường xóa trong 24 giờ,
+  xóa không tính tiền) [C]; clip phải giữ được chép sang tiền tố giữ (CopyObject = Class A, chỉ cho thiểu số) — xem lại đề xuất 14/11 "bỏ
+  ngăn hold/" ở quy mô này (29.8 Q-5).
+- Ghép với bảng đơn chỉ còn ở 3 chỗ đọc (`library.ts`: chip "Đơn có hoàn", tab Đơn hoàn) [C] → đổi sang ghép ở tầng ứng dụng (đọc đơn
+  trước, hỏi video theo lô `orderId`) thì sổ video tách được sang database riêng không viết lại.
+
+**Đường thứ hai (để dành, không làm bây giờ):** thông báo sự kiện R2 → Queues → Worker gom 100 / lượt → bỏ được bước 4 (còn 2 lượt
+gọi / clip). Ở 25.000 clip / giây cần ≥ 5 hàng (trần 5.000 / giây / hàng, chia luật theo tiền tố) [C], ≈ 7.200 USD / tháng [S, tính từ
+giá]; giao ít nhất một lần, không cam kết độ trễ. Giữ vai lưới an toàn như 18.10 mục D.
+
+### 29.5 Các lát M2 (mỗi lát giao riêng, đều chạy được trên hạ tầng hôm nay)
+
+| Lát | Có gì | Giảm gì | Database / prod |
+|---|---|---|---|
+| **M2.1 Vé phiên quay** | `POST /api/pack-videos/session` → JWT 10 phút; các đường nóng nhận vé này, không chạy `requireAuth` đọc DB | bỏ 3–6 câu xác thực / clip | không migration |
+| **M2.2 Số giờ đi kèm câu trả lời** | `/ticket` + `/complete` trả số dư; web + app bỏ làm mới `/hours` theo nhịp | bỏ cả lượt thứ 4 (≈ 8 câu) | không |
+| **M2.3 Đệm số dư theo chủ shop** | `getHoursBalance` đọc qua đệm 15 giây [S]; mua giờ / tặng giờ xóa đệm | bỏ 4 câu / clip lúc xin vé | không |
+| **M2.4 Vé không ghi + ghi gộp lúc xong** | `POST /` không chèn PENDING; `complete` chèn STORED theo lô (≤ 100 / ≤ 200 ms [S]) | 2 ghi → ≈ 0,02 / clip | **migration** (bỏ ràng buộc PENDING / `uploadId` cho dòng mới; giữ đọc được dòng cũ); đổi hợp đồng API → web + app cùng đổi, giữ đường cũ cho app đã cài một thời gian |
+| **M2.5 Tra mã vận đơn** | EXPLAIN chỉ đọc trên prod (shop lớn nhất) → nếu quét rộng: chỉ mục riêng phần `Order(trackingCode) WHERE trackingCode IS NOT NULL` tạo `CONCURRENTLY`, **chờ anh duyệt SQL**; `matchTem` gộp 4 câu còn 1–2 | V4 | có thể 1 chỉ mục |
+| **M2.6 Chặn gọi dồn + `Retry-After`** | hạn mức theo chủ shop trên đường video (đếm theo máy, 29.4), 429 + `Retry-After`; lớp gọi web / app tuân theo | N3, N11 | không |
+| M2.7 (khi M4 đòi) | sổ video sang database riêng + chia theo ngày + 3 chỗ ghép đổi sang tầng ứng dụng; đường video sang dịch vụ web riêng nhiều bản (= M5 cũ) | đưa sức tải video ra khỏi app chính | dự án Supabase thứ hai + dịch vụ Render thứ hai — **tiền, anh quyết khi có số M4** |
+
+Thứ tự đề nghị: M2.1 → M2.2 → M2.3 (rẻ, không đổi hợp đồng, cắt ≈ 70 % câu database / clip) → M2.5 (EXPLAIN trước) → M2.4 (đổi hợp
+đồng, cần bản app mới) → M2.6 → M4 đo → mới bàn M2.7.
+
+### 29.6 Tiền ở mốc 1 triệu bàn [S, tính từ giá trang gốc 24/11]
+
+| Khoản | Cách tính | / tháng |
+|---|---|---|
+| R2 lưu (Standard) | 20 PB × 0,015 USD / GB | ≈ 300.000 USD |
+| R2 Class A (PutObject) | 200 triệu / ngày × 30 × 4,50 USD / triệu | ≈ 27.000 USD |
+| R2 Class B (HeadObject + xem) | ≈ 6 tỷ × 0,36 USD / triệu | ≈ 2.200 USD |
+| Xóa (DeleteObject, vòng đời) | miễn phí | 0 |
+| Băng thông ra (xem / tải về) | R2 không tính | 0 |
+| (để dành) Queues | ≈ 18 tỷ thao tác × 0,40 USD / triệu | ≈ 7.200 USD |
+| **Doanh thu giờ quay cùng mốc** | 200 triệu clip × 35,8 giây ≈ 2 triệu giờ / ngày × 2.000 đ × 30 | **≈ 120 tỷ đ ≈ 4,6 triệu USD** [S, tỷ giá ≈ 26.000] |
+
+→ Chi phí kho ≈ 7 % doanh thu giờ quay — biên ≈ 92 % ở mục 27 vẫn đứng ở mốc lớn. Infrequent Access KHÔNG hợp (tính tối thiểu 30 ngày,
+Class A gấp đôi) [C]. Máy web / database ở mốc này [S, tính từ giá trang gốc]: DB video riêng cỡ 4XL–8XL (20.000–40.000 IOPS, ≈ 960–1.870 USD) + đĩa
+≈ 1,5 TB (25 ngày × ≈ 60 GB / ngày, ≈ 190 USD); bản sao đọc của DB chính (tính tiền như một DB cùng cỡ); web không trạng thái ≈ 75 bản
+1 CPU (Render Pro tự giãn tới 100 bản, ≈ 25 USD / bản [C]) + băng thông ra ≈ 27 TB / tháng × 0,15 USD ≈ 4.000 USD → cộng **cỡ 10.000 USD /
+tháng**, nhỏ so với kho. Ghi gộp 25.000 dòng / giây trên MỘT Postgres: đo của bên thứ ba cho INSERT nhiều dòng ≈ 31–44 nghìn dòng / giây trên
+8 vCPU, COPY ≈ 230–340 nghìn [S, blog Timescale] → làm được nếu GỘP; ghi từng dòng (≈ 1.000 dòng / giây) thì không. Vượt mốc đó mới tính
+tới ClickHouse / chia nhiều DB — chưa cần.
+
+### 29.7 Điều anh có thể không thích
+
+1. **1 triệu bàn cùng quay là gấp ≈ 20 lần mốc 50.000 khách** của chương trình KIEN-TRUC. Em thiết kế để không phải viết lại khi tới đó,
+   nhưng KHÔNG đề nghị dựng sẵn hạ tầng cho mốc đó: M2.1–M2.6 làm bây giờ; database riêng, nhiều máy, nâng hạn mức Cloudflare làm khi số
+   thật (M4 + số khách) chạm ngưỡng.
+2. **Băng thông quốc tế là rủi ro không nằm trong tay mình.** Việt Nam có 6 tuyến cáp; 2025 lỗi APG + IA nhiều tháng, 02/2026 AAE-1,
+   25/08/2026 4 / 6 tuyến cùng lỗi, mất ≈ 30 % dung lượng [S, báo]; tình trạng sửa hôm nay: chưa rõ. R2 có điểm biên Hà Nội / TP.HCM / Đà
+   Nẵng [C] và Local Uploads ghi gần người gửi rồi mới chép về vùng lưu [C], nhưng byte vẫn phải ra nước ngoài; chỉ gợi ý vùng `apac`, không
+   cam kết nơi đặt [C]. Ở mốc ≈ 100.000 bàn (82 Gbps) phải hỏi Cloudflare và đo đường
+   Việt Nam → R2 trước; nếu khi đó tải thử trượt, câu hỏi "kho trong nước" (anh đã gác 13/11) mới đáng mở lại — em ghi để nhớ, không đề
+   nghị bây giờ.
+3. **M2.4 đổi hợp đồng API** → app đã cài phải theo kịp; trong thời gian chuyển, máy chủ chạy cả hai đường (cũ: PENDING → STORED; mới:
+   vé không ghi). Không có cách rẻ hơn mà vẫn bỏ được ghi lúc bắt đầu.
+4. Vé phiên 10 phút nghĩa là **rút quyền một nhân viên có hiệu lực chậm tối đa 10 phút** trên đường quay (đường khác vẫn tức thì).
+
+### 29.8 Chờ anh
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| Q-1 | Duyệt thứ tự M2.1 → M2.2 → M2.3 làm trước (không migration, không đổi hợp đồng) | có |
+| Q-2 | Vé phiên quay 10 phút (rút quyền chậm ≤ 10 phút trên đường quay) | 10 phút |
+| Q-3 | Cho em chạy EXPLAIN CHỈ ĐỌC trên prod cho câu tra mã vận đơn (shop lớn nhất) — SQL đưa anh xem trước | có |
+| Q-4 | M2.4 (đổi hợp đồng + migration) làm sau khi M2.1–2.3 lên, gộp vào bản app kế | có |
+| Q-5 | Ở quy mô lớn, xóa tệp bằng luật vòng đời R2 theo tiền tố ngày + chép clip phải giữ sang tiền tố giữ (đảo đề xuất 14/11 "bỏ ngăn hold/") | có, nhưng chỉ khi làm M2.7 |
+| Q-6 | Khi số khách tiến tới ≈ 100.000 bàn: gửi đơn xin nâng hạn mức Cloudflare + hỏi đường Việt Nam → R2 | có, chưa phải bây giờ |
