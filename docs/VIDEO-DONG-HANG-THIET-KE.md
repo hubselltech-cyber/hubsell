@@ -2559,3 +2559,55 @@ Một câu: **xóa sau khi HẾT HẠN 3 ngày**. "Hạn" của từng trường
 - ❌ Chưa làm: G6 kiểm lưới vòng đời trên bucket R2 · G7 chuông báo trước khi xóa · G8 khách tự xóa video · ghi "tối đa 60 ngày" vào
   landing / Chính sách bảo mật (hiện chỉ ghi "lưu theo trạng thái đơn… rồi tự động xóa", không trái luật mới).
 - Tệp tạm `backend/scripts/_tmp-lsx-seed.ts` (8 video "đã xóa" để soi tab) còn trong database local — `cleanup` + xóa tệp sau khi anh xem.
+
+## 33. Luật xóa bản chốt LÊN PROD `eade3a6c` — CHẠY BÓNG (25/11/2026 ~21:50–22:10, anh: "Làm đi") + sự cố khi dựng chỉ mục
+
+### 33.1 Chỉ mục mã vận đơn trên prod (Supabase SQL Editor, từng lệnh một)
+
+| Chỉ mục | Kết quả |
+|---|---|
+| `Order_trackingCode_idx` | ✅ dựng xong sau ~110 giây (sát trần 2 phút của SQL Editor), `indisvalid = true`, 26 MB |
+| `Order_returnTrackingCode_idx` | ❌ **KHÔNG HỢP LỆ** (`indisvalid = false`, `indisready = true`, 968 kB): lệnh bị cắt ở phút thứ 2 ("upstream timeout") vì lúc đó database có 4 giao dịch chạy lâu (lâu nhất 1 phút 45 giây) — CONCURRENTLY phải chờ chúng |
+
+- Em **không gỡ** chỉ mục dở: SQL Editor hỏi xác nhận "destructive operations" cho `DROP INDEX`, việc gỡ không nằm trong phần anh duyệt →
+  bấm hủy. Chỉ mục dở không được câu nào dùng, chỉ tốn một chút mỗi lần ghi đơn có mã vận đơn chiều hoàn.
+- Hệ quả: câu khớp tem theo **mã vận đơn chiều đi** (đường chính, mỗi lần giơ tem) đã có chỉ mục; khớp theo **mã chiều hoàn** (chỉ
+  khi quay KHUI mà mã chiều đi không ra) vẫn quét như trước — không xấu đi so với trước, nhưng chưa tốt lên.
+- **Việc còn lại:** `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx";` lúc database vắng (nên 03:00–05:00), kiểm trước
+  không có giao dịch nào chạy quá 30 giây; nếu lại quá 2 phút thì cần nối database trực tiếp (không qua SQL Editor) — việc của anh.
+- Migration trong repo (`IF NOT EXISTS`) chạy 1 giây lúc deploy, không dựng lại gì.
+
+### 33.2 ⚠️ Tải database trong lúc làm — em có thể đã góp phần làm prod chậm tối 25/11
+
+- Tối nay em chạy trên prod: 1 câu EXPLAIN quét hết đơn của một gian (6,9 giây, ~20:40), 3 lượt dựng chỉ mục xong + 1 lượt dở (~21:00,
+  ~21:35–21:47) — **mỗi lượt quét cả bảng `Order` 641 MB hai lần**. Máy database là Supabase Small.
+- Quan sát 21:47–22:10: nhiều câu của ứng dụng chờ đĩa hơn một phút (`wait_event_type = IO`): câu `WITH selling AS (…)` (trang Giá vốn),
+  câu đếm cả bảng `Order`, câu đếm đơn theo ngày, vài câu đọc đơn. Trang Video đóng hàng trên prod tải danh sách hơn 30 giây.
+- Supabase → Infrastructure lúc 22:09: **CPU 96 %** (điểm của hôm nay vọt lên sát 100 %), Memory 67 %, **Disk IO balance 98 %** (ngân sách
+  đĩa KHÔNG cạn), ổ đĩa 70 %. Tức nghẽn không phải do hết ngân sách đĩa; em nghi quét cả bảng đã đẩy trang nóng ra khỏi bộ đệm nên các
+  câu khác phải đọc đĩa lại — **đây là suy đoán, em chưa có số chứng minh**; hôm nay web cũng đã OOM 4 lần từ trưa (trước khi em đụng
+  prod), nên không phải tất cả là do em.
+- 22:06 `/health` trả **502** khoảng một phút: trùng lúc Render đổi sang bản `358bfa5c` do phiên khác push (thêm log `[Đo request]`).
+- **Bài học:** dựng chỉ mục trên bảng `Order` phải làm lúc vắng (đêm), kiểm giao dịch đang chạy trước, và không dựng hai cái liền nhau
+  vào giờ tối. Em đã dừng mọi thao tác trên prod sau 22:10.
+
+### 33.3 Deploy + lượt chạy bóng đầu tiên của luật mới
+
+- Push `8366a06e..eade3a6c` 21:49; `/health` = `eade3a6c` lúc 21:52; migration ghi nhận xong trong 1 giây. Sau đó phiên khác push
+  `358bfa5c` (22:04) — bản của em nằm trong đó.
+- Worker dọn chạy lượt đầu **22:01**: bản luật `2026-11-25` được ghi, **gỡ 52 hạn cũ và tính lại**. Sổ sau lượt đó (55 video):
+
+| Luật | Số video | Hạn xóa | Đã tới hạn hôm nay |
+|---|---|---|---|
+| L4 đã giao, không hoàn | 39 | 25/11 → 13/12 | 4 (video quay 18/11 cho đơn giao từ tháng 10 → sàn ngày quay + 7 = 25/11) |
+| L1 chưa khớp đơn | 9 | 25/11 (quay 18/11 + 7) | 9 |
+| L5 đơn hoàn đã xử lý xong | 3 (1 khui) | 28/11 | 0 |
+| L7 đơn hoàn qua hạn khiếu nại | 1 | 30/11 | 0 |
+| Giữ — đơn hoàn chưa có hạn | 2 | — | — |
+| Tải dở | 1 | — | (đủ 7 ngày, chạy bóng chỉ đếm) |
+
+- **Nếu bật xóa thật bây giờ: 13 video bị xóa** (9 chưa khớp đơn + 4 của đơn giao từ tháng 10) — đều là video quay thử 18/11 của tài
+  khoản thí điểm. Công tắc `PACK_VIDEO_DELETE_ENABLED` **vẫn TẮT**, chờ anh xem bảng này rồi quyết.
+- Web prod: tab "Lịch sử xóa" đã có trên trang; cột "Giữ tới" hiện hạn mới (vd 10/12/2026 · còn 15 ngày). ❌ Chưa bấm được vào tab trên
+  prod để xem API `/deleted` trả lời (trang đang chậm, em không thử tiếp) — chạy bóng thì tab vốn trống.
+- Dữ liệu thử local đã dọn, tệp `_tmp-lsx-seed.ts` đã xóa.

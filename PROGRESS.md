@@ -10,7 +10,20 @@
 - Render Events: web hết RAM 512 MB lúc **12:11, 12:56, 13:45, 18:24** (+ trang Giá vốn bị rào 503 12:55→14:23). 21:47 web + app đang chạy bình thường.
 - Máy sau deploy 20:51: RSS 174 → 413 sau 9 phút → 476 lúc 21:09 → kẹt 437; trong giờ này KHÔNG có `/recommendations` → nghi phạm 8.5 chưa đủ; `GET /api/orders` 6–19 s có mặt ở mọi lần sát trần.
 - Chi tiết ở docs/DONG-BO-GIAI-DOAN-3.md mục 8.6.
-- ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. ⏳ commit + push rồi đọc log ~1 ngày.
+- ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. Thêm trần 60 dòng/phút/máy + dòng tổng "bỏ qua N" sau khi anh hỏi có theo mô hình lớn không. ✅ commit `358bfa5c` + PUSH 25/11 ~22:10 (anh "Commit và push"). ⏳ đọc log `[Đo request]` ~1 ngày rồi mới chọn sửa.
+
+---
+## Phiên 25/11 khuya (8) — Video đóng hàng: luật xóa bản chốt LÊN PROD `eade3a6c` (chạy bóng) · 1 / 2 chỉ mục mã vận đơn dựng được · ⚠️ prod chậm
+
+- Anh: "Làm đi". Prod: `Order_trackingCode_idx` dựng xong (hợp lệ, 26 MB); **`Order_returnTrackingCode_idx` KHÔNG HỢP LỆ** — lệnh bị
+  cắt ở phút thứ 2 vì database có giao dịch chạy lâu; em không gỡ (SQL Editor hỏi xác nhận xóa, ngoài phần anh duyệt). Việc còn:
+  `REINDEX INDEX CONCURRENTLY` lúc vắng (03:00–05:00).
+- Commit `eade3a6c` + push 21:49, Render 21:52; worker dọn chạy lượt đầu 22:01: gỡ 52 hạn cũ, tính lại theo luật mới. Bật xóa thật
+  bây giờ = xóa 13 / 55 video (đều là video quay thử 18/11). **Công tắc xóa vẫn TẮT**, chờ anh.
+- ⚠️ **21:47–22:10 database prod nghẽn** (nhiều câu chờ đĩa > 1 phút, trang Video đóng hàng tải > 30 giây; Supabase CPU 96 %, Disk IO
+  balance 98 %). Em nghi các lượt dựng chỉ mục tối nay (mỗi lượt quét bảng Order 641 MB hai lần) góp phần — chưa chứng minh; hôm nay
+  web đã OOM 4 lần từ trưa. 22:06 `/health` 502 ~1 phút = lúc Render đổi sang `358bfa5c` của phiên khác. Em dừng thao tác prod sau 22:10.
+- Chi tiết: docs/VIDEO-DONG-HANG-THIET-KE.md mục 33.
 
 ---
 ## Phiên 25/11 khuya (7) — Video đóng hàng: LUẬT XÓA bản chốt (hết hạn + 3 ngày, trần 60) + tab LỊCH SỬ XÓA — code LOCAL, chưa commit
