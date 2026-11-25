@@ -37,11 +37,19 @@ export async function runPackVideoJanitor(now: Date = new Date()): Promise<void>
       `[pack-video-janitor] Gán hạn: đọc ${assigned.scanned} · có hạn ${JSON.stringify(assigned.assigned)} · giữ ${JSON.stringify(assigned.held)} · chờ ${assigned.waiting}`
     );
 
-    const deleteEnabled = packVideoDeleteEnabled();
+    // Xóa thật cần CẢ công tắc lẫn khóa R2 trên chính tiến trình này. 26/11/2026: worker prod không có 4 biến R2_*
+    // (chỉ web có) — bật công tắc mà thiếu khóa thì chạy bóng và nói rõ, không ném lỗi từng video.
+    const wantDelete = packVideoDeleteEnabled();
+    const deleteEnabled = wantDelete && isR2Configured();
+    if (wantDelete && !deleteEnabled) {
+      console.warn(
+        "[pack-video-janitor] PACK_VIDEO_DELETE_ENABLED=1 nhưng tiến trình này THIẾU cấu hình R2 (R2_ENDPOINT / R2_BUCKET / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY) → vẫn CHẠY BÓNG, không xóa tệp nào"
+      );
+    }
     const due = await processDueVideos({
       now: () => now,
       deleteEnabled,
-      storage: deleteEnabled && isR2Configured() ? getR2Storage : undefined,
+      storage: deleteEnabled ? getR2Storage : undefined,
     });
     const moved = `khớp lại được đơn ${due.rematched} · gỡ hạn vì phải giữ ${due.blockedAtDue} · dời hạn ${due.postponed}`;
     console.log(
@@ -53,7 +61,7 @@ export async function runPackVideoJanitor(now: Date = new Date()): Promise<void>
     const stale = await sweepStalePending({
       now: () => now,
       deleteEnabled,
-      storage: deleteEnabled && isR2Configured() ? getR2Storage : undefined,
+      storage: deleteEnabled ? getR2Storage : undefined,
     });
     if (stale.found > 0) {
       console.log(
@@ -79,6 +87,6 @@ export function startPackVideoJanitorWorker(): void {
   setTimeout(() => void runPackVideoJanitor(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void runPackVideoJanitor(), INTERVAL_MS).unref();
   console.log(
-    `[pack-video-janitor] BẬT — mỗi ${INTERVAL_MS / 3_600_000}h: gộp giờ theo ngày + gán hạn giữ + ${packVideoDeleteEnabled() ? "XÓA THẬT video tới hạn" : "CHẠY BÓNG (không xóa tệp)"}`
+    `[pack-video-janitor] BẬT — mỗi ${INTERVAL_MS / 3_600_000}h: gộp giờ theo ngày + gán hạn giữ + ${packVideoDeleteEnabled() && isR2Configured() ? "XÓA THẬT video tới hạn" : "CHẠY BÓNG (không xóa tệp)"}`
   );
 }
