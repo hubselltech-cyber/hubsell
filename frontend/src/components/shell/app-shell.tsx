@@ -629,7 +629,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )
       // Cổng tính năng chưa mở với tài khoản này → vẽ như mục khóa (mờ + ổ khóa).
       .map((c) =>
-        c.feature && featureState(user, c.feature) !== "open" ? { ...c, locked: true } : c
+        c.feature && featureState(user, c.feature) === "locked" ? { ...c, locked: true } : c
       );
     return { ...i, children };
   };

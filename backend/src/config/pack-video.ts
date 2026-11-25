@@ -13,6 +13,21 @@
  */
 export const PACK_VIDEO_PILOT_EMAILS: readonly string[] = ["admin@hubsell.vn"];
 
+/**
+ * CỔNG MỞ CHO AI — anh Trung 26/11/2026: "bật xóa thật và mở ra cho khách hàng dùng bản web luôn".
+ *   "all"   (mặc định) = mọi chủ shop CÒN HẠN GÓI (kể cả dùng thử, kể cả đang trong ân hạn) + nhân viên của họ theo quyền.
+ *                        Gói hết hạn quá ân hạn → khóa như các tính năng nâng cao khác (services/plan-enforcement.ts).
+ *   "pilot"            = chỉ các tài khoản thí điểm ở trên (trạng thái trước 26/11).
+ *   "off"              = đóng với mọi người — công tắc TẮT GẤP.
+ * Đổi bằng env PACK_VIDEO_GATE trên tiến trình WEB ở Render, không cần ra bản.
+ * Tài khoản thí điểm luôn vào được trừ khi "off". Khách vào lần đầu phải bấm đồng ý (services/pack-video/consent.ts).
+ */
+export type PackVideoGate = "all" | "pilot" | "off";
+export function packVideoGate(env: NodeJS.ProcessEnv = process.env): PackVideoGate {
+  const v = env.PACK_VIDEO_GATE?.trim().toLowerCase();
+  return v === "pilot" || v === "off" ? v : "all";
+}
+
 const MIB = 1024 * 1024;
 
 /** Chỉ nhận đúng một kiểu tệp — đường dẫn ký sẵn ký luôn tiêu đề này (đã thử thật, tài liệu khảo sát mục 57.2). */

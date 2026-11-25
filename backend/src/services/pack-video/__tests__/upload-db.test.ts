@@ -326,6 +326,10 @@ describe.skipIf(!dbReady)("Video đóng hàng — tải lên", () => {
     await grantHours({ ownerId, seconds: -left, kind: "ADJUST", note: `${TAG} trừ sạch` });
     expect((await getHoursBalance(ownerId)).remainingSeconds).toBe(0);
 
+    // Dòng trừ giờ mang giờ của DATABASE, clip mới mang giờ của Node. Hai đồng hồ lệch nhau vài mili giây (đo 26/11/2026:
+    // Postgres local nhanh hơn ~3 ms) thì clip "bắt đầu" trước cả dòng trừ giờ → luật "đang quay dở lúc hết giờ" cho qua,
+    // ca này đỏ chập chờn từ 19/11. Chờ một nhịp cho clip chắc chắn bắt đầu SAU lúc hết giờ.
+    await new Promise((r) => setTimeout(r, 300));
     const err = await beginUpload(
       actor(),
       input({ clientId: `${TAG}-het-2`, trackingCode: `${TAG}-HET2`, recordedAt: new Date() }),

@@ -21,11 +21,12 @@
 // Khi mở cho khách thật: đổi RUỘT hàm này sang bảng cài đặt theo chủ shop, chữ ký giữ nguyên.
 // ============================================================
 
-import { PACK_VIDEO_PILOT_EMAILS } from "../../config/pack-video";
+import { PACK_VIDEO_PILOT_EMAILS, packVideoGate, type PackVideoGate } from "../../config/pack-video";
 import { hasPermission } from "../../config/permission-registry";
 import { isR2Configured } from "../../integrations/r2/client";
 
-export type PackVideoAccess = "open" | "locked";
+/** "consent" = cổng đã mở cho chủ shop này nhưng chủ shop CHƯA bấm đồng ý lần đầu (consent.ts) — chưa gọi được API. */
+export type PackVideoAccess = "open" | "locked" | "consent";
 
 /** Người đang đăng nhập được làm gì với Video đóng hàng. Cổng khóa = cả ba `false`. */
 export interface PackVideoCaps {
@@ -46,34 +47,52 @@ export interface PackVideoAccessSubject {
   isStaff: boolean;
   /** Cây quyền của nhân viên (bỏ qua với chủ shop). */
   permissions?: readonly string[] | null;
+  /** Gói của CHỦ SHOP còn dùng được (chưa bị khóa vì hết hạn quá ân hạn). Không đưa vào = coi như không. */
+  ownerPlanActive?: boolean;
 }
 
 interface AccessOpts {
   pilotEmails?: readonly string[];
   r2Configured?: boolean;
+  gate?: PackVideoGate;
 }
 
-/** Chủ shop này đã được mở tính năng chưa (danh sách thí điểm + kho đã cấu hình). */
-export function ownerPackVideoOpen(ownerEmail: string | null | undefined, opts: AccessOpts = {}): boolean {
-  const pilot = opts.pilotEmails ?? PACK_VIDEO_PILOT_EMAILS;
+/** Email này có trong danh sách thí điểm không (không phân biệt hoa thường). */
+export function isPackVideoPilot(ownerEmail: string | null | undefined, pilotEmails?: readonly string[]): boolean {
   const email = ownerEmail?.trim().toLowerCase();
-  if (!email || !pilot.some((e) => e.toLowerCase() === email)) return false;
-  return opts.r2Configured ?? isR2Configured();
+  return !!email && (pilotEmails ?? PACK_VIDEO_PILOT_EMAILS).some((e) => e.toLowerCase() === email);
+}
+
+/**
+ * Chủ shop này đã được mở tính năng chưa: kho R2 đã cấu hình + cổng không "off" + (tài khoản thí điểm, hoặc cổng
+ * "all" và gói còn dùng được). Hỏng thì đóng.
+ */
+export function ownerPackVideoOpen(
+  ownerEmail: string | null | undefined,
+  opts: AccessOpts & { planActive?: boolean } = {}
+): boolean {
+  if (!(opts.r2Configured ?? isR2Configured())) return false;
+  const gate = opts.gate ?? packVideoGate();
+  if (gate === "off") return false;
+  if (isPackVideoPilot(ownerEmail, opts.pilotEmails)) return true;
+  return gate === "all" && opts.planActive === true;
 }
 
 export function packVideoCaps(subject: PackVideoAccessSubject, opts: AccessOpts = {}): PackVideoCaps {
-  if (!ownerPackVideoOpen(subject.ownerEmail, opts)) return { ...NO_PACK_VIDEO_CAPS };
+  if (!ownerPackVideoOpen(subject.ownerEmail, { ...opts, planActive: subject.ownerPlanActive })) {
+    return { ...NO_PACK_VIDEO_CAPS };
+  }
   if (!subject.isStaff) return { pack: true, unbox: true, manage: true };
   const perms = subject.permissions ?? [];
   return { pack: hasPermission(perms, "orders"), unbox: hasPermission(perms, "warehouse.returns"), manage: false };
 }
 
 /** Cổng tổng: quay được ít nhất một kiểu thì "open" (vào được nhóm /api/pack-videos, mục web hết mờ). */
-export function capsAccess(caps: PackVideoCaps): PackVideoAccess {
+export function capsAccess(caps: PackVideoCaps): "open" | "locked" {
   return caps.pack || caps.unbox ? "open" : "locked";
 }
 
-export function packVideoAccess(subject: PackVideoAccessSubject, opts: AccessOpts = {}): PackVideoAccess {
+export function packVideoAccess(subject: PackVideoAccessSubject, opts: AccessOpts = {}): "open" | "locked" {
   return capsAccess(packVideoCaps(subject, opts));
 }
 
@@ -83,7 +102,13 @@ export interface UserFeatures {
 }
 
 /** Khối `features` gắn vào đối tượng user mà /api/auth trả về (tính sẵn từ chủ thể). */
-export function featuresOf(subject: PackVideoAccessSubject, opts: AccessOpts = {}): UserFeatures {
+export function featuresOf(
+  subject: PackVideoAccessSubject,
+  opts: AccessOpts & { consented?: boolean } = {}
+): UserFeatures {
   const caps = packVideoCaps(subject, opts);
-  return { packVideo: capsAccess(caps), packVideoCaps: caps };
+  if (capsAccess(caps) !== "open") return { packVideo: "locked", packVideoCaps: caps };
+  // Cổng mở mà chủ shop chưa đồng ý: web hiện thẻ đồng ý; quyền thao tác chưa cấp cho tới lúc đó.
+  if (opts.consented === false) return { packVideo: "consent", packVideoCaps: { ...NO_PACK_VIDEO_CAPS } };
+  return { packVideo: "open", packVideoCaps: caps };
 }

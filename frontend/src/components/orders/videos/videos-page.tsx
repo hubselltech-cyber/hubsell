@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { HoursBalanceBar } from "./hours-balance";
 import { OrderVideoDossier } from "./order-video-dossier";
 import { DeletedTab } from "./deleted-tab";
+import { PackVideoConsentCard } from "./video-consent";
 import { ReturnsTab } from "./returns-tab";
 import { StatsTab } from "./stats-tab";
 import { VideosTab } from "./videos-tab";
@@ -45,13 +46,14 @@ const STAFF_TABS: readonly PageTabItem<TabKey>[] = [TABS[0]];
 /**
  * KHUNG CHUNG của hai trang video: kiểm đăng nhập + CỔNG TÍNH NĂNG (tầng 2).
  *
- * Tài khoản chưa được mở (lib/use-feature.ts — máy chủ quyết) chỉ thấy thẻ "chưa mở";
- * phần ruột KHÔNG được dựng nên không lượt gọi API video nào xảy ra. Lớp chặn thật vẫn
+ * Tài khoản chưa được mở (lib/use-feature.ts — máy chủ quyết) chỉ thấy thẻ "chưa dùng được"; cổng mở mà chủ shop
+ * chưa đồng ý lần đầu thì thấy thẻ bật tính năng (video-consent.tsx). Hai trường hợp đó phần ruột KHÔNG được dựng
+ * nên không lượt gọi API video nào xảy ra. Lớp chặn thật vẫn
  * là 403 FEATURE_LOCKED ở backend.
  */
 function PackVideoGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const open = useFeature("packVideo") === "open";
+  const state = useFeature("packVideo");
 
   React.useEffect(() => {
     if (!getToken()) router.replace("/login");
@@ -59,12 +61,14 @@ function PackVideoGate({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShell>
-      {open ? (
+      {state === "open" ? (
         children
+      ) : state === "consent" ? (
+        <PackVideoConsentCard />
       ) : (
         <FeatureLockedCard
-          title="Video đóng hàng chưa mở"
-          description="Tính năng đang được hoàn thiện và chưa mở cho tài khoản này. Đơn hàng vẫn xử lý bình thường ở trang Xử lý đơn hàng."
+          title="Video đóng hàng chưa dùng được với tài khoản này"
+          description="Tính năng mở cho shop còn hạn gói; nhân viên cần quyền Đơn hàng hoặc Đối soát đơn hoàn. Đơn hàng vẫn xử lý bình thường ở trang Xử lý đơn hàng."
           action={
             <Link href="/orders" className={buttonVariants({ size: "sm", variant: "outline" })}>
               Về Xử lý đơn hàng
@@ -96,7 +100,7 @@ export function PackVideosPage() {
       <div className="space-y-5">
         <PageHeaderBand>
           <p className="text-sm text-muted-foreground">
-            Video quay lúc đóng hàng bằng webcam hoặc app điện thoại, tìm lại bằng mã vận đơn khi cần bằng chứng khiếu nại.
+            Video quay lúc đóng hàng, tìm lại bằng mã vận đơn khi cần bằng chứng khiếu nại.
           </p>
           <PageTabs
             ariaLabel="Các phần của trang Video đóng hàng"

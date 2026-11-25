@@ -16,20 +16,21 @@ import type { NextFunction, Response } from "express";
 import type { AuthRequest } from "./auth";
 import { capsAccess, type PackVideoCaps } from "../services/pack-video/access";
 import { ensureWelcomeHours } from "../services/pack-video/hours";
-import { capsForUser } from "../services/pack-video/subject";
+import { gateForUser } from "../services/pack-video/subject";
 
 export type PackVideoRequest = AuthRequest & { packVideoCaps?: PackVideoCaps };
 
 export async function requirePackVideo(req: PackVideoRequest, res: Response, next: NextFunction): Promise<void> {
   let caps: PackVideoCaps;
+  let needsConsent = false;
   try {
-    caps = await capsForUser({
+    ({ caps, needsConsent } = await gateForUser({
       id: req.userId ?? "",
       email: req.userEmail ?? null,
       // requireAuth đặt ownerId = id chủ shop; trùng userId nghĩa là chính chủ đang đăng nhập.
       ownerId: req.ownerId ?? null,
       permissions: req.permissions,
-    });
+    }));
   } catch (err) {
     next(err);
     return;
@@ -42,6 +43,18 @@ export async function requirePackVideo(req: PackVideoRequest, res: Response, nex
     return;
   }
   req.packVideoCaps = caps;
+  // Chủ shop chưa đồng ý lần đầu: chỉ đường ghi nhận đồng ý đi tiếp (chưa tặng giờ, chưa đọc / ghi video nào).
+  if (needsConsent) {
+    if (req.method === "POST" && req.path === "/consent") {
+      next();
+      return;
+    }
+    res.status(403).json({
+      error: "Chủ shop cần bấm đồng ý ở trang Video đóng hàng trước khi dùng tính năng này",
+      code: "CONSENT_REQUIRED",
+    });
+    return;
+  }
   // req.ownerId = id CHỦ shop (kể cả khi nhân viên gọi) — giờ tặng ghi cho chủ shop.
   const ownerId = req.ownerId ?? req.userId;
   if (!ownerId) {

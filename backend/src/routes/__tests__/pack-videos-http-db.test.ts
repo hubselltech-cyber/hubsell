@@ -114,10 +114,13 @@ describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () =>
     }
   });
 
-  it("tài khoản thường → 403 FEATURE_LOCKED ở mọi đường", async () => {
+  // 26/11/2026 — cổng mở cho mọi chủ shop còn hạn gói: tài khoản thường (chưa có thuê bao = còn dùng được) qua cổng,
+  // nhưng CHƯA đồng ý lần đầu thì mọi đường vẫn đóng. Kho R2 chưa cấu hình thì vẫn FEATURE_LOCKED như cũ.
+  it("tài khoản thường CHƯA đồng ý → 403 ở mọi đường (CONSENT_REQUIRED khi kho đã cấu hình)", async () => {
+    const code = isR2Configured() ? "CONSENT_REQUIRED" : "FEATURE_LOCKED";
     for (const [method, path] of ROUTES) {
       const r = await call(normalId, method, `/api/pack-videos${path}`);
-      expect([r.status, r.body?.code], `${method} ${path}`).toEqual([403, "FEATURE_LOCKED"]);
+      expect([r.status, r.body?.code], `${method} ${path}`).toEqual([403, code]);
     }
   });
 
@@ -132,7 +135,10 @@ describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () =>
   it("/api/auth/me báo features đúng cho tài khoản thường và từng kiểu nhân viên", async (ctx) => {
     const NONE = { pack: false, unbox: false, manage: false };
     const me = await call(normalId, "GET", "/api/auth/me");
-    expect((me.body?.user as { features?: unknown }).features).toEqual({ packVideo: "locked", packVideoCaps: NONE });
+    expect((me.body?.user as { features?: unknown }).features).toEqual({
+      packVideo: isR2Configured() ? "consent" : "locked",
+      packVideoCaps: NONE,
+    });
     if (!pilotId) return ctx.skip();
     const open = isR2Configured();
     const feat = async (id: string) =>
@@ -148,6 +154,29 @@ describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () =>
         ? { packVideo: "open", packVideoCaps: { pack: false, unbox: true, manage: false } }
         : { packVideo: "locked", packVideoCaps: NONE }
     );
+  });
+
+  it("chủ shop thường bấm đồng ý → ghi MỘT dòng sổ đồng ý, cổng mở hẳn, được tặng giờ; bấm lại không sinh dòng thứ hai", async (ctx) => {
+    if (!isR2Configured()) return ctx.skip();
+    const ok = await call(normalId, "POST", "/api/pack-videos/consent");
+    expect([ok.status, ok.body?.ok]).toEqual([200, true]);
+    expect((await call(normalId, "POST", "/api/pack-videos/consent")).status).toBe(200);
+    const rows = await prisma.termsAcceptance.findMany({
+      where: { userId: normalId, source: "pack_video" },
+      select: { privacyVersion: true },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].privacyVersion).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    expect((await call(normalId, "GET", "/api/pack-videos/summary")).status).toBe(200);
+    const me = await call(normalId, "GET", "/api/auth/me");
+    expect((me.body?.user as { features?: unknown }).features).toEqual({
+      packVideo: "open",
+      packVideoCaps: { pack: true, unbox: true, manage: true },
+    });
+    const hours = await call(normalId, "GET", "/api/pack-videos/hours");
+    expect(hours.status).toBe(200);
+    await prisma.packHourGrant.deleteMany({ where: { ownerId: normalId } });
   });
 
   it("nhân viên thí điểm: quay + xem được; tải về / thống kê / đơn hoàn / mua giờ / sổ tiền thì KHÔNG", async (ctx) => {

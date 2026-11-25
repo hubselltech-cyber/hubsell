@@ -270,7 +270,8 @@ export interface AuthUser {
    * đơn hoàn, sổ tiền, mua giờ) được không — nhân viên của chủ đã mở vào được theo quyền có sẵn.
    */
   features?: {
-    packVideo?: "open" | "locked";
+    /** "consent" = cổng đã mở nhưng chủ shop chưa bấm đồng ý lần đầu (26/11/2026). */
+    packVideo?: "open" | "locked" | "consent";
     packVideoCaps?: { pack?: boolean; unbox?: boolean; manage?: boolean };
   };
 }
@@ -10422,6 +10423,11 @@ export function fetchPackVideoUrl(id: string, download: boolean) {
   return apiFetch<{ url: string; expiresAt: string }>(
     `/api/pack-videos/${encodeURIComponent(id)}/url?download=${download ? 1 : 0}`
   );
+}
+
+/** Chủ shop đồng ý lần đầu để bật Video đóng hàng — máy chủ ghi sổ đồng ý. */
+export function acceptPackVideoConsent() {
+  return apiFetch<{ ok: boolean }>("/api/pack-videos/consent", { method: "POST" });
 }
 
 /** Chủ shop tự xóa MỘT video đã lưu — không khôi phục được, giờ đã quay không cộng lại. */

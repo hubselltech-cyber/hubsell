@@ -13,21 +13,24 @@ vi.mock("../hours", () => ({ ensureWelcomeHours }));
 const { ownerEmailOf } = vi.hoisted(() => ({
   ownerEmailOf: vi.fn(async (_ownerId: string): Promise<string | null> => null),
 }));
+// Bước đồng ý lần đầu (26/11/2026): mặc định coi như chủ shop ĐÃ đồng ý; ca riêng bật cờ này.
+const { consentPending } = vi.hoisted(() => ({ consentPending: { value: false } }));
 vi.mock("../subject", async () => {
-  const { packVideoCaps } = await import("../access");
+  const { capsAccess, packVideoCaps } = await import("../access");
   return {
-    capsForUser: async (u: { id: string; email: string | null; ownerId: string | null; permissions?: string[] }) => {
+    gateForUser: async (u: { id: string; email: string | null; ownerId: string | null; permissions?: string[] }) => {
       const staffOwner = u.ownerId && u.ownerId !== u.id ? u.ownerId : null;
-      return packVideoCaps({
+      const caps = packVideoCaps({
         ownerEmail: staffOwner ? await ownerEmailOf(staffOwner) : u.email,
         isStaff: staffOwner !== null,
         permissions: u.permissions,
       });
+      return { caps, needsConsent: capsAccess(caps) === "open" && consentPending.value };
     },
   };
 });
 
-import { PACK_VIDEO_PILOT_EMAILS } from "../../../config/pack-video";
+import { PACK_VIDEO_PILOT_EMAILS, packVideoGate } from "../../../config/pack-video";
 import type { AuthRequest } from "../../../middleware/auth";
 import { requirePackVideo } from "../../../middleware/require-pack-video";
 import { isR2Configured, r2ConfigFromEnv } from "../../../integrations/r2/client";
@@ -247,5 +250,100 @@ describe("middleware requirePackVideo", () => {
       expect(r.passed).toBe(false);
       expect(r.body).toEqual(LOCKED);
     });
+  });
+});
+
+describe("middleware requirePackVideo — chủ shop chưa đồng ý lần đầu", () => {
+  function call(method: string, path: string) {
+    let status = 200;
+    let code: unknown = null;
+    let passed = false;
+    const res = {
+      status(c: number) {
+        status = c;
+        return this;
+      },
+      json(b: { code?: unknown }) {
+        code = b.code;
+        return this;
+      },
+    } as unknown as Response;
+    const req = { userId: "u1", ownerId: "u1", userEmail: "admin@hubsell.vn", method, path } as unknown as AuthRequest;
+    const done = requirePackVideo(req, res, () => {
+      passed = true;
+    });
+    return done.then(() => new Promise((r) => setTimeout(r, 0))).then(() => ({ status, code, passed }));
+  }
+
+  it("mọi đường bị chặn 403 CONSENT_REQUIRED và KHÔNG tặng giờ; riêng POST /consent đi tiếp", async () => {
+    const before = process.env;
+    process.env = { ...before, ...R2_ENV };
+    consentPending.value = true;
+    ensureWelcomeHours.mockClear();
+    try {
+      expect(await call("GET", "/")).toEqual({ status: 403, code: "CONSENT_REQUIRED", passed: false });
+      expect(await call("POST", "/")).toEqual({ status: 403, code: "CONSENT_REQUIRED", passed: false });
+      expect(await call("GET", "/consent")).toEqual({ status: 403, code: "CONSENT_REQUIRED", passed: false });
+      expect(await call("POST", "/consent")).toEqual({ status: 200, code: null, passed: true });
+      expect(ensureWelcomeHours).not.toHaveBeenCalled();
+    } finally {
+      consentPending.value = false;
+      process.env = before;
+    }
+  });
+});
+
+describe("cổng mở cho khách (26/11/2026) — chủ shop còn hạn gói + bước đồng ý", () => {
+  const on = { r2Configured: true, gate: "all" as const };
+  const ALL = { pack: true, unbox: true, manage: true };
+  const NONE = { pack: false, unbox: false, manage: false };
+  const owner = (ownerPlanActive: boolean, ownerEmail = "khach@shop.vn") => ({ ownerEmail, isStaff: false, ownerPlanActive });
+  const staff = (permissions: string[], ownerPlanActive: boolean) => ({
+    ownerEmail: "khach@shop.vn",
+    isStaff: true,
+    permissions,
+    ownerPlanActive,
+  });
+
+  it("cổng all: chủ shop thường CÒN hạn gói → toàn quyền; hết hạn → khóa", () => {
+    expect(packVideoCaps(owner(true), on)).toEqual(ALL);
+    expect(packVideoCaps(owner(false), on)).toEqual(NONE);
+    expect(packVideoCaps({ ownerEmail: "khach@shop.vn", isStaff: false }, on)).toEqual(NONE); // không biết gói = đóng
+  });
+
+  it("nhân viên của chủ shop thường: theo quyền có sẵn khi chủ còn hạn; chủ hết hạn thì khóa", () => {
+    expect(packVideoCaps(staff(["orders"], true), on)).toEqual({ pack: true, unbox: false, manage: false });
+    expect(packVideoCaps(staff(["warehouse.products"], true), on)).toEqual(NONE);
+    expect(packVideoCaps(staff(["orders", "warehouse.returns"], false), on)).toEqual(NONE);
+  });
+
+  it("cổng pilot: chỉ tài khoản thí điểm, khách còn hạn cũng khóa; cổng off: khóa cả thí điểm", () => {
+    expect(packVideoCaps(owner(true), { ...on, gate: "pilot" })).toEqual(NONE);
+    expect(packVideoCaps(owner(true, "admin@hubsell.vn"), { ...on, gate: "pilot" })).toEqual(ALL);
+    expect(packVideoCaps(owner(true), { ...on, gate: "off" })).toEqual(NONE);
+    expect(packVideoCaps(owner(true, "admin@hubsell.vn"), { ...on, gate: "off" })).toEqual(NONE);
+  });
+
+  it("tài khoản thí điểm vào được kể cả khi gói hết hạn; kho R2 chưa cấu hình thì ai cũng khóa", () => {
+    expect(packVideoCaps(owner(false, "admin@hubsell.vn"), on)).toEqual(ALL);
+    expect(packVideoCaps(owner(true), { ...on, r2Configured: false })).toEqual(NONE);
+  });
+
+  it("featuresOf: mở mà chưa đồng ý → 'consent' + chưa cấp quyền nào; đồng ý rồi → 'open'", () => {
+    expect(featuresOf(owner(true), { ...on, consented: false })).toEqual({ packVideo: "consent", packVideoCaps: NONE });
+    expect(featuresOf(owner(true), { ...on, consented: true })).toEqual({ packVideo: "open", packVideoCaps: ALL });
+    expect(featuresOf(staff(["orders"], true), { ...on, consented: false })).toEqual({
+      packVideo: "consent",
+      packVideoCaps: NONE,
+    });
+    // Cổng khóa thì không bao giờ là "consent" (không mời đồng ý một tính năng không dùng được).
+    expect(featuresOf(owner(false), { ...on, consented: false })).toEqual({ packVideo: "locked", packVideoCaps: NONE });
+  });
+
+  it("packVideoGate đọc env: mặc định all; pilot / off; giá trị lạ → all", () => {
+    expect(packVideoGate({})).toBe("all");
+    expect(packVideoGate({ PACK_VIDEO_GATE: " Pilot " })).toBe("pilot");
+    expect(packVideoGate({ PACK_VIDEO_GATE: "off" })).toBe("off");
+    expect(packVideoGate({ PACK_VIDEO_GATE: "linh-tinh" })).toBe("all");
   });
 });

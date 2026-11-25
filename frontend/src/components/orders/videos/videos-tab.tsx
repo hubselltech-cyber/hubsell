@@ -192,7 +192,7 @@ export function VideosTab() {
 
 /**
  * Màn trống của shop chưa quay video nào: hai lối bắt đầu — webcam trên máy tính (một nút, vào thẳng màn quay)
- * và app điện thoại. Anh Trung 18/11: mọi video, webcam hay điện thoại, đều lên hệ thống → cả hai cùng hiện ở đây.
+ * và app điện thoại (26/11/2026 mở cho khách bản WEB: app ghi "sắp có" vì bản app của khách chưa có màn quay).
  */
 function FirstVideoGuide() {
   return (
@@ -215,7 +215,7 @@ function FirstVideoGuide() {
         <StartOption
           icon={Smartphone}
           title="App Hubsell trên điện thoại"
-          detail="Tab Tổng quan → ô Quay video đóng gói."
+          detail="Quay bằng điện thoại đang thử nghiệm, sắp có."
         />
       </div>
     </div>

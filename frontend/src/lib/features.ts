@@ -11,13 +11,15 @@ import type { AuthUser } from "./api";
  * HỎNG THÌ ĐÓNG: thiếu `features`, thiếu khóa, giá trị lạ → coi như "locked".
  */
 export type FeatureKey = "packVideo";
-export type FeatureState = "open" | "locked";
+/** "consent" = tính năng đã mở cho tài khoản này, còn chờ chủ shop bấm đồng ý lần đầu (chưa gọi API nào). */
+export type FeatureState = "open" | "locked" | "consent";
 
 export function featureState(
   user: Pick<AuthUser, "features"> | null | undefined,
   key: FeatureKey
 ): FeatureState {
-  return user?.features?.[key] === "open" ? "open" : "locked";
+  const v = user?.features?.[key];
+  return v === "open" || v === "consent" ? v : "locked";
 }
 
 /**

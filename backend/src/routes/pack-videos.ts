@@ -20,6 +20,7 @@
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
 //   DELETE /:id            chủ shop tự xóa một video đã lưu (không khôi phục được)
+//   POST /consent          chủ shop đồng ý lần đầu (ghi sổ đồng ý) — đường DUY NHẤT qua cổng khi chưa đồng ý
 // Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
 //
 // QUYỀN TỪNG ĐƯỜNG (24/11/2026 — nhân viên của chủ đã mở được vào, docs VIDEO-DONG-HANG-THIET-KE mục 28;
@@ -61,6 +62,7 @@ import {
   type ReturnCard,
   type ReturnSort,
 } from "../services/pack-video/library";
+import { recordPackVideoConsent } from "../services/pack-video/consent";
 import { deleteVideoByOwner } from "../services/pack-video/manual-delete";
 import {
   PackVideoError,
@@ -159,6 +161,23 @@ function requireId(raw: string): string {
   if (!ID_RE.test(raw)) throw new PackVideoError(404, "NOT_FOUND", "Không tìm thấy");
   return raw;
 }
+
+// ───────── Đồng ý lần đầu ─────────
+
+// Chỉ CHỦ SHOP đồng ý được (nhân viên chờ chủ). Gọi lại khi đã đồng ý cũng trả ok, không sinh dòng thứ hai.
+router.post(
+  "/consent",
+  handle(async (req, res) => {
+    if (req.userId !== req.ownerId) throw denied("Chỉ chủ shop bật được tính năng này");
+    const fwd = req.headers["x-forwarded-for"];
+    const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+    await recordPackVideoConsent(req.ownerId!, {
+      ip: first || req.ip || null,
+      userAgent: String(req.headers["user-agent"] ?? "") || null,
+    });
+    res.json({ ok: true });
+  })
+);
 
 // ───────── Tải lên ─────────
 
