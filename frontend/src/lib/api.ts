@@ -2348,11 +2348,30 @@ export type ReturnShippingFilter =
   | "FAILED_DELIVERY"
   | "NO_SIGNAL";
 
+/**
+ * Hạn khiếu nại của một đơn hoàn — docs/HAN-KHIEU-NAI-DON-HOAN.md. Dùng chung: cột Thời hạn của Đối soát đơn
+ * hoàn + tab Đơn hoàn của Video đóng hàng.
+ */
+export type ReturnComplaintDue =
+  | { state: "NOT_NEEDED"; failedDelivery: boolean }
+  | { state: "NOT_STARTED"; failedDelivery: boolean }
+  | { state: "UNKNOWN"; failedDelivery: boolean }
+  | {
+      state: "DUE";
+      dueAt: string;
+      /** platform = sàn trả (chốt) · platform_provisional = sàn trả tạm · rule = luật + mốc sàn · estimate = luật + giờ kho quét */
+      source: "platform" | "platform_provisional" | "rule" | "estimate";
+      failedDelivery: boolean;
+      windowHours: number | null;
+    };
+
 export interface ReturnRow extends Order {
   /** Số ngày kể từ lúc sàn báo hoàn — null khi chưa rõ mốc bắt đầu */
   daysWaiting: number | null;
   agingLevel: ReturnAging;
   returnShipping: ReturnShipping;
+  /** Hạn khiếu nại — cột "Thời hạn" hiện đếm ngược khi state = DUE (docs/HAN-KHIEU-NAI-DON-HOAN.md). */
+  complaintDue: ReturnComplaintDue;
 }
 
 export interface WarehouseReturnsResponse {
@@ -2367,11 +2386,13 @@ export interface WarehouseReturnsResponse {
   /** Tổng tiền đã đòi được — dành cho module Tài chính hạch toán sau */
   totalCompensated: number;
   thresholds: { warningDays: number; overdueDays: number };
+  /** Hạn gần nhất trong các đơn sắp hết hạn khiếu nại (`summary.dueSoon` đơn, còn ≤ 24 giờ); null = không có. */
+  dueSoonNearestAt: string | null;
 }
 
 /** Danh sách đối soát đơn hoàn của kho, kèm số ngày chờ và mức cảnh báo. */
 export function fetchWarehouseReturns(params: {
-  /** Tình trạng kho (thẻ to): một ReturnStatus, ISSUES, hoặc OVERDUE = chờ về đã quá hạn. */
+  /** Tình trạng kho (thẻ to): một ReturnStatus, ISSUES, OVERDUE = chờ về đã quá hạn, DUE_SOON = sắp hết hạn khiếu nại. */
   status?: string;
   /** Trạng thái vận chuyển (hàng chip). */
   ship?: ReturnShippingFilter;
@@ -10288,22 +10309,8 @@ export type PackVideoChip = "all" | "returns" | "unmatched" | "pending" | "expir
 export type PackVideoHoldReason = "RETURN_OPEN" | "RETURN_DAMAGED" | "UNBOX_UNMATCHED" | "PARCEL_RETURNING";
 /** Thẻ lọc của tab Đơn hoàn. */
 export type PackVideoReturnCard = "all" | "has_pack" | "damaged_no_unbox" | "due_soon" | "no_video";
-/** Sắp tab Đơn hoàn: mới báo hoàn trước (mặc định) / hạn khiếu nại gần nhất trước. */
+/** Sắp tab Đơn hoàn: hạn khiếu nại gần nhất trước (mặc định của tab) / mới báo hoàn trước. */
 export type PackVideoReturnSort = "requested" | "due";
-
-/** Hạn khiếu nại của một đơn hoàn — docs/HAN-KHIEU-NAI-DON-HOAN.md. */
-export type PackVideoReturnComplaintDue =
-  | { state: "NOT_NEEDED"; failedDelivery: boolean }
-  | { state: "NOT_STARTED"; failedDelivery: boolean }
-  | { state: "UNKNOWN"; failedDelivery: boolean }
-  | {
-      state: "DUE";
-      dueAt: string;
-      /** platform = sàn trả (chốt) · platform_provisional = sàn trả tạm · rule = luật + mốc sàn · estimate = luật + giờ kho quét */
-      source: "platform" | "platform_provisional" | "rule" | "estimate";
-      failedDelivery: boolean;
-      windowHours: number | null;
-    };
 
 /** Một dòng hàng của đơn, bản gọn đủ để nhận ra món hàng trong video. */
 export interface PackVideoOrderItem {
@@ -10436,7 +10443,7 @@ export interface PackVideoReturnRow {
   returnRequestedAt: string | null;
   packVideo: { id: string; durationSec: number } | null;
   unboxVideo: { id: string; durationSec: number } | null;
-  complaintDue: PackVideoReturnComplaintDue;
+  complaintDue: ReturnComplaintDue;
 }
 
 export interface PackVideoReturnsResponse {
@@ -10449,12 +10456,15 @@ export interface PackVideoReturnsResponse {
 export function fetchPackVideoReturns(params: {
   card?: PackVideoReturnCard;
   sort?: PackVideoReturnSort;
+  /** Ô tìm: mã đơn / mã vận đơn chứa chuỗi này. */
+  q?: string;
   cursor?: string;
   limit?: number;
 }) {
   const qs = new URLSearchParams();
   if (params.card && params.card !== "all") qs.set("card", params.card);
   if (params.sort) qs.set("sort", params.sort);
+  if (params.q?.trim()) qs.set("q", params.q.trim());
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
   return apiFetch<PackVideoReturnsResponse>(`/api/pack-videos/returns?${qs.toString()}`);

@@ -2,13 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight, FolderOpen, PackageSearch } from "lucide-react";
+import { ArrowUpRight, FolderOpen, PackageSearch, Search, X } from "lucide-react";
 
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
+import { ComplaintDueCell, useMinuteClock } from "@/components/shared/complaint-due-cell";
 import { Refreshing } from "@/components/shared/refreshing";
 import { SortHeader } from "@/components/shared/sort-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -35,29 +37,45 @@ import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
-import { ComplaintDueCell, useMinuteClock } from "./complaint-due-cell";
 import { ChannelBadge, CodeWithCopy, CursorPager, MetaBadge, shopNameOf, useCursorPages } from "./video-bits";
 import { ReturnVideoCards } from "./video-filters";
 
-/** Ô "Video đóng" / "Video khui" của một đơn: có thì ghi thời lượng, chưa có thì nói rõ. */
+/** "02:10 22/11" — bỏ năm khi là năm nay (cột hẹp lại); năm khác thì giữ đủ. */
+function shortDateTime(iso: string): string {
+  return formatDateTime(iso).replace(`/${new Date().getFullYear()}`, "");
+}
+
+/** Một dòng của ô Video: "Đóng · 0:51" (có) / "Khui · chưa quay" (chưa có). */
 function VideoPresence({
+  kind,
   video,
   missingLabel,
 }: {
+  kind: string;
   video: { id: string; durationSec: number } | null;
   missingLabel: string;
 }) {
-  if (!video) {
-    return (
-      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
-        {missingLabel}
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 tabular-nums">
-      Có · {formatClipDuration(video.durationSec)}
+    <span
+      className={cn(
+        "inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums",
+        video ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-zinc-200 bg-zinc-50 text-zinc-600"
+      )}
+    >
+      {kind} · {video ? formatClipDuration(video.durationSec) : missingLabel}
     </span>
+  );
+}
+
+/** Tình trạng kho: huy hiệu = phần chính, phần sau dấu "·" xuống dòng phụ (cột hẹp lại, bảng vừa 1366). */
+function StockStatus({ meta }: { meta: { label: string; className: string } | undefined }) {
+  if (!meta) return null;
+  const [main, ...rest] = meta.label.split(" · ");
+  return (
+    <>
+      <MetaBadge meta={{ label: main, className: meta.className }} title={meta.label} />
+      {rest.length > 0 && <div className={cn(TEXT_SUB, "mt-1 whitespace-nowrap")}>{rest.join(" · ")}</div>}
+    </>
   );
 }
 
@@ -71,20 +89,27 @@ function VideoPresence({
  */
 export function ReturnsTab() {
   const [card, setCard] = React.useState<PackVideoReturnCard>("all");
-  // null = theo thẻ: thẻ "Sắp hết hạn" sắp theo hạn, còn lại mới báo hoàn trước (máy chủ quyết).
-  const [sortPick, setSortPick] = React.useState<PackVideoReturnSort | null>(null);
-  const sort: PackVideoReturnSort = sortPick ?? (card === "due_soon" ? "due" : "requested");
+  // Mặc định sắp theo HẠN (25/11/2026): đơn sắp hết hạn lên đầu → đã quá hạn (vừa quá hạn trước) → chưa có
+  // hạn (mới báo hoàn trước). Shop không có đơn nào có hạn thì thứ tự y như "mới báo hoàn trước".
+  const [sort, setSort] = React.useState<PackVideoReturnSort>("due");
   const [pageSize, setPageSize] = React.useState(20);
-  const pages = useCursorPages(JSON.stringify([card, sort, pageSize]));
+  // Ô tìm: gõ xong ~300 ms mới hỏi máy chủ.
+  const [search, setSearch] = React.useState("");
+  const [term, setTerm] = React.useState("");
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setTerm(search.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+  const pages = useCursorPages(JSON.stringify([card, sort, pageSize, term]));
   const nowMs = useMinuteClock();
 
   const q = useApiQuery({
-    queryKey: qk.packVideoReturns({ card, sort, limit: pageSize, cursor: pages.cursor ?? null }),
-    queryFn: () => fetchPackVideoReturns({ card, sort, limit: pageSize, cursor: pages.cursor }),
+    queryKey: qk.packVideoReturns({ card, sort, q: term, limit: pageSize, cursor: pages.cursor ?? null }),
+    queryFn: () => fetchPackVideoReturns({ card, sort, q: term, limit: pageSize, cursor: pages.cursor }),
   });
   // Mũi tên cố định một chiều: hạn = gần hết nhất trước, giờ báo hoàn = mới nhất trước.
   const sortState = { key: sort, dir: sort === "due" ? ("asc" as const) : ("desc" as const) };
-  const onSort = (s: { key: PackVideoReturnSort }) => setSortPick(s.key);
+  const onSort = (s: { key: PackVideoReturnSort }) => setSort(s.key);
   const rows: PackVideoReturnRow[] = React.useMemo(() => q.data?.items ?? [], [q.data]);
   const nextCursor = q.data?.nextCursor ?? null;
 
@@ -92,17 +117,33 @@ export function ReturnsTab() {
     <div className="space-y-5">
       <ReturnVideoCards
         value={card}
-        onToggle={(key) => {
-          setCard((cur) => (cur === key ? "all" : key));
-          setSortPick(null);
-        }}
+        onToggle={(key) => setCard((cur) => (cur === key ? "all" : key))}
         cards={q.data?.cards ?? {}}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Mỗi dòng là một đơn có hoàn. Mở hồ sơ để xem video đóng và video khui cạnh nhau.
-        </p>
+        <div className="relative w-full sm:w-80">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9 pr-9"
+            aria-label="Tìm đơn hoàn theo mã đơn hoặc mã vận đơn"
+            placeholder="Tìm mã đơn, mã vận đơn…"
+            autoComplete="off"
+            spellCheck={false}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Xóa mã đang tìm"
+              className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
         <Link href="/warehouse/returns" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Xử lý ở Đối soát đơn hoàn
           <ArrowUpRight className="size-3.5" />
@@ -118,7 +159,11 @@ export function ReturnsTab() {
           ) : rows.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               <PackageSearch className="mx-auto mb-2 size-8" />
-              {card === "all" ? "Chưa có đơn hoàn nào." : "Không có đơn hoàn nào khớp thẻ đang chọn."}
+              {term
+                ? "Không có đơn hoàn nào khớp mã đang tìm."
+                : card === "all"
+                  ? "Chưa có đơn hoàn nào."
+                  : "Không có đơn hoàn nào khớp thẻ đang chọn."}
             </div>
           ) : (
             <Refreshing active={q.placeholder}>
@@ -145,8 +190,7 @@ export function ReturnsTab() {
                         title="Mới báo hoàn trước"
                       />
                     </TableHead>
-                    <TableHead>Video đóng</TableHead>
-                    <TableHead>Video khui</TableHead>
+                    <TableHead>Video</TableHead>
                     <TableHead>Tình trạng kho</TableHead>
                     <TableHead className="text-right">Thao tác</TableHead>
                   </TableRow>
@@ -165,7 +209,7 @@ export function ReturnsTab() {
                           <div className="mt-1 flex items-center gap-2">
                             <CodeWithCopy value={o.trackingCode} what="mã vận đơn" />
                             {shop && (
-                              <span className={cn(TEXT_SUB, "max-w-40 truncate")} title={shop}>
+                              <span className={cn(TEXT_SUB, "max-w-[5.5rem] truncate")} title={shop}>
                                 · {shop}
                               </span>
                             )}
@@ -176,7 +220,7 @@ export function ReturnsTab() {
                         </TableCell>
                         <TableCell className="tabular-nums">
                           {o.returnRequestedAt ? (
-                            formatDateTime(o.returnRequestedAt)
+                            shortDateTime(o.returnRequestedAt)
                           ) : (
                             <span className={TEXT_SUB}>Chưa rõ</span>
                           )}
@@ -184,13 +228,14 @@ export function ReturnsTab() {
                           <div className={cn(TEXT_SUB, "mt-0.5")}>{returnTypeLabel(o.returnType)}</div>
                         </TableCell>
                         <TableCell>
-                          <VideoPresence video={o.packVideo} missingLabel="Không có" />
+                          {/* Video đóng + video khui gộp một cột (25/11/2026) — cùng chủ đề, bảng bớt một cột. */}
+                          <div className="flex flex-col items-start gap-1">
+                            <VideoPresence kind="Đóng" video={o.packVideo} missingLabel="không có" />
+                            <VideoPresence kind="Khui" video={o.unboxVideo} missingLabel="chưa quay" />
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <VideoPresence video={o.unboxVideo} missingLabel="Chưa quay" />
-                        </TableCell>
-                        <TableCell>
-                          <MetaBadge meta={PACK_VIDEO_RETURN_STATUS_META[o.returnStatus]} />
+                          <StockStatus meta={PACK_VIDEO_RETURN_STATUS_META[o.returnStatus]} />
                         </TableCell>
                         <TableCell className="text-right">
                           {o.packVideo || o.unboxVideo ? (

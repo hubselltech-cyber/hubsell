@@ -229,6 +229,7 @@ router.get(
       await listReturnOrders(scopeOf(req), {
         card: RETURN_CARDS.includes(card) ? card : "all",
         sort: RETURN_SORTS.includes(sort) ? sort : undefined,
+        q: str(req.query.q) || undefined,
         cursor: str(req.query.cursor) || undefined,
         limit: Number(req.query.limit),
       })

@@ -5,6 +5,8 @@ import type { AuthRequest } from "../middleware/auth";
 import { channelScope } from "../lib/channel-filter";
 import { shipStockTx } from "../integrations/order-stock";
 import { parseDateRange } from "../lib/date-range";
+import { complaintDueOf, complaintDueView } from "../lib/return-complaint-due";
+import { loadComplaintDueSoon } from "../lib/return-complaint-due-sql";
 import { attachItemImages } from "../services/item-images";
 import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
 import {
@@ -123,7 +125,8 @@ function agingOf(
  *   · `from` / `to` (yyyy-mm-dd): lọc theo NGÀY SÀN BÁO HOÀN — danh sách và mọi số đếm
  *     cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
  *   · `status`: TÌNH TRẠNG KHO (các thẻ to trên web) — một ReturnStatus, ISSUES, SCANNED,
- *     hoặc OVERDUE = chờ hàng về đã quá hạn.
+ *     OVERDUE = chờ hàng về đã quá hạn, hoặc DUE_SOON = sắp hết hạn khiếu nại (còn ≤ 24 giờ,
+ *     sắp theo hạn gần nhất trước, bỏ qua bộ lọc ngày).
  *   · `ship`: TRẠNG THÁI VẬN CHUYỂN (hàng chip) — lib/return-shipping.ts.
  *   · `sort=newest`: sàn báo hoàn mới nhất trước; mặc định đơn chờ lâu nhất trước.
  * Số trên thẻ (`summary`) không đổi theo `status` / `ship`; số trên chip
@@ -147,21 +150,21 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     };
 
     // Phạm vi + ô tìm — nền chung cho số trên thẻ; hai bộ lọc xếp chồng lên trên.
-    const base: Prisma.OrderWhereInput = {
-      ...scope,
-      ...(search
-        ? {
-            OR: [
-              { orderCode: { contains: search, mode: "insensitive" as const } },
-              { trackingCode: { contains: search, mode: "insensitive" as const } },
-              { customerName: { contains: search, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
+    const searchWhere: Prisma.OrderWhereInput = search
+      ? {
+          OR: [
+            { orderCode: { contains: search, mode: "insensitive" as const } },
+            { trackingCode: { contains: search, mode: "insensitive" as const } },
+            { customerName: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
+    const base: Prisma.OrderWhereInput = { ...scope, ...searchWhere };
 
     // Bộ lọc TÌNH TRẠNG KHO. `statuses` = các returnStatus lọt qua (null = tất cả).
     const overdueOnly = statusQ === "OVERDUE";
+    const dueSoonOnly = statusQ === "DUE_SOON";
+    const now = new Date();
     const statuses: ReturnStatus[] | null =
       statusQ === "ISSUES"
         ? ISSUE_STATUSES
@@ -218,19 +221,22 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       },
     };
 
-    const [total, rows, byStatus, awaiting, searchedAwaiting] = await Promise.all([
-      prisma.order.count({ where }),
-      prisma.order.findMany({
-        where,
-        // Mặc định đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước. Đơn chưa rõ
-        // mốc sàn báo hoàn xếp cuối ở cả hai chiều.
-        orderBy: newestFirst
-          ? [{ returnRequestedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
-          : [{ returnRequestedAt: "asc" }, { createdAt: "asc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include,
-      }),
+    const [dueSoon, total0, rows0, byStatus, awaiting, searchedAwaiting] = await Promise.all([
+      loadComplaintDueSoon(channelScope(req), now),
+      dueSoonOnly ? 0 : prisma.order.count({ where }),
+      dueSoonOnly
+        ? []
+        : prisma.order.findMany({
+            where,
+            // Mặc định đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước. Đơn chưa rõ
+            // mốc sàn báo hoàn xếp cuối ở cả hai chiều.
+            orderBy: newestFirst
+              ? [{ returnRequestedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
+              : [{ returnRequestedAt: "asc" }, { createdAt: "asc" }],
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            include,
+          }),
       // Đếm theo trạng thái, KHÔNG áp bộ lọc trạng thái để mọi thẻ đều có số
       prisma.order.groupBy({
         by: ["returnStatus"],
@@ -251,6 +257,33 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
           })
         : null,
     ]);
+
+    // Bộ lọc "Sắp hết hạn khiếu nại": danh sách đi từ tập đã sắp theo hạn (nhỏ, có trần), vẫn tôn trọng
+    // ô tìm + chip vận chuyển + phạm vi gian; bỏ qua bộ lọc ngày (việc gấp không biến mất vì đang xem kỳ khác).
+    let total = total0;
+    let rows = rows0;
+    if (dueSoonOnly) {
+      const rank = new Map(dueSoon.map((d, i) => [d.id, i]));
+      const matched = dueSoon.length
+        ? await prisma.order.findMany({
+            where: {
+              AND: [
+                { channel: channelScope(req), id: { in: dueSoon.map((d) => d.id) } },
+                searchWhere,
+                ...(shipQ ? [returnShippingWhere(shipQ)] : []),
+              ],
+            },
+            select: { id: true },
+          })
+        : [];
+      const ordered = matched.map((m) => m.id).sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
+      total = ordered.length;
+      const pageIds = ordered.slice((page - 1) * pageSize, page * pageSize);
+      const found = pageIds.length
+        ? await prisma.order.findMany({ where: { id: { in: pageIds } }, include })
+        : [];
+      rows = found.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+    }
 
     const totalCompensated = byStatus.reduce(
       (sum, g) => sum + Number(g._sum?.compensationAmount ?? 0),
@@ -280,6 +313,8 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       else if (agingLevel === "warning") summary.warning++;
       else if (agingLevel === "unknown") summary.unknown++;
     }
+    // Dải nhắc "sắp hết hạn khiếu nại" — số + hạn gần nhất (không theo bộ lọc ngày / ô tìm).
+    summary.dueSoon = dueSoon.length;
 
     // Số trên chip Trạng thái vận chuyển, đếm trong TÌNH TRẠNG KHO đang chọn (chưa áp
     // chính bộ lọc vận chuyển, để chip nào cũng có số). Đơn kho đã nhận luôn là
@@ -310,7 +345,21 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
         ),
         // Cột "Trạng thái vận chuyển": tính từ cột đã có, không gọi sàn.
         returnShipping: returnShippingOf(o),
+        // Cột "Thời hạn": hạn khiếu nại (docs/HAN-KHIEU-NAI-DON-HOAN.md) — hạn sàn trả trước, thiếu thì theo luật.
+        complaintDue: complaintDueView(
+          complaintDueOf({
+            platform: o.channel.channelName,
+            returnStatus: o.returnStatus,
+            returnedAt: o.returnedAt,
+            returnDeliveredAt: o.returnDeliveredAt,
+            platformReturnStatus: o.platformReturnStatus,
+            returnTrackingCode: o.returnTrackingCode,
+            returnComplaintDueAt: o.returnComplaintDueAt,
+            returnComplaintDueProvisional: o.returnComplaintDueProvisional,
+          })
+        ),
       })),
+      dueSoonNearestAt: dueSoon[0]?.dueAt ? dueSoon[0].dueAt.toISOString() : null,
       total,
       page,
       pageSize,

@@ -19,8 +19,8 @@ import { PACK_VIDEO_GET_EXPIRES_SEC, PACK_VIDEO_PAGE_DEFAULT, PACK_VIDEO_PAGE_MA
 import { CANCELLED_AFTER_SHIP } from "../../integrations/cancelled-after-ship";
 import { getR2Storage } from "../../integrations/r2/client";
 import type { DateRangeFilter } from "../../lib/date-range";
-import { complaintDueOf, type ComplaintDue } from "../../lib/return-complaint-due";
-import { complaintDueSql } from "../../lib/return-complaint-due-sql";
+import { complaintDueOf, complaintDueView, type ComplaintDueView } from "../../lib/return-complaint-due";
+import { complaintDueSoonSql, complaintDueSql, utcTs } from "../../lib/return-complaint-due-sql";
 import { loadVariantNames } from "../../lib/order-line-names";
 import { keyBelongsToOwner, packVideoDownloadName } from "../../lib/pack-video-key";
 import { escapeLikePrefix, type PackVideoKind, type PackVideoStatus } from "../../lib/pack-video-rules";
@@ -568,33 +568,6 @@ export type ReturnCard = (typeof RETURN_CARDS)[number];
 export const RETURN_SORTS = ["requested", "due"] as const;
 export type ReturnSort = (typeof RETURN_SORTS)[number];
 
-/** Thẻ "Sắp hết hạn khiếu nại" = còn hạn và còn ≤ 24 giờ (cùng mốc tô đỏ của ô hạn, cùng mốc chuông lát 3). */
-export const COMPLAINT_DUE_SOON_HOURS = 24;
-
-/** Hạn khiếu nại gửi giao diện — `complaintDueOf` dạng JSON. */
-export type ReturnComplaintDueView =
-  | { state: "NOT_NEEDED" | "NOT_STARTED" | "UNKNOWN"; failedDelivery: boolean }
-  | {
-      state: "DUE";
-      dueAt: string;
-      source: "platform" | "platform_provisional" | "rule" | "estimate";
-      failedDelivery: boolean;
-      windowHours: number | null;
-    };
-
-function complaintDueView(d: ComplaintDue): ReturnComplaintDueView {
-  if (d.state === "DUE") {
-    return {
-      state: "DUE",
-      dueAt: d.dueAt.toISOString(),
-      source: d.source,
-      failedDelivery: d.failedDelivery,
-      windowHours: d.windowHours,
-    };
-  }
-  return { state: d.state, failedDelivery: d.state === "NOT_NEEDED" ? false : d.failedDelivery };
-}
-
 export interface ReturnOrderRow {
   orderId: string;
   orderCode: string;
@@ -608,7 +581,7 @@ export interface ReturnOrderRow {
   packVideo: { id: string; durationSec: number } | null;
   unboxVideo: { id: string; durationSec: number } | null;
   /** Hạn khiếu nại (docs/HAN-KHIEU-NAI-DON-HOAN.md): hạn sàn trả trước, thiếu thì theo luật. */
-  complaintDue: ReturnComplaintDueView;
+  complaintDue: ComplaintDueView;
 }
 
 /**
@@ -620,7 +593,7 @@ export interface ReturnOrderRow {
  */
 export async function listReturnOrders(
   scope: PackVideoScope,
-  page: { card?: ReturnCard; sort?: ReturnSort; cursor?: string; limit?: number; now?: Date }
+  page: { card?: ReturnCard; sort?: ReturnSort; q?: string; cursor?: string; limit?: number; now?: Date }
 ): Promise<{ cards: Record<ReturnCard, number>; items: ReturnOrderRow[]; nextCursor: string | null }> {
   const limit = clampLimit(page.limit);
   const offset = Math.max(0, Number.parseInt(page.cursor ?? "0", 10) || 0);
@@ -629,11 +602,8 @@ export async function listReturnOrders(
   // Thẻ "Sắp hết hạn" mặc định sắp theo hạn — gần hết hạn nhất lên đầu.
   const sort: ReturnSort = page.sort ?? (card === "due_soon" ? "due" : "requested");
   const due = complaintDueSql("o", "c");
-  // Cột thời gian của Order là `timestamp` KHÔNG múi giờ (giờ UTC). So với tham số Date thì Postgres
-  // đổi cột theo múi giờ của phiên → lệch 7 giờ khi phiên chạy giờ VN. Ép tham số về timestamp UTC.
-  const utc = (d: Date) => Prisma.sql`(${d.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
-  const nowTs = utc(now);
-  const soonUntil = utc(new Date(now.getTime() + COMPLAINT_DUE_SOON_HOURS * 3_600_000));
+  // Tham số Date phải ép về timestamp UTC (utcTs) — cột thời gian của Order không có múi giờ.
+  const nowTs = utcTs(now);
 
   const base = [Prisma.sql`c."userId" = ${scope.ownerId}`, Prisma.sql`o."returnStatus" <> 'NONE'`];
   if (scope.allowedChannelIds) {
@@ -653,7 +623,7 @@ export async function listReturnOrders(
     all: null,
     has_pack: pack,
     damaged_no_unbox: Prisma.sql`o."returnStatus" = 'DAMAGED' AND NOT ${unbox}`,
-    due_soon: Prisma.sql`${due} > ${nowTs} AND ${due} <= ${soonUntil}`,
+    due_soon: complaintDueSoonSql(now, "o", "c"),
     no_video: Prisma.sql`NOT ${pack} AND NOT ${unbox}`,
   };
 
@@ -666,7 +636,16 @@ export async function listReturnOrders(
     FROM "Order" o JOIN "Channel" c ON c."id" = o."channelId"
     WHERE ${and(base)}`);
 
-  const where = cardConds[card] ? [...base, cardConds[card] as Prisma.Sql] : base;
+  const where = cardConds[card] ? [...base, cardConds[card] as Prisma.Sql] : [...base];
+  // Ô tìm (25/11/2026): mã đơn / mã vận đơn / mã vận đơn chiều hoàn, chứa chuỗi. Chỉ lọc DANH SÁCH —
+  // số trên thẻ giữ nguyên để thẻ không nhảy theo từng ký tự gõ.
+  const q = (page.q ?? "").trim().slice(0, 64);
+  if (q) {
+    const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    where.push(
+      Prisma.sql`(o."orderCode" ILIKE ${like} OR o."trackingCode" ILIKE ${like} OR o."returnTrackingCode" ILIKE ${like})`
+    );
+  }
   const rows = await prisma.$queryRaw<
     {
       id: string;
@@ -692,8 +671,10 @@ export async function listReturnOrders(
     WHERE ${and(where)}
     ORDER BY ${
       sort === "due"
-        ? // Còn hạn (gần hết nhất trước) → đã quá hạn → không có hạn.
-          Prisma.sql`(${due} < ${nowTs}) ASC NULLS LAST, ${due} ASC NULLS LAST, o."returnRequestedAt" DESC NULLS LAST, o."id" DESC`
+        ? // Còn hạn (gần hết nhất trước) → đã quá hạn (VỪA quá hạn trước — đơn quá hạn lâu chìm xuống) → không có hạn.
+          Prisma.sql`(${due} <= ${nowTs}) ASC NULLS LAST,
+            (CASE WHEN ${due} > ${nowTs} THEN ${due} END) ASC NULLS LAST,
+            ${due} DESC NULLS LAST, o."returnRequestedAt" DESC NULLS LAST, o."id" DESC`
         : Prisma.sql`o."returnRequestedAt" DESC NULLS LAST, o."id" DESC`
     }
     LIMIT ${limit + 1} OFFSET ${offset}`);

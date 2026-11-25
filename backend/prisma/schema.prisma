@@ -1915,6 +1915,11 @@ model Order {
   // Chỉ mục MỘT PHẦN "đơn kho đã báo hỏng / xóa sổ" (dòng Thất thu theo ngày báo hỏng, 20/11/2026)
   // chỉ có trong SQL migration 20261120230000_order_return_damaged_at:
   //   Order_return_damaged_idx (channelId) WHERE returnStatus IN ('DAMAGED', 'WRITTEN_OFF')
+  // Chỉ mục MỘT PHẦN "đơn hoàn còn mở, có thể có hạn khiếu nại" (dải nhắc Sắp hết hạn, 25/11/2026)
+  // chỉ có trong SQL migration 20261125210000_order_return_complaint_due_idx — vị từ khớp từng chữ với
+  // complaintDueCandidateSql (lib/return-complaint-due-sql.ts):
+  //   Order_return_complaint_due_idx (channelId) WHERE returnStatus IN ('AWAITING','RECEIVED','DAMAGED')
+  //     AND (returnComplaintDueAt IS NOT NULL OR returnDeliveredAt IS NOT NULL OR returnedAt IS NOT NULL)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

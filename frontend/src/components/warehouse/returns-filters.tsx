@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlarmClock,
   ArrowDown,
   ArrowUp,
   PackageCheck,
@@ -16,13 +17,15 @@ import {
 } from "@/components/dashboard/dashboard-card";
 import type { ReturnShippingFilter } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { formatSpan } from "@/lib/return-complaint-due";
 import { cn } from "@/lib/utils";
 
 /**
- * BA BỘ ĐIỀU KHIỂN DANH SÁCH của Đối soát đơn hoàn (anh Trung chốt 13/11/2026 tối):
+ * BỐN BỘ ĐIỀU KHIỂN DANH SÁCH của Đối soát đơn hoàn (ba bộ đầu anh Trung chốt 13/11/2026 tối):
  *   1. ReturnStatusCards   — các thẻ số to, BẤM ĐƯỢC = bộ lọc tình trạng kho;
  *   2. ReturnShippingChips — hàng chip = bộ lọc Trạng thái vận chuyển;
- *   3. ReturnSortToggle    — mũi tên nền tròn ở tiêu đề cột Thời gian chờ.
+ *   3. ReturnSortToggle    — mũi tên nền tròn ở tiêu đề cột Thời hạn;
+ *   4. ReturnDueSoonStrip  — dải nhắc một dòng "sắp hết hạn khiếu nại" (25/11/2026), bấm = lọc.
  * Trang (app/warehouse/returns/page.tsx) giữ state; tệp này chỉ vẽ.
  */
 
@@ -33,7 +36,9 @@ export type ReturnStatusFilter =
   | "RECEIVED"
   | "OVERDUE"
   | "ISSUES"
-  | "RECEIVED_INTACT";
+  | "RECEIVED_INTACT"
+  /** Sắp hết hạn khiếu nại (còn ≤ 24 giờ) — bật từ dải nhắc, không có thẻ riêng. */
+  | "DUE_SOON";
 
 /** Nhóm trạng thái của thẻ Hàng hỏng · khiếu nại sàn — khớp filter ISSUES ở backend. */
 const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
@@ -88,7 +93,7 @@ export function ReturnStatusCards({
 }: {
   value: ReturnStatusFilter;
   /** Bấm một thẻ; trang tự quyết bật hay bỏ lọc. */
-  onToggle: (key: Exclude<ReturnStatusFilter, "">) => void;
+  onToggle: (key: Exclude<ReturnStatusFilter, "" | "DUE_SOON">) => void;
   /** Số đếm theo trạng thái + `overdue` từ GET /api/warehouse/returns. */
   summary: Record<string, number>;
   overdueDays: number;
@@ -97,7 +102,7 @@ export function ReturnStatusCards({
   const overdue = summary.overdue ?? 0;
   const damaged = summary.DAMAGED ?? 0;
   const issues = ISSUE_KEYS.reduce((sum, k) => sum + (summary[k] ?? 0), 0);
-  const card = (key: Exclude<ReturnStatusFilter, "">) => ({
+  const card = (key: Exclude<ReturnStatusFilter, "" | "DUE_SOON">) => ({
     active: value === key,
     onToggle: () => onToggle(key),
   });
@@ -243,7 +248,7 @@ export function ReturnSortToggle({
       }
       className="inline-flex items-center gap-1.5 font-medium text-foreground"
     >
-      Thời gian chờ
+      Thời hạn
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full text-white",
@@ -253,5 +258,55 @@ export function ReturnSortToggle({
         <Arrow className="size-3.5" strokeWidth={2.5} />
       </span>
     </button>
+  );
+}
+
+/**
+ * DẢI NHẮC "SẮP HẾT HẠN KHIẾU NẠI" — một dòng mỏng, chỉ hiện khi có đơn còn ≤ 24 giờ (hoặc đang lọc theo nó).
+ * Bấm = lọc danh sách về đúng các đơn đó, hạn gần nhất lên đầu; bấm lại để bỏ. Không làm thẻ số thứ sáu:
+ * hàng thẻ là tình trạng kho, còn đây là việc có đồng hồ. KHÔNG viết lớp dark: — globals.css đã lật thang màu.
+ */
+export function ReturnDueSoonStrip({
+  count,
+  nearestAt,
+  nowMs,
+  active,
+  onToggle,
+}: {
+  /** Số đơn còn hạn và còn ≤ 24 giờ (`summary.dueSoon`). */
+  count: number;
+  /** Hạn gần nhất (ISO) — null khi không có đơn nào. */
+  nearestAt: string | null;
+  nowMs: number;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  if (count === 0 && !active) return null;
+  const left = nearestAt ? new Date(nearestAt).getTime() - nowMs : 0;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+      <AlarmClock className="size-4 shrink-0 text-rose-700" aria-hidden />
+      {count > 0 ? (
+        <span>
+          <b className="font-semibold tabular-nums">{formatNumber(count)} đơn hoàn</b> sắp hết hạn khiếu nại
+          {left > 0 && (
+            <>
+              {" "}
+              · gần nhất còn <b className="font-semibold tabular-nums">{formatSpan(left)}</b>
+            </>
+          )}
+        </span>
+      ) : (
+        <span>Không còn đơn hoàn nào sắp hết hạn khiếu nại.</span>
+      )}
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onToggle}
+        className="ml-auto rounded font-semibold text-rose-700 underline decoration-rose-700/40 underline-offset-4 hover:decoration-rose-700"
+      >
+        {active ? "Bỏ lọc" : `Xem ${formatNumber(count)} đơn`}
+      </button>
+    </div>
   );
 }

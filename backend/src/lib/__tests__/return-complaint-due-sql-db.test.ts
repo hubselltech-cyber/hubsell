@@ -11,7 +11,7 @@ import { Prisma, ReturnStatus } from "@prisma/client";
 import { CANCELLED_AFTER_SHIP } from "../../integrations/cancelled-after-ship";
 import { prisma } from "../prisma";
 import { complaintDueOf } from "../return-complaint-due";
-import { complaintDueSql } from "../return-complaint-due-sql";
+import { complaintDueCandidateSql, complaintDueSql } from "../return-complaint-due-sql";
 
 const dbReady: boolean = await (async () => {
   try {
@@ -56,8 +56,8 @@ describe.skipIf(!dbReady)("complaintDueSql khớp complaintDueOf", () => {
         returnComplaintDueAt: c.returnComplaintDueAt?.toISOString() ?? null,
       }))
     );
-    const rows = await prisma.$queryRaw<{ idx: number; due: Date | null }[]>(Prisma.sql`
-      SELECT o.idx, ${complaintDueSql("o", "o")} AS due
+    const rows = await prisma.$queryRaw<{ idx: number; due: Date | null; candidate: boolean }[]>(Prisma.sql`
+      SELECT o.idx, ${complaintDueSql("o", "o")} AS due, (${complaintDueCandidateSql("o")}) AS candidate
       FROM jsonb_to_recordset(${json}::jsonb) AS o(
         idx int, "channelName" text, "returnStatus" text, "returnedAt" timestamptz,
         "returnDeliveredAt" timestamptz, "platformReturnStatus" text, "returnComplaintDueAt" timestamptz)
@@ -70,6 +70,9 @@ describe.skipIf(!dbReady)("complaintDueSql khớp complaintDueOf", () => {
       return (r.due?.getTime() ?? null) !== expected;
     });
     expect(mismatches.map((m) => ({ ...cases[m.idx], sql: m.due }))).toEqual([]);
+    // Vị từ của chỉ mục một phần không được loại đơn nào CÓ hạn (loại nhầm = đơn sắp hết hạn biến mất khỏi dải nhắc).
+    expect(rows.filter((r) => r.due !== null && !r.candidate).map((r) => cases[r.idx])).toEqual([]);
+    expect(rows.some((r) => !r.candidate)).toBe(true);
     // Bộ ca phải có đủ các nhánh: hạn sàn, luật, ước tính, không hạn.
     const states = new Set(cases.map((c) => {
       const d = complaintDueOf(c);

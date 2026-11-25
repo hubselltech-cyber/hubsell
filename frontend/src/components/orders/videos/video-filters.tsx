@@ -76,7 +76,7 @@ export function VideoChips({
   );
 }
 
-/** Ba thẻ lọc của tab Đơn hoàn. Số trên thẻ không đổi theo thẻ đang chọn. */
+/** Bốn thẻ lọc của tab Đơn hoàn — việc có hạn đứng đầu. Số trên thẻ không đổi theo thẻ đang chọn. */
 export function ReturnVideoCards({
   value,
   onToggle,
@@ -97,6 +97,15 @@ export function ReturnVideoCards({
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <FilterCard
+        {...card("due_soon")}
+        title="Sắp hết hạn khiếu nại"
+        value={formatNumber(dueSoon)}
+        icon={AlarmClock}
+        tone={dueSoon > 0 ? "negative" : "neutral"}
+        featured={dueSoon > 0}
+        subtitle="Còn dưới 24 giờ để kiểm hàng / khiếu nại sàn"
+      />
+      <FilterCard
         {...card("has_pack")}
         title="Có hoàn · có video đóng"
         value={formatNumber(hasPack)}
@@ -112,15 +121,6 @@ export function ReturnVideoCards({
         tone={damaged > 0 ? "negative" : "neutral"}
         featured={damaged > 0}
         subtitle="Kho báo hỏng nhưng chưa quay lúc mở kiện"
-      />
-      <FilterCard
-        {...card("due_soon")}
-        title="Sắp hết hạn khiếu nại"
-        value={formatNumber(dueSoon)}
-        icon={AlarmClock}
-        tone={dueSoon > 0 ? "negative" : "neutral"}
-        featured={dueSoon > 0}
-        subtitle="Còn ≤ 24 giờ để kiểm hàng / khiếu nại sàn"
       />
       <FilterCard
         {...card("no_video")}

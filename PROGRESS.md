@@ -5,6 +5,60 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 khuya (3) — ĐÃ dựng chỉ mục `Order_return_complaint_due_idx` trên prod, đo lại 6,9 giây → 0,3 giây; chưa commit / push
+
+- Anh: "Em tự mở chrome lên chạy đi" → chạy `CREATE INDEX CONCURRENTLY` ở Supabase SQL Editor: Success, `indisvalid = true`, 144 kB.
+- Đo lại câu "sắp hết hạn" của shop 3.206 đơn chờ: đi đúng chỉ mục mới, **303 ms / 1.866 trang đệm** (trước 6.866 ms / 36.344 trang).
+  Lần hai vẫn 345 ms → coi ~0,3 giây là mức thật của shop nặng nhất.
+- Dọn seed local + xóa `_tmp-hkn2-seed.ts`. **⏳ anh cho lệnh commit + push** lát 2b + 2c (docs mục 15–16).
+- Để lát 3: lưu sẵn hạn hiệu lực thành cột để chỉ mục sắp theo hạn (đơn quá hạn lâu vẫn nằm trong chỉ mục hiện tại).
+
+---
+## Phiên 25/11 khuya (2) — Đo prod câu "sắp hết hạn": 6,9 giây → thêm chỉ mục một phần (local), CHƯA dựng trên prod, chưa commit
+
+- Anh: "Ổn, đo prod đi". Supabase SQL Editor, chỉ đọc: shop đông nhất 3.206 đơn chờ hàng về; `EXPLAIN ANALYZE` câu `loadDueSoon`
+  = **6.866 ms**, quét hết đơn của gian qua `Order_channelId_idx` (36.344 trang đệm), ra 0 dòng → không được push khi chưa có chỉ mục.
+- Sửa trên local: chỉ mục một phần `Order_return_complaint_due_idx` (migration `20261125210000_…`, chỉ CREATE INDEX IF NOT EXISTS)
+  + vị từ `complaintDueCandidateSql` trong câu truy vấn + test "không loại nhầm đơn có hạn". Local: dùng đúng chỉ mục, 0,3 ms.
+- **⏳ Anh chạy CREATE INDEX CONCURRENTLY trên prod** (câu ở docs/HAN-KHIEU-NAI-DON-HOAN.md mục 16.2) → em đo lại → mới push.
+- Chưa đo: câu `groupBy` sẵn có của Đối soát và câu đếm thẻ tab Đơn hoàn (cùng kiểu quét theo gian).
+
+---
+## Phiên 25/11 khuya — Hạn khiếu nại lát 2b + 2c: ô hạn mới + cột Thời hạn ở Đối soát đơn hoàn — CODE XONG TRÊN LOCAL, chưa commit / push
+
+- Anh: "ok em cứ làm đi anh xem" (sau khi chốt: cột hạn hiện ở CẢ HAI trang, Đối soát đơn hoàn là nơi chính, mã dùng chung).
+- **Ô hạn mới** dùng chung (`components/shared/complaint-due-cell.tsx`): viên hồng + đồng hồ khi còn ≤ 24 giờ, bỏ bậc cam cho kiện
+  khách trả, "hết 05:40 ngày mai", dự kiến / ước tính nhìn ra được, câu "Quá hạn N ngày" giữ nguyên.
+- **Tab Đơn hoàn**: mặc định sắp theo hạn, thẻ Sắp hết hạn lên đầu, ô tìm mã đơn / mã vận đơn, gộp 2 cột video thành 1 → ở 1366 bảng
+  vừa khung (1.014 / 1.014 px, trước 1.312), đơn gấp nhất ở dòng 1 (trước dòng 9).
+- **Đối soát đơn hoàn**: cột "Thời gian chờ" → "Thời hạn" (đếm ngược khi có hạn, còn lại là số ngày chờ), dời lên ngay sau Mã đơn;
+  dải nhắc đỏ một dòng trên hàng thẻ, bấm = lọc + sắp theo hạn (`status=DUE_SOON`); cắt tên gian dài (lỗi có sẵn).
+- Kiểm: tsc backend + frontend sạch, eslint frontend sạch, 3 tệp test hạn 40 / 40; soi local 1280 / 1366 / 1440 / 1700, sáng + tối.
+- ⚠️ **Trước khi push**: EXPLAIN ANALYZE câu `loadDueSoon` (trang Đối soát tự làm mới 30 giây / lần) trên shop đông đơn hoàn nhất;
+  chậm thì dựng chỉ mục một phần CONCURRENTLY tay. Chưa soi màn prod. Seed tạm `_tmp-hkn2-seed.ts` chưa dọn.
+- Chi tiết + phần khác đề xuất + việc chưa làm: docs/HAN-KHIEU-NAI-DON-HOAN.md mục 15.
+
+---
+## Phiên 25/11 tối — Khảo sát giao diện Hạn khiếu nại + đề xuất thiết kế lại (CHƯA CODE, chờ anh duyệt)
+
+- Anh: "không cần soi lại [prod]… phần giao diện cần khảo sát kỹ lưỡng… nghiên cứu từ cấu trúc cho tới giao diện như một senior".
+- Soi màn hiện tại trên local (20 đơn thử, 1366 × 768): đơn gấp nhất nằm dòng 9 / 20; chỉ 1 dòng thấy không cần cuộn; bảng 1.312 px
+  trong khung 1.014 px → cuộn ngang; 4 dòng cam gồm cả hạn dự kiến / ước tính.
+- Chẩn đoán chính: cột đặt sai chỗ (tab Đơn hoàn của Video đóng hàng — cổng mới mở cho admin@hubsell.vn, nhân viên kho không thấy,
+  không có nút thao tác); trang không phải danh sách việc; ngưỡng cam 48 giờ tô mọi kiện vừa về; hạn chắc / dự kiến / ước tính trông
+  như nhau; không có chuông kéo khách vào.
+- Đề xuất: (1) chuông + số ở menu, (2) Đối soát đơn hoàn là nhà chính — gộp vào cột Thời gian chờ thành "Thời hạn" + dải nhắc một
+  dòng, (3) tab Đơn hoàn giữ vai hồ sơ bằng chứng; ô hạn mới dùng chung. Chi tiết + 4 câu chờ anh: docs/HAN-KHIEU-NAI-DON-HOAN.md mục 14.
+- Local đang mở sẵn: backend 4010 + frontend 3010, tab Đơn hoàn, dữ liệu thử `backend/scripts/_tmp-hkn2-seed.ts` (TỆP TẠM — chạy
+  `cleanup` rồi xóa khi anh xem xong). Chưa kiểm: màn prod thật; đơn đã khiếu nại trên sàn có còn đếm ngược không.
+
+---
+## Phiên 25/11 20:04 — Tác vụ hẹn giờ Hạn khiếu nại lát 2 chạy lại: việc đã xong từ trước, không làm gì thêm
+
+- Lát 2 đã lên prod `3c792064` (giờ git 23/11 20:53 — phiên ghi "25/11 tối" bên dưới thật ra là **tối 23/11**, nhãn ngày lệch, chưa sửa chữ).
+- Soi lại prod 25/11: **chưa làm**, Claude in Chrome không kết nối. Không code / commit / push. Ghi ở docs/HAN-KHIEU-NAI-DON-HOAN.md mục 13.
+
+---
 ## Phiên 25/11 trưa — Khách mới "kéo sản phẩm về nhưng không nhập được giá vốn" = trang Giá vốn bị rào RSS chặn cho MỌI shop — sửa lớp 1 + 2 (rào theo cỡ lượt, Quảng cáo nạp dòng khác 0)
 
 - **Triệu chứng đo prod (log web Render, 12:55 → 13:45 VN):** 51/51 lượt `GET /api/finance/sku-products` bị `[Rào] sku-products: từ chối
@@ -26,6 +80,38 @@
   nạp đủ), đường lui `ADS_LOAD_ZERO_PERF_ROWS=1`; gộp lượt trùng đang chạy. Test đối chứng cũ = mới 4/4, rào qua app thật 3/3 (mã cũ đỏ
   đúng ca gian nhỏ). Đo gian giả cỡ khách: RSS +123 MB → +22 MB/lượt. 7 test sổ cái đỏ sẵn (đối chứng stash). Chưa soi màn local (tài
   khoản thử hết gói).
+- **LÊN PROD `9d9706e1`** (web 14:24, worker 14:23; docs 8.4): máy mới tải được shop 2.877 dòng ngay lúc 14:24:00 (máy cũ còn từ chối tới
+  14:23:30). CHƯA đo RSS khi gian lớn mở trang Quảng cáo trên prod; chưa kiểm bundle Vercel; lớp 3 chưa làm.
+- **20:30 lượt lịch tự động rà `9d9706e1` + đo log (chỉ đọc, docs 8.5):** mã không thêm rủi ro quy mô lớn (IN ≤ 5.000 id như include cũ,
+  EXPLAIN gian lớn nhất 0,7–0,9 s ca xấu; Map gộp lượt xóa trong finally, 6 người gọi không sửa kết quả). Log: 0 `[Rào]` trên máy mới ✅;
+  nhưng web **OOM lại 18:24**, RSS máy mới vẫn kẹt 450–474 MB (heap 75–107). Nghi phạm kế: `/api/quang-cao/shopee/recommendations`
+  (`ads-recommend-data.ts`) nạp ~120 nghìn dòng toàn 0 ở 2 gian lớn, có mặt ở cả 3 lần SÁT TRẦN. ⏳ anh chốt: lớp 2c / log `[ads-load]` /
+  trần đồng thời sku-products cỡ vừa (sau deploy đã có lượt 4.871 dòng lúc RSS 451 MB).
+
+---
+## Phiên 25/11 — Xóa cả Tổng kho khách hoaphamsoc2025@gmail.com trên PROD (anh: "reset Tổng kho … chỉ sản phẩm trong Tổng kho thôi") — chỉ dữ liệu
+
+- **Email lệch:** anh gửi `hoaphamsoc2502@gmail.com` — prod không có; gần nhất `hoaphamsoc2025@gmail.com` (user `cmwvlivyv1mbolr3wf8t3n21y`,
+  đăng ký 11:00 25/11 giờ VN). Em báo lệch + số, **anh xác nhận "Đúng, xóa đi"**.
+- **Đếm trước:** 1 gian Shopee, đồng bộ tồn TẮT (gian + ghi đè dòng sàn đều 0); 698 sản phẩm (tạo cùng lúc 11:39, tổng tồn 12.709),
+  463 nhật ký kho, 0 tồn vị trí, 698/698 dòng sàn đang nối, 0 dòng sàn nối giá vốn riêng 0 mà giá kho > 0, 4 dòng đơn + 4 dòng sổ trỏ mã kho.
+- **Đã làm (Supabase SQL Editor, một lượt):** sao lưu 6 bảng `_bak_20261125_hps_{product,inventory_log,stock_levels,channel_product,
+  order_item_link,ledger_link}` (bật RLS) → `order_line_ledger.productId` NULL → `DELETE FROM "Product"`. Đếm lại: 0 sản phẩm, 0 nhật ký,
+  0 dòng sàn / dòng đơn / sổ còn nối; 698 dòng sàn còn nguyên (chưa nối). Đơn cũ giữ giá vốn chụp.
+- **Còn chờ:** DROP 6 bảng sao lưu sau ~25/12/2026 nếu khách không đòi lại (hỏi anh).
+
+---
+## Phiên 24/11 khuya (2) — Xóa cả Tổng kho khách nguyentrunghuy1408@gmail.com trên PROD (anh: "xóa hết trong Tổng Kho để khách đăng lại sản phẩm từ đầu") — chỉ dữ liệu
+
+- **Khách:** user `cmsmveom00ukuk13p50tno4uv`; gian Shopee + TikTok ACTIVE, Lazada DISCONNECTED; cả 3 TẮT đồng bộ tồn; `stockModel` LEGACY;
+  không phiếu kho / NCC / việc đẩy tồn chờ / mẫu KOC.
+- **Đếm trước (báo anh):** 1.048 sản phẩm (300 còn tồn, tổng 24.484), 2.760 nhật ký kho, 315 tồn theo vị trí, 1.345 dòng sàn đang nối,
+  8.207 dòng đơn + 8.207 dòng sổ lãi dòng đơn trỏ mã kho; 167 dòng sàn nối không có giá vốn riêng (lấy giá kho).
+- **Anh chọn "Xóa thẳng, không chép giá"** → 167 dòng sàn đó nay giá vốn 0 tới khi khách nối lại / nhập giá (khác ca admin 18/11).
+- **Đã làm (Supabase SQL Editor, một lượt):** sao lưu 6 bảng `_bak_20261124_nth_{product,inventory_log,stock_levels,channel_product,
+  order_item_link,ledger_link}` (bật RLS) → `order_line_ledger.productId` NULL → `DELETE FROM "Product"`. Đếm lại: 0 sản phẩm, 0 nhật ký,
+  0 tồn vị trí, 0 dòng sàn / dòng đơn / sổ còn nối; 4.261 dòng sàn của khách còn nguyên (chưa nối). Đơn cũ giữ giá vốn chụp.
+- **Còn chờ:** DROP 6 bảng sao lưu sau ~24/12/2026 nếu khách không đòi lại (hỏi anh).
 
 ---
 ## Phiên 24/11 khuya — HQ Kế toán nội bộ: ô tìm sổ quỹ theo GÓI / EMAIL khách — ĐÃ PUSH master (anh: "commit và push")
@@ -40,8 +126,24 @@
 - **Phạm vi:** lọc trên dữ liệu KỲ đang xem (sổ vài chục dòng/tháng) — không thêm API, không đụng backend, không gọi thêm.
 - **Đã kiểm:** tsc + eslint sạch, `grep dark:` không thêm lớp nào. Local 1280 / 1440 / 1700, sáng + tối (chip chọn trong tối nền sáng chữ
   tối), đo JS tràn trong thẻ = 0; thử gõ "huong" (không dấu), email `newshop@…`, chip Business, Tìm cả năm, ca 0 dòng.
-- **Dữ liệu thử local:** `backend/scripts/_tmp-hq-search-seed.ts` (6 phiếu thu đánh dấu `TMP-HQ-SEARCH` + 1 khách email dài) — chạy
-  `cleanup` rồi xóa tệp sau khi anh xem xong.
+- **Dữ liệu thử local:** 6 phiếu thu `TMP-HQ-SEARCH` + 1 khách email dài — ĐÃ DỌN 24/11 (anh: "Dọn đi"), tệp seed tạm đã xóa.
+- **Prod:** commit `941d0c0e`, đã thấy chữ mới trong JS app.hubsell.vn (app.hubsell.tech nay chuyển hướng sang .vn).
+
+---
+## Phiên 24/11 tối — Video đóng hàng: M2 thiết kế lại theo mốc 1 TRIỆU bàn cùng quay — KHẢO SÁT + PHƯƠNG ÁN, chưa code
+
+- **Anh:** "mình cứ làm tiếp M2 đi… khảo sát và tư duy chuẩn để khớp với mô hình lớn. giả sử có 1 triệu gian hàng đẩy video cùng lúc".
+  Toàn bộ ở `docs/VIDEO-DONG-HANG-THIET-KE.md` **mục 29** (đọc mã + 2 lượt tra trang gốc Cloudflare / Supabase / Render / báo VN).
+- **Số:** 1 triệu bàn ≈ 25.000 clip / giây, ≈ 820 Gbps, 200 triệu clip / ngày, ≈ 20 PB lưu 25 ngày. Mã hôm nay ≈ 4 lượt gọi + ≈ 27 câu
+  database + 2 ghi MỖI clip → ≈ 100.000 lượt gọi / giây, ≈ 675.000 câu / giây: vỡ ở máy chủ + database mình trước, không phải R2.
+- **Thiết kế đích:** vé phiên quay (đường nóng không đọc DB để xác thực), vé tải lên không ghi DB, số dư giờ đọc qua đệm (luật "vượt
+  gói trừ lần sau" cho phép), ghi gộp nhóm lúc báo xong (trả lời sau khi giao dịch xong), sổ video CHỈ CHÈN chia theo ngày, tách được
+  sang DB riêng → ≈ 3 lượt gọi, ≈ 2 câu đọc, ≈ 0,02 giao dịch ghi / clip.
+- **Lát:** M2.1 vé phiên · M2.2 số giờ đi kèm câu trả lời · M2.3 đệm số dư · M2.5 EXPLAIN tra mã vận đơn · M2.4 vé không ghi + ghi gộp
+  (migration + đổi hợp đồng API) · M2.6 chặn gọi dồn + `Retry-After` · M2.7 DB video riêng khi M4 đòi.
+- **Tiền mốc 1 triệu bàn [S]:** kho ≈ 330.000 USD / tháng (lưu 300k + Class A 27k), máy + DB ≈ 10.000 USD; doanh thu giờ quay ≈ 4,6 triệu
+  USD → kho ≈ 7 %. Rủi ro ngoài tay: Cloudflare không công bố trần ghi R2 (phải xin nâng), 820 Gbps ≈ 2 % băng thông quốc tế VN.
+- **Chờ anh:** Q-1…Q-6 (mục 29.8). Chưa code dòng nào.
 
 ---
 ## Phiên 24/11 chiều — Video đóng hàng: quay cho NHÂN VIÊN theo quyền có sẵn — LÊN PROD `2fd1599a`, app TestFlight 1.5.1 (44) VALID
@@ -85,7 +187,7 @@
   chưa soi). Orb Trợ lý nổi vẫn che một phần nội dung khi cuộn (như trước) — chưa đụng.
 
 ---
-## Phiên 25/11 tối — Hạn khiếu nại lát 2 (giao diện tab Đơn hoàn) LOCAL + soi lại prod — CHƯA commit / push
+## Phiên 25/11 tối — Hạn khiếu nại lát 2 (giao diện tab Đơn hoàn) + soi lại prod — LÊN PROD `3c792064`
 
 - Tác vụ hẹn giờ 20h chạy; giữa chừng anh nhắn **"Làm luôn lát 2"** → em tự chốt 2 câu theo đề xuất: một ô = một hạn gần nhất
   (cửa 7 ngày TikTok/Lazada chỉ trong ô chi tiết); lát này chỉ tab Đơn hoàn, trang Đối soát đơn hoàn để sau.
@@ -97,8 +199,10 @@
   chỉ mục (lý do ở docs) → không có bước CREATE INDEX trên prod. Giao diện: cột Hạn khiếu nại sau Mã đơn (đếm ngược, đỏ/cam, dự kiến,
   ước tính, quá hạn, chờ kiện về), ô chi tiết rê/bấm, thẻ thứ 4, sắp tại tiêu đề; gộp Loại hoàn vào ô giờ báo hoàn + tên gian xuống
   dòng 2 để 1700 không cuộn ngang. Sửa kèm lỗi cũ: giao thất bại hiện nhầm "Khách trả hàng".
-- Đã kiểm: tsc 2 bên, eslint, test db 17 qua; local seed 14 ca soi 1280/1700 sáng + tối. Chưa kiểm: dữ liệu prod trên giao diện.
-- Tệp tạm: `backend/scripts/_tmp-hkn-seed.ts` (chạy `cleanup` rồi xóa); soi local phải chạy backend HTTP + biến R2 giả (khung trình duyệt app
+- Đã kiểm: tsc 2 bên, eslint, test db 17 qua; local seed 14 ca soi 1280/1700 sáng + tối.
+- **Anh: "Push lên prod" → `3c792064`** (Render 20:55, Vercel 20:56; docs mục 12). Soi màn thật tài khoản admin: thẻ 4 / 6 / 0 / 461, bảng
+  vừa khung; đơn kho báo hỏng cũ hiện "Quá hạn 55 ngày …" — anh chốt "Giữ nguyên". Mục 12 docs + dòng này chưa commit.
+- Tệp seed tạm đã cleanup + xóa trước khi commit; soi local phải chạy backend HTTP + biến R2 giả (khung trình duyệt app
   không tin cert tự ký; R2 trống thì cổng Video đóng hàng khóa) — chỉ là biến môi trường của tiến trình, không sửa .env / launch.json.
 
 ---

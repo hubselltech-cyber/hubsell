@@ -308,7 +308,7 @@ Một câu SQL gom theo sàn trên toàn bộ đơn có `returnStatus` ≠ NONE 
 - **440 đơn Shopee quá hạn mà kho chưa quét** (23/11: 48) — shop không dùng màn quét kho hoặc lỡ hạn thật; chưa phân biệt được.
   Con số này là lý do thẻ "Sắp hết hạn" chỉ đếm đơn **còn** hạn (không gộp đơn đã quá hạn vào thẻ).
 
-## 11. Lát 2 giao diện (25/11 tối) — LOCAL, CHƯA commit / push
+## 11. Lát 2 giao diện (25/11 tối) — LÊN PROD `3c792064` (mục 12)
 
 Anh nhắn "Làm luôn lát 2" khi tác vụ hẹn giờ đang chạy → em tự chốt 2 câu mục 5 theo đề xuất:
 1. **Một ô = một hạn gần nhất** (hạn kiểm hàng 2 ngày với kiện khách trả). Cửa khiếu nại 7 ngày của TikTok / Lazada chỉ nằm trong ô
@@ -346,3 +346,248 @@ Anh nhắn "Làm luôn lát 2" khi tác vụ hẹn giờ đang chạy → em t�
 **Đã kiểm**: tsc backend + frontend sạch, eslint sạch, test db 17 qua (cô lập video + thẻ mới + sắp theo hạn + so SQL ↔ hàm thuần);
 local seed 14 ca (`backend/scripts/_tmp-hkn-seed.ts`, TỆP TẠM — chạy `cleanup` rồi xóa) soi 1280 + 1700, sáng + tối, ô chi tiết, thẻ lọc;
 không lỗi console. **Chưa kiểm**: dữ liệu prod thật trên giao diện; trang Đối soát đơn hoàn; app mobile.
+
+## 12. Lên prod 25/11 tối (anh: "Push lên prod")
+
+- Push `3c792064` (chỉ tệp lát 2 + docs; tệp seed tạm đã `cleanup` và xóa). Không có migration → không có bẫy khóa Prisma.
+  Render backend báo `3c792064` lúc 20:55, Vercel "Deployment has completed" 20:56.
+- **Soi màn thật** (Chrome của anh, tài khoản admin@hubsell.vn, tab Đơn hoàn, sắp theo hạn): thẻ 4 / 6 / **0** / 461; bảng 1.568 px vừa
+  khung, không cuộn ngang. Dòng đầu "Còn 3 ngày 3 giờ · dự kiến đến 23:59 26/11 · Shopee" (hạn tạm), sau đó các đơn kho báo hỏng cũ
+  hiện "**Quá hạn 55 ngày 8 giờ** · hết lúc 12:07 29/09" (nguồn ước tính từ giờ kho quét), rồi "Chưa tính · chờ kiện về", "Không cần".
+- Để ý: đơn kho báo hỏng từ 09–10/2026 chưa chốt khiếu nại hiện "Quá hạn … ngày" — đúng theo luật 2 ngày, nhưng con số dài có thể
+  làm khách giật mình. **Anh chốt 25/11: "Giữ nguyên"** — vẫn hiện "Quá hạn N ngày …", không đổi cách nói.
+- Chưa đo thời gian câu đếm thẻ trên shop đông đơn hoàn nhất; chưa có chỉ mục (dựng khi lát 3 chuông).
+
+## 13. Tác vụ hẹn giờ chạy lại 20:04 ngày 25/11 — không làm gì thêm
+
+- Tác vụ `han-khieu-nai-lat-2-giao-dien` nổ đúng giờ hẹn 20:00 25/11, nhưng lát 2 **đã lên prod từ trước** (mục 10–12).
+- ⚠️ **Nhãn ngày ở mục 10–12 lệch:** commit `3c792064` có giờ git **23/11/2026 20:53** (đứng trước các commit 23–24/11), dòng soi
+  màn "Còn 3 ngày 3 giờ · đến 23:59 26/11" cũng khớp tối 23/11 → lát 2 thật ra làm và lên prod **tối 23/11**; chữ "25/11 tối" và cột
+  "23/11 → 25/11" ở mục 10 nên đọc là **23/11 ~15:27 → 23/11 tối**. Chưa sửa chữ trong các mục đó (đợi anh xác nhận).
+- **Soi lại prod lần này: CHƯA LÀM** — Claude in Chrome không kết nối lúc 20:04 (không ai ở máy để mở). Chưa có số thật của 25/11.
+- Không code, không commit, không push. Việc còn mở giữ nguyên: cột ở trang Đối soát đơn hoàn; lát 3 chuông (kèm chỉ mục).
+
+## 14. Khảo sát giao diện + đề xuất thiết kế lại (25/11 tối — anh: "nghiên cứu kỹ lưỡng từ cấu trúc cho tới giao diện") — CHƯA CODE, chờ anh duyệt
+
+### 14.1 Cách khảo sát
+
+- Đọc mã tab Đơn hoàn (`returns-tab.tsx`, `complaint-due-cell.tsx`, `video-filters.tsx`, `lib/return-complaint-due.ts`), máy chủ
+  `listReturnOrders`, và trang Đối soát đơn hoàn (`app/warehouse/returns/page.tsx`, `returns-filters.tsx`).
+- Soi màn thật trên **local** (prod không vào được: Chrome của anh đang đăng nhập tài khoản HQ, cổng Video đóng hàng đóng với tài
+  khoản đó): seed 3 gian tên dài + 20 đơn phủ mọi trạng thái hạn (`backend/scripts/_tmp-hkn2-seed.ts`, TỆP TẠM).
+- Tham khảo cách công cụ có "hạn xử lý" trình bày (Jira Service Management, Appfire SLA panel — tài liệu nhà cung cấp, là thông lệ chứ
+  không phải nghiên cứu): màu theo bậc thời gian còn lại; **không chỉ dựa vào màu** (kèm biểu tượng); quá hạn hiện số thời gian đã
+  quá; sắp theo độ gấp; và cảnh báo "mệt báo động" khi gần như dòng nào cũng tô màu. Cách Shopee / TikTok bày màn trả hàng trong trang
+  người bán: **chưa mở lại được hôm nay** (tìm trên web không ra tài liệu mô tả) — không dùng làm căn cứ.
+
+### 14.2 Số đo màn hiện tại (local, 20 đơn thử, 1366 × 768)
+
+| Điều đo | Kết quả |
+|---|---|
+| Đơn gấp nhất ("Còn 34 phút") nằm dòng thứ mấy khi mở tab | **dòng 9 / 20** (mặc định sắp theo giờ sàn báo hoàn) |
+| Số dòng thấy được không cần cuộn | **1 dòng** (bảng bắt đầu ở 597 px; local có 3 dải thông báo mà prod thường không có — chưa đo prod) |
+| Bề ngang bảng / khung | **1.312 / 1.014 px** → phải cuộn ngang; cột Tình trạng kho + Thao tác nằm ngoài màn |
+| Dòng tô đỏ / cam | 4 đỏ, 4 cam; trong 4 cam có cả hạn "dự kiến" và "ước tính" |
+| Cao mỗi dòng | 79 px (ô nào cũng 2 dòng chữ) |
+
+### 14.3 Chẩn đoán — vấn đề nằm ở cấu trúc trước, cái ô sau
+
+1. **Đặt sai chỗ (nặng nhất).** Cột nằm trong tab Đơn hoàn của Video đóng hàng. (a) Cổng Video đóng hàng mới mở cho
+   `admin@hubsell.vn` → **hiện chưa khách nào thấy hạn**. (b) Tab này chỉ chủ shop thấy (`STAFF_TABS` chỉ có tab Video) — nhân viên
+   kho, người thật sự kiểm kiện, không thấy. (c) Nút Nhận hàng / Nhập kho / Báo hỏng / Khiếu nại đều ở trang **Đối soát đơn hoàn**;
+   ở tab Đơn hoàn dòng đỏ không có nút nào để làm việc cần làm.
+2. **Trang không phải danh sách việc.** Mặc định sắp theo giờ báo hoàn, trộn ca đã đóng ("Không cần") với ca đang cháy. Prod tối
+   23/11: thẻ 4 / 6 / **0** / 461 — số to nhất là thẻ ít việc nhất.
+3. **Mệt báo động.** Hạn kiện khách trả sinh ra đã là 48 giờ → ngưỡng "cam ≤ 48 giờ" tô cam **mọi** kiện vừa về; cam hết nghĩa.
+   Đơn "Quá hạn 55 ngày" (ước tính) đứng lẫn trong danh sách vô thời hạn (câu chữ anh đã chốt giữ — ở đây chỉ nói chuyện xếp chỗ).
+4. **Độ chắc của hạn không nhìn ra.** Hạn sàn chốt, hạn "dự kiến" (Shopee, kiện còn trên đường) và hạn "ước tính" (từ giờ kho quét,
+   hạn thật có thể SỚM hơn) cùng cỡ, cùng đậm, cùng màu — khác nhau một chữ ở dòng phụ.
+5. **Tín hiệu chỉ bằng màu chữ.** Không biểu tượng, không nền; ở giao diện tối và với người khó phân biệt đỏ / cam thì yếu.
+6. **Dòng phụ dài và lặp.** "đến 16:10 27/11 · TikTok 2 ngày": tên sàn đã có ở huy hiệu đầu dòng, "2 ngày" là luật (để trong ô chi
+   tiết). Phải tự nhẩm "27/11 là mai hay mốt".
+7. **Thiếu công cụ tìm.** Tab Đơn hoàn không có ô tìm mã đơn, không lọc gian, không lọc ngày (trang Đối soát có đủ).
+8. **Không có gì kéo khách vào.** Không chuông, không số ở menu. Khách ít mở app → bảng đẹp mấy cũng không ai nhìn kịp 48 giờ.
+9. **Chưa kiểm (đúng / sai dữ liệu):** đơn khách ĐÃ gửi khiếu nại trên sàn (Shopee `JUDGING`, TikTok `…REQUEST_REJECT`) có còn đếm
+   ngược / hiện "Quá hạn" không. `complaintDueOf` không đọc các trạng thái này. Cần một câu SQL đếm trên prod trước khi kết luận.
+
+### 14.4 Đề xuất cấu trúc — ba tầng, theo thứ tự giá trị
+
+**Tầng 1 — Kéo (lát 3 đã có trong kế hoạch, em đề nghị đưa lên trước việc đánh bóng bảng):** chuông "Còn N kiện hoàn phải kiểm trước
+HH:MM" + số đỏ cạnh mục Đối soát đơn hoàn ở menu. Dùng hệ chuông có sẵn; cần chỉ mục một phần (dựng CONCURRENTLY tay trước khi push).
+
+**Tầng 2 — Trang Đối soát đơn hoàn là nhà chính của hạn** (mọi khách có, nhân viên kho có quyền, nút thao tác sẵn):
+- **Gộp vào cột "Thời gian chờ" thành một cột "Thời hạn"** — mỗi dòng chỉ một đồng hồ, đúng đồng hồ đang chạy: kiện chưa về → "Chờ 6
+  ngày" (như hiện nay); kiện đã về → "Còn 9 giờ" + "hết 05:40 mai". Không thêm cột (bảng đang 8 cột), không thêm bề ngang.
+- **Dải nhắc mỏng một dòng** (chỗ dải cam đang có, cùng kiểu anh đã duyệt 13/11): "4 kiện phải kiểm trong 24 giờ · gần nhất còn 34
+  phút — Xem". Bấm = lọc + sắp theo hạn. Chỉ hiện khi có số. Không thêm thẻ thứ 6.
+- Nút ở cột Thao tác giữ nguyên (Nhận hàng / Nhập kho / Báo hỏng / Khiếu nại) — hạn đứng cạnh đúng nút phải bấm.
+
+**Tầng 3 — Tab Đơn hoàn (Video đóng hàng) giữ vai "hồ sơ bằng chứng"**, dùng chung ô hạn mới: thẻ "Sắp hết hạn khiếu nại" lên đầu
+hàng thẻ; khi thẻ đó > 0 thì mở tab sắp theo hạn; thêm ô tìm mã đơn / mã vận đơn.
+
+### 14.5 Đề xuất ô hạn (dùng chung cho cả hai trang)
+
+| Tình huống | Dòng chính | Dòng phụ | Dấu hiệu |
+|---|---|---|---|
+| Còn ≤ 24 giờ, hạn sàn chốt | **Còn 9 giờ 28 phút** | hết 05:40 mai | viên nền hồng + đồng hồ, chữ đỏ đậm |
+| Còn > 24 giờ, hạn sàn chốt | Còn 1 ngày 19 giờ | hết 16:10 Thứ Sáu 27/11 | chữ thường, không màu |
+| Hạn dự kiến (Shopee, kiện trên đường) | Còn 1 ngày 3 giờ | dự kiến · hết 23:59 mai | chữ xám hơn, **không tô đỏ / cam** (kiện chưa về, chưa có gì để kiểm) |
+| Hạn ước tính (từ giờ kho quét) | Còn khoảng 1 ngày | ước tính · hạn sàn có thể sớm hơn | chữ "khoảng" + gạch chân chấm; mốc tô đỏ: xem câu hỏi 4 |
+| Quá hạn | Quá hạn 5 giờ 25 phút (giữ câu chữ anh chốt) | hết lúc 14:46 hôm nay | xám, xếp sau nhóm còn hạn |
+| Chưa tính / Chưa rõ / Không cần | như hiện nay | — | xám nhạt, **một dòng** (dòng thấp lại) |
+
+- **Bỏ bậc cam cho kiện khách trả** (48 giờ sinh ra đã cam). Cam chỉ còn cho hạn dài (giao thất bại 7 / 40 ngày) khi còn ≤ 48 giờ.
+  Mốc đỏ 24 giờ = **mặc định em chọn**, chưa có số đo; lý do: còn chưa tới một ngày làm việc của kho.
+- Mốc tuyệt đối nói bằng "hôm nay / đêm nay / mai" khi trong 2 ngày tới, xa hơn mới ghi thứ + ngày.
+- Bỏ tên sàn + "2 ngày" khỏi dòng phụ (đưa vào ô chi tiết rê / bấm, mỗi dữ kiện một dòng như hiện nay).
+
+### 14.6 Thứ tự lát em đề xuất
+
+| Lát | Việc | Ghi chú |
+|---|---|---|
+| 2b | Ô hạn mới (14.5) + sửa tab Đơn hoàn (thẻ lên đầu, ô tìm, sắp mặc định) | chỉ giao diện, không migration |
+| 2c | Cột "Thời hạn" + dải nhắc ở Đối soát đơn hoàn | `complaintDueSql` dùng lại; đo thời gian câu trên shop đông đơn hoàn nhất trước |
+| 3 | Chuông + số ở menu + chỉ mục một phần | dựng chỉ mục CONCURRENTLY tay trước khi push |
+| — | Câu SQL đếm đơn đã khiếu nại trên sàn (mục 14.3 điểm 9) | chỉ đọc; quyết có cần trạng thái "Đã khiếu nại" không |
+
+### 14.7 Câu chờ anh
+
+1. Nhà chính của hạn chuyển sang **Đối soát đơn hoàn** — anh đồng ý không?
+2. Ở Đối soát: **gộp** vào cột Thời gian chờ thành "Thời hạn" (em đề xuất) hay thêm cột riêng?
+3. Làm chuông (lát 3) **trước** hay sau khi sửa bảng?
+4. Hạn "ước tính" luôn muộn hơn hạn thật: có tô đỏ sớm hơn để bù không? Em chưa có số đo độ lệch — cần đo
+   `returnedAt − returnDeliveredAt` trên prod trước khi chọn số.
+
+## 15. Lát 2b + 2c ĐÃ CODE trên local (25/11 tối — anh: "ok em cứ làm đi anh xem") — CHƯA commit / push
+
+Anh hỏi lại "chuyển" nghĩa là gì → chốt: cột hạn **hiện ở cả hai trang** (Đối soát đơn hoàn là nơi chính, tab Đơn hoàn giữ), mã tính
+hạn + ô hiển thị dùng chung. Chuông (lát 3) chưa làm.
+
+### 15.1 Máy chủ
+
+- `lib/return-complaint-due.ts`: thêm `COMPLAINT_DUE_SOON_HOURS` (24), `ComplaintDueView`, `complaintDueView()` (dời từ `library.ts`,
+  hai trang cùng dùng). `lib/return-complaint-due-sql.ts`: thêm `utcTs()` + `complaintDueSoonSql(now)`.
+- `GET /api/pack-videos/returns`: thêm `q` (mã đơn / mã vận đơn / mã vận đơn chiều hoàn, chứa chuỗi, không phân biệt hoa thường; số
+  trên thẻ không đổi theo ô tìm). `sort=due`: đơn **vừa** quá hạn đứng trước đơn quá hạn lâu (trước đó ngược lại — "Quá hạn 55 ngày"
+  đứng đầu nhóm quá hạn).
+- `GET /api/warehouse/returns`: mỗi dòng thêm `complaintDue`; `summary.dueSoon` + `dueSoonNearestAt`; bộ lọc `status=DUE_SOON` (sắp
+  theo hạn gần nhất, vẫn tôn trọng ô tìm / chip vận chuyển / phạm vi gian, **bỏ qua bộ lọc ngày** — việc gấp không được biến mất vì
+  đang xem kỳ khác). Một câu SQL `loadDueSoon` (trần 500 dòng) phục vụ cả ba.
+- ⚠️ **Chi phí chưa đo:** trang Đối soát tự làm mới 30 giây / lần → mỗi lượt thêm MỘT câu quét đơn hoàn đang mở của shop
+  (`returnStatus IN (AWAITING, RECEIVED, DAMAGED)` + biểu thức hạn). Cùng cỡ với câu `groupBy` trang đã chạy sẵn, nhưng **phải
+  EXPLAIN ANALYZE trên shop đông đơn hoàn nhất của prod trước khi push**; chậm thì dựng chỉ mục một phần
+  `(channelId, returnComplaintDueAt) WHERE returnStatus IN (…)` bằng CREATE INDEX CONCURRENTLY tay.
+- Test: `isolation-db.test.ts` thêm ca thứ tự quá hạn + ô tìm (kể cả ký tự `%` `_`); 3 tệp test hạn **40 / 40 qua**. tsc backend sạch.
+  Chưa có test cho route `/api/warehouse/returns` (route này vốn không có test).
+
+### 15.2 Ô hạn mới (`components/shared/complaint-due-cell.tsx` — dời từ `orders/videos/`, `lib/return-complaint-due.ts`)
+
+| Tình huống | Hiện |
+|---|---|
+| Còn ≤ 24 giờ, hạn có căn cứ (sàn chốt / luật / ước tính) | viên nền hồng + đồng hồ "Còn 9 giờ 13 phút", dòng phụ "hết 05:40 ngày mai" |
+| Hạn TẠM của sàn còn ≤ 24 giờ | chữ đỏ, không viên — **khác đề xuất 14.5** ("không tô màu"): bản Shopee 06/11 ghi hạn tính "hoặc sau ngày nhận hàng hoàn dự kiến, tùy điều kiện nào đến trước" nên hạn tạm vẫn có thể là hạn thật; em chưa kiểm được điều gì xảy ra khi qua mốc này mà kiện chưa về → giữ tín hiệu, yếu hơn một bậc |
+| Còn > 24 giờ | chữ thường; **bỏ bậc cam** cho kiện khách trả. Cam chỉ còn cho kiện giao thất bại (hạn 7 / 40 ngày) khi còn ≤ 48 giờ |
+| Hạn tạm còn > 24 giờ | chữ xám, "dự kiến · hết 23:59 ngày mai" |
+| Hạn ước tính | gạch chân chấm dòng chính + "ước tính · hết 00:10 T6 27/11" |
+| Quá hạn | "Quá hạn 5 giờ 40 phút" (giữ câu chữ), dòng phụ "hết 14:46 hôm nay" |
+| Chưa tính / Chưa rõ / Không cần | một dòng ("Chưa tính · chờ kiện về") |
+
+Mốc giờ: "hôm nay / ngày mai / hôm qua"; trong 6 ngày thì kèm thứ ("T6 27/11"); xa hơn chỉ ghi ngày. Tên sàn + "2 ngày" bỏ khỏi dòng
+phụ (vẫn ở ô chi tiết rê / bấm). Viên dùng cặp `bg-rose-50 + text-rose-700`: ở giao diện tối lật thành chữ hồng nhạt trên nền đỏ sẫm
+(thử `text-red-600` trước — tương phản khoảng 3 : 1, yếu).
+
+### 15.3 Tab Đơn hoàn (Video đóng hàng)
+
+- Mặc định **sắp theo hạn**; thẻ "Sắp hết hạn khiếu nại" lên đầu hàng thẻ; thêm ô tìm mã đơn / mã vận đơn (thay câu mô tả).
+- Gộp **Video đóng + Video khui thành một cột Video** (hai dòng "Đóng · 0:51" / "Khui · chưa quay"); Tình trạng kho tách phần sau dấu
+  "·" xuống dòng phụ; giờ báo hoàn bỏ năm khi là năm nay; tên gian cắt ngắn hơn.
+- Đo (20 đơn thử, tên gian 55 ký tự, mã TikTok 18 số): **1366 → bảng 1.014 / khung 1.014 px, không cuộn ngang** (trước: 1.312 /
+  1.014); 1700 → 1.348 / 1.348; 1280 → 1.016 / 928 (còn cuộn 88 px, cột hạn vẫn trong màn). Không ô nào tràn. Đơn gấp nhất: dòng 1
+  (trước: dòng 9).
+
+### 15.4 Trang Đối soát đơn hoàn
+
+- Cột "Thời gian chờ" đổi tên **"Thời hạn"**, một đồng hồ mỗi dòng: đơn có hạn → đếm ngược (ô hạn dùng chung); hạn tạm còn hơn 24
+  giờ hoặc chưa có hạn → số ngày chờ như trước.
+- **Cột Thời hạn dời lên ngay sau Mã đơn** (ngoài đề xuất ban đầu): ở 1366 cột cũ nằm tại 1.217 px trong khung 1.029 px — phải cuộn
+  ngang mới thấy. Giờ ở 485 px.
+- **Dải nhắc đỏ một dòng đặt TRÊN hàng thẻ**: "4 đơn hoàn sắp hết hạn khiếu nại · gần nhất còn 14 phút — Xem 4 đơn". Bấm = lọc + sắp
+  theo hạn, bấm lại "Bỏ lọc". Chỉ hiện khi có số.
+- Sửa kèm lỗi có sẵn: tên gian dài không cắt làm cột Mã đơn phình tới 617 px → cắt `max-w-40` + tooltip.
+- Đã thử: bấm dải → 4 dòng đúng thứ tự hạn, nút Nhận hàng / Nhập kho / Báo hỏng / Cập nhật khiếu nại ngay cùng dòng; sáng + tối.
+
+### 15.5 Chưa làm / chưa kiểm
+
+- Chưa commit, chưa push. Seed tạm `backend/scripts/_tmp-hkn2-seed.ts` còn trong database local (chạy `cleanup` rồi xóa tệp).
+- Chưa đo câu `loadDueSoon` trên prod (mục 15.1). Chưa soi màn prod thật.
+- Trang Đối soát vẫn cuộn ngang ở 1366 (bảng 8 cột có sẵn) — không thuộc lát này.
+- Đang lọc "sắp hết hạn" thì mũi tên sắp xếp ở tiêu đề Thời hạn không có tác dụng (danh sách luôn theo hạn) — chưa ẩn.
+- App mobile dùng cùng API Đối soát: chỉ nhận thêm trường, chưa hiện hạn.
+- Chuông + số ở menu (lát 3); đơn đã khiếu nại trên sàn có còn đếm ngược không (14.3 điểm 9); độ lệch hạn ước tính (14.7 câu 4).
+
+## 16. Đo prod câu "sắp hết hạn" (25/11 ~20:40, anh: "Ổn, đo prod đi") → PHẢI có chỉ mục trước khi push
+
+Đo bằng Supabase SQL Editor trên Chrome của anh, chỉ đọc, mỗi câu chạy MỘT lần.
+
+1. **Chọn shop nặng nhất** (đếm đơn `AWAITING` theo chủ shop — đi qua chỉ mục một phần sẵn có): shop đứng đầu **3.206 đơn chờ hàng
+   về / 1 gian**, kế tiếp 1.948 / 2 gian và 1.580 / 3 gian.
+2. **`EXPLAIN (ANALYZE, BUFFERS)` câu `loadDueSoon`** của shop đó (bản CHƯA có vị từ chỉ mục):
+
+| Điều đo | Kết quả |
+|---|---|
+| Thời gian | **6.866 ms** (bộ đệm nguội: 26.908 trang đọc đĩa + 9.436 trang có sẵn) |
+| Đường đi | `Index Scan using "Order_channelId_idx"` — quét **hết đơn của gian** rồi mới lọc `returnStatus` |
+| Số dòng ra | 0 (shop này lúc đo không có đơn nào sắp hết hạn) |
+
+   Chưa đo lần hai (bộ đệm ấm) — không lặp câu nặng trên prod; kể cả ấm vẫn là 36 nghìn trang mỗi 30 giây cho mỗi người đang mở trang.
+
+**Kết luận:** không được push bản mục 15 khi chưa có chỉ mục. Câu `groupBy` sẵn có của trang Đối soát và câu đếm thẻ của tab Đơn
+hoàn (đã trên prod, hiện chỉ tài khoản admin dùng) cùng kiểu đi qua `Order_channelId_idx` — **chưa đo**, ghi lại để đo trước khi mở
+cổng Video đóng hàng cho khách.
+
+### 16.1 Cách sửa (đã code trên local, chưa commit)
+
+- Chỉ mục một phần **`Order_return_complaint_due_idx`** `("channelId") WHERE "returnStatus" IN ('AWAITING','RECEIVED','DAMAGED') AND
+  ("returnComplaintDueAt" IS NOT NULL OR "returnDeliveredAt" IS NOT NULL OR "returnedAt" IS NOT NULL)` — chỉ chứa đơn hoàn còn mở
+  CÓ ít nhất một mốc để tính hạn; hàng nghìn đơn `AWAITING` treo chưa có mốc nào không nằm trong chỉ mục.
+  Migration `20261125210000_order_return_complaint_due_idx` (chỉ `CREATE INDEX IF NOT EXISTS`, không đổi cột, không đụng trigger).
+- `complaintDueCandidateSql()` (`lib/return-complaint-due-sql.ts`) = đúng vị từ đó, `loadDueSoon` thêm vào WHERE. Test db so trên
+  1.792 tổ hợp: đơn nào có hạn thì vị từ luôn đúng (không loại nhầm đơn nào).
+- **Kiểm local** (12.683 đơn, câu SQL do chính mã sinh ra): `Index Scan using "Order_return_complaint_due_idx"`, 0,3 ms, ra đúng 4
+  đơn thử. Trên prod **chưa kiểm** — chỉ kiểm được sau khi dựng chỉ mục.
+- tsc backend sạch; 3 tệp test hạn 40 / 40.
+
+### 16.2 Việc phải làm trên prod TRƯỚC khi push (anh chạy ở Supabase SQL Editor, ngoài giờ cao điểm)
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_return_complaint_due_idx"
+  ON "Order" ("channelId")
+  WHERE "returnStatus" IN ('AWAITING', 'RECEIVED', 'DAMAGED')
+    AND ("returnComplaintDueAt" IS NOT NULL OR "returnDeliveredAt" IS NOT NULL OR "returnedAt" IS NOT NULL);
+```
+
+Rồi kiểm `SELECT indisvalid FROM pg_index WHERE indexrelid = '"Order_return_complaint_due_idx"'::regclass;` phải ra `true`
+(ra `false` = dựng dở, phải `DROP INDEX CONCURRENTLY` rồi dựng lại). Sau đó em chạy lại EXPLAIN của mục 16 với vị từ mới để xác nhận
+trước khi anh cho push.
+
+### 16.3 ĐÃ DỰNG chỉ mục trên prod + đo lại (25/11 ~21:00, anh: "Em tự mở chrome lên chạy đi")
+
+- Trước khi dựng: bảng `Order` ≈ 1.123.583 dòng, 641 MB; `statement_timeout` của SQL Editor = 2 phút; chưa có chỉ mục này.
+- Chạy đúng câu ở 16.2 (một lệnh, không gộp lệnh khác — CONCURRENTLY không chạy trong transaction): **"Success" sau khoảng 40–70
+  giây**. Kiểm: `indisvalid = true`, `indisready = true`, cỡ **144 kB**, ước ~16.008 dòng trên cả hệ thống.
+- **Đo lại câu `loadDueSoon` (có vị từ chỉ mục) của cùng shop 3.206 đơn chờ:**
+
+| | Trước | Sau |
+|---|---|---|
+| Đường đi | `Order_channelId_idx` (hết đơn của gian) | **`Order_return_complaint_due_idx`** |
+| Thời gian | 6.866 ms | **303 ms** (lần 2: 345 ms) |
+| Trang đệm | 36.344 | **1.866** |
+
+- Lần chạy thứ hai không nhanh hơn (vẫn ~1.000 trang đọc đĩa) → bộ đệm prod không giữ các trang này; coi **~0,3 giây** là mức thật của
+  shop nặng nhất, không phải "vài mili giây".
+- Vì sao còn 1.866 trang: shop này có khoảng nghìn rưỡi đơn hoàn còn mở ĐÃ có mốc (kiện về mà kho chưa quét / báo hỏng chưa chốt, đa
+  số quá hạn từ lâu) — chúng vẫn nằm trong chỉ mục và bị đọc mỗi lượt. Muốn gọn hơn nữa thì phải lưu sẵn "hạn hiệu lực" thành cột để
+  chỉ mục sắp theo hạn — **để lát 3 (chuông)**, không làm trong lát này.
+- Đã dọn: 20 đơn + 17 video + 3 gian thử trên database local, xóa `_tmp-hkn2-seed.ts`.
+- **Còn lại trước khi push:** anh cho lệnh commit + push. Migration trong repo chỉ `CREATE INDEX IF NOT EXISTS` → trên prod sẽ bỏ qua
+  (chỉ mục đã có), không có bẫy khóa.

@@ -27,6 +27,7 @@ import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { OrderVideoFlag, OrderVideoFlagsProvider } from "@/components/orders/videos/order-video-flag";
 import { UnboxRecordLink } from "@/components/orders/videos/unbox-record-link";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { ComplaintDueCell, useMinuteClock } from "@/components/shared/complaint-due-cell";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import {
@@ -38,6 +39,7 @@ import {
   isReturnBulkSelectable,
 } from "@/components/warehouse/returns-bulk-bar";
 import {
+  ReturnDueSoonStrip,
   ReturnShippingChips,
   ReturnSortToggle,
   ReturnStatusCards,
@@ -65,6 +67,7 @@ import {
   syncWarehouseReturns,
   type ChannelName,
   type Order,
+  type ReturnRow,
   type ReturnShippingFilter,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
@@ -144,6 +147,17 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
  * hàng loạt: /returns/bulk-inbound) — nơi duy nhất có chốt chặn
  * `stockRestoredAt` chống cộng trùng. KHÔNG có đường cộng kho riêng ở phân hệ Kho.
  */
+/**
+ * Dòng này hiện ĐẾM NGƯỢC hạn khiếu nại thay cho số ngày chờ? Có khi đơn có hạn — trừ hạn TẠM của sàn còn
+ * hơn 24 giờ (kiện còn trên đường: đồng hồ đáng nhìn vẫn là số ngày chờ).
+ */
+function showsComplaintDue(o: ReturnRow, nowMs: number): boolean {
+  const due = o.complaintDue;
+  if (!due || due.state !== "DUE") return false;
+  if (due.source !== "platform_provisional") return true;
+  return new Date(due.dueAt).getTime() - nowMs <= 24 * 3_600_000;
+}
+
 export default function WarehouseReturnsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -403,6 +417,8 @@ export default function WarehouseReturnsPage() {
     setShip("");
     setPage(1);
   };
+  // Đồng hồ phút cho ô đếm ngược của cột Thời hạn + dải nhắc.
+  const nowMs = useMinuteClock();
 
   const isFiltering =
     Boolean(statusFilter) ||
@@ -457,6 +473,16 @@ export default function WarehouseReturnsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Dải nhắc "sắp hết hạn khiếu nại" (25/11/2026): đứng TRÊN hàng thẻ vì đây là việc có đồng hồ
+            tính bằng giờ. Bấm = lọc về đúng các đơn đó, hạn gần nhất lên đầu. */}
+        <ReturnDueSoonStrip
+          count={summary.dueSoon ?? 0}
+          nearestAt={returnsQ.data?.dueSoonNearestAt ?? null}
+          nowMs={nowMs}
+          active={statusFilter === "DUE_SOON"}
+          onToggle={() => toggleStatus("DUE_SOON")}
+        />
 
         {/* ===== CÁC THẺ SỐ = BỘ LỌC TÌNH TRẠNG KHO (bấm để lọc, bấm lại để bỏ) ===== */}
         <ReturnStatusCards
@@ -561,9 +587,8 @@ export default function WarehouseReturnsPage() {
                         />
                       </TableHead>
                       <TableHead>Mã đơn</TableHead>
-                      <TableHead>Trạng thái vận chuyển</TableHead>
-                      <TableHead>Sản phẩm</TableHead>
-                      <TableHead>Vận chuyển</TableHead>
+                      {/* Cột Thời hạn đứng ngay sau Mã đơn (25/11/2026): hạn tính bằng giờ phải thấy được
+                          mà không cần cuộn ngang ở màn 1280–1440. */}
                       <TableHead aria-sort={newestFirst ? "ascending" : "descending"}>
                         <ReturnSortToggle
                           newestFirst={newestFirst}
@@ -573,6 +598,9 @@ export default function WarehouseReturnsPage() {
                           }}
                         />
                       </TableHead>
+                      <TableHead>Trạng thái vận chuyển</TableHead>
+                      <TableHead>Sản phẩm</TableHead>
+                      <TableHead>Vận chuyển</TableHead>
                       <TableHead>Tình trạng</TableHead>
                       <TableHead className="text-center">Thao tác</TableHead>
                     </TableRow>
@@ -623,7 +651,10 @@ export default function WarehouseReturnsPage() {
                                 o.channel.channelName as ChannelName,
                                 o.channel.shopName
                               ) && (
-                                <span className={TEXT_SUB}>
+                                <span
+                                  className={cn(TEXT_SUB, "max-w-40 truncate")}
+                                  title={o.channel.shopName}
+                                >
                                   {shopOnlyName(
                                     o.channel.channelName as ChannelName,
                                     o.channel.shopName
@@ -636,6 +667,35 @@ export default function WarehouseReturnsPage() {
                                 ? `Sàn báo hoàn ${formatDateTime(o.returnRequestedAt)}`
                                 : "Chưa rõ mốc sàn báo hoàn"}
                             </p>
+                          </TableCell>
+
+                          <TableCell>
+                            {/* MỘT đồng hồ mỗi dòng (25/11/2026): kiện đã về (hoặc hạn tạm của sàn còn dưới
+                                24 giờ) → đếm ngược hạn khiếu nại; còn lại → số ngày chờ như trước. */}
+                            {showsComplaintDue(o, nowMs) ? (
+                              <ComplaintDueCell
+                                due={o.complaintDue}
+                                platform={o.channel.channelName as ChannelName}
+                                nowMs={nowMs}
+                              />
+                            ) : o.daysWaiting === null ? (
+                              <span className={TEXT_SUB}>Chưa rõ</span>
+                            ) : (
+                              <span
+                                className={cn(
+                                  "font-semibold tabular-nums",
+                                  o.agingLevel === "overdue" && "text-red-500",
+                                  o.agingLevel === "warning" && "text-amber-700"
+                                )}
+                              >
+                                {formatNumber(o.daysWaiting)} ngày
+                              </span>
+                            )}
+                            {!showsComplaintDue(o, nowMs) && o.agingLevel === "overdue" && (
+                              <p className={cn(TEXT_SUB, "text-red-500")}>
+                                Chưa về tay
+                              </p>
+                            )}
                           </TableCell>
 
                           <TableCell>
@@ -660,27 +720,6 @@ export default function WarehouseReturnsPage() {
                                   Hoàn: {o.returnTrackingCode}
                                 </p>
                               )}
-                          </TableCell>
-
-                          <TableCell>
-                            {o.daysWaiting === null ? (
-                              <span className={TEXT_SUB}>Chưa rõ</span>
-                            ) : (
-                              <span
-                                className={cn(
-                                  "font-semibold tabular-nums",
-                                  o.agingLevel === "overdue" && "text-red-500",
-                                  o.agingLevel === "warning" && "text-amber-700"
-                                )}
-                              >
-                                {formatNumber(o.daysWaiting)} ngày
-                              </span>
-                            )}
-                            {o.agingLevel === "overdue" && (
-                              <p className={cn(TEXT_SUB, "text-red-500")}>
-                                Chưa về tay
-                              </p>
-                            )}
                           </TableCell>
 
                           <TableCell>

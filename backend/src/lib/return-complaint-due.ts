@@ -172,3 +172,35 @@ export function complaintDueOf(order: ComplaintDueOrder): ComplaintDue {
     windowHours,
   };
 }
+
+// ───────── Dạng gửi giao diện + mốc "sắp hết hạn" (dùng chung: tab Đơn hoàn + Đối soát đơn hoàn) ─────────
+
+/**
+ * "Sắp hết hạn khiếu nại" = còn hạn và còn ≤ 24 giờ — cùng mốc tô đỏ của ô hạn, cùng mốc chuông lát 3.
+ * Mặc định tự chọn (chưa tới một ngày làm việc của kho), chưa có số đo.
+ */
+export const COMPLAINT_DUE_SOON_HOURS = 24;
+
+/** Hạn khiếu nại gửi giao diện — `complaintDueOf` dạng JSON. */
+export type ComplaintDueView =
+  | { state: "NOT_NEEDED" | "NOT_STARTED" | "UNKNOWN"; failedDelivery: boolean }
+  | {
+      state: "DUE";
+      dueAt: string;
+      source: ComplaintDueSource;
+      failedDelivery: boolean;
+      windowHours: number | null;
+    };
+
+export function complaintDueView(d: ComplaintDue): ComplaintDueView {
+  if (d.state === "DUE") {
+    return {
+      state: "DUE",
+      dueAt: d.dueAt.toISOString(),
+      source: d.source,
+      failedDelivery: d.failedDelivery,
+      windowHours: d.windowHours,
+    };
+  }
+  return { state: d.state, failedDelivery: d.state === "NOT_NEEDED" ? false : d.failedDelivery };
+}

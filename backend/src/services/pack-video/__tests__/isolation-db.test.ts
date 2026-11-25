@@ -434,6 +434,19 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
         orders["hoan-cho"],
         orders["hoan-khong-video"],
       ]);
+      // Hai đơn cùng quá hạn: đơn VỪA quá hạn đứng trước đơn quá hạn lâu (25/11/2026).
+      await prisma.order.update({ where: { id: orders["hoan-cho"] }, data: { returnComplaintDueAt: h(-30) } });
+      const overdue = await listReturnOrders(scopeA(), { sort: "due", now });
+      expect(overdue.items.map((r) => r.orderId)).toEqual([
+        orders["hoan-hong"],
+        orders["hoan-khong-video"],
+        orders["hoan-cho"],
+      ]);
+      // Ô tìm: chứa chuỗi trong mã đơn / mã vận đơn, không phân biệt hoa thường; số trên thẻ không đổi.
+      const found = await listReturnOrders(scopeA(), { q: "HOAN-CHO", now });
+      expect(found.items.map((r) => r.orderId)).toEqual([orders["hoan-cho"]]);
+      expect(found.cards.all).toBe(3);
+      expect((await listReturnOrders(scopeA(), { q: "100%_khong_co", now })).items).toEqual([]);
     } finally {
       await prisma.order.updateMany({
         where: { id: { in: [orders["hoan-cho"], orders["hoan-hong"], orders["hoan-khong-video"]] } },
