@@ -65,13 +65,76 @@ const TIER_RANK: Record<RecommendTier, number> = { run_now: 0, test_small: 1, no
 const num = (v: Prisma.Decimal | number | null | undefined): number | null =>
   v == null ? null : Number(v);
 
+/**
+ * LỊCH SỬ ADS THEO SẢN PHẨM trong cửa sổ tính từ `since`: tổng tiền tiêu + doanh số của các chiến dịch ĐÚNG 1 sản phẩm
+ * (chỉ chiến dịch một sản phẩm mới quy được về sản phẩm). Sản phẩm có chiến dịch nhưng không có dòng số nào trong cửa
+ * sổ vẫn có mặt với 0 / 0 — bộ chấm phân biệt "đã từng chạy ads" với "chưa có chiến dịch".
+ *
+ * ★ 25/11/2026 (docs/DONG-BO-GIAI-DOAN-3.md mục 8.12–8.13) — CỘNG TRONG DATABASE, web chỉ nhận mỗi sản phẩm một dòng.
+ * Bản cũ nạp TỪNG dòng số theo ngày của mọi chiến dịch có sản phẩm rồi cộng bằng JS: gian 3.946 chiến dịch là
+ * ~118–122 nghìn dòng mỗi lượt mở tab Gợi ý, 98–100 % toàn số 0. Log `[Đo request]` prod 23:12 ngày 25/11: MỘT lượt
+ * `GET /api/quang-cao/shopee/recommendations` đẩy RSS web 261 → 448 MB (+187 MB) — máy 512 MB sát trần, gốc 4 lần OOM
+ * trong ngày. Số dòng trả về nay ≤ số sản phẩm có chiến dịch riêng, không còn theo số ngày × số chiến dịch.
+ *
+ * Luật "đúng 1 sản phẩm" giữ y bản cũ (`itemIds.split(",").filter(Boolean).length === 1`): bỏ dấu phẩy thừa hai đầu,
+ * phần còn lại khác rỗng và không chứa dấu phẩy. Cột "date" là DATE — Prisma so `date >= since` theo NGÀY UTC của
+ * `since`, câu SQL ép đúng như vậy. Test db so hai đường: ads-recommend-history-db.test.ts.
+ * Đường lui: env `ADS_LOAD_ZERO_PERF_ROWS=1` (cùng công tắc với lớp 2a) nạp từng dòng như trước.
+ */
+export async function loadSingleItemAdsHistory(
+  channelId: string,
+  since: Date
+): Promise<Map<string, { spend: number; gmv: number }>> {
+  const history = new Map<string, { spend: number; gmv: number }>();
+  if (process.env.ADS_LOAD_ZERO_PERF_ROWS === "1") {
+    const campaigns = await prisma.adsCampaign.findMany({
+      where: { channelId, itemIds: { not: "" } },
+      select: {
+        itemIds: true,
+        dailyPerf: { where: { date: { gte: since } }, select: { expense: true, broadGmv: true } },
+      },
+    });
+    for (const c of campaigns) {
+      const ids = c.itemIds.split(",").filter(Boolean);
+      if (ids.length !== 1) continue;
+      const h = history.get(ids[0]) ?? { spend: 0, gmv: 0 };
+      for (const p of c.dailyPerf) {
+        h.spend += Number(p.expense);
+        h.gmv += Number(p.broadGmv);
+      }
+      history.set(ids[0], h);
+    }
+    return history;
+  }
+  const sinceDay = since.toISOString().slice(0, 10);
+  // Cộng theo TỪNG chiến dịch trước (LATERAL, đi thẳng chỉ mục ("adsCampaignId", "date")), rồi mới gộp theo sản phẩm.
+  // Nối thẳng hai bảng rồi GROUP BY sản phẩm thì Postgres phải sắp xếp mọi dòng số trước khi gộp — đo prod 25/11/2026,
+  // gian 3.946 chiến dịch: sắp 119.013 dòng, tràn ra tệp tạm.
+  const rows = await prisma.$queryRaw<{ itemId: string; spend: number; gmv: number }[]>(Prisma.sql`
+    SELECT btrim(c."itemIds", ',') AS "itemId",
+           COALESCE(SUM(a."spend"), 0)::float8 AS "spend",
+           COALESCE(SUM(a."gmv"), 0)::float8 AS "gmv"
+    FROM "AdsCampaign" c
+    LEFT JOIN LATERAL (
+      SELECT SUM(p."expense") AS "spend", SUM(p."broadGmv") AS "gmv"
+      FROM "AdsCampaignDailyPerf" p
+      WHERE p."adsCampaignId" = c."id" AND p."date" >= ${sinceDay}::date
+    ) a ON TRUE
+    WHERE c."channelId" = ${channelId}
+      AND btrim(c."itemIds", ',') <> ''
+      AND position(',' in btrim(c."itemIds", ',')) = 0
+    GROUP BY 1`);
+  for (const r of rows) history.set(r.itemId, { spend: Number(r.spend), gmv: Number(r.gmv) });
+  return history;
+}
+
 /** `opts.marginSource`: ép đường cộng biên lãi (công cụ đối chiếu); bỏ trống = theo env. */
 export async function computeChannelAdsRecommendations(
   channel: AdsInsightChannel,
   opts: { marginSource?: AdsMarginSource } = {}
 ): Promise<ChannelAdsRecommendations> {
   const since30 = new Date(Date.now() - 30 * 86_400_000);
-  const [{ breakeven, margins }, channelProducts, signals, singleCampaigns] = await Promise.all([
+  const [{ breakeven, margins }, channelProducts, signals, history] = await Promise.all([
     computeProductBreakevenWithMargins(channel, opts),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
@@ -85,13 +148,7 @@ export async function computeChannelAdsRecommendations(
       },
     }),
     prisma.adsItemSignal.findMany({ where: { channelId: channel.id } }),
-    prisma.adsCampaign.findMany({
-      where: { channelId: channel.id, itemIds: { not: "" } },
-      select: {
-        itemIds: true,
-        dailyPerf: { where: { date: { gte: since30 } }, select: { expense: true, broadGmv: true } },
-      },
-    }),
+    loadSingleItemAdsHistory(channel.id, since30),
   ]);
 
   // ---- Gom theo item: giá, ảnh, tồn ----
@@ -116,19 +173,6 @@ export async function computeChannelAdsRecommendations(
 
   // ---- Nhịp bán + lượng thiếu giá vốn theo item — từ chính bộ biên lãi của bảng hòa vốn ----
   const sales = margins.productPace();
-
-  // ---- Lịch sử ads: chỉ campaign ĐÚNG 1 SP mới quy được về SP ----
-  const history = new Map<string, { spend: number; gmv: number }>();
-  for (const c of singleCampaigns) {
-    const ids = c.itemIds.split(",").filter(Boolean);
-    if (ids.length !== 1) continue;
-    const h = history.get(ids[0]) ?? { spend: 0, gmv: 0 };
-    for (const p of c.dailyPerf) {
-      h.spend += Number(p.expense);
-      h.gmv += Number(p.broadGmv);
-    }
-    history.set(ids[0], h);
-  }
 
   const signalByItem = new Map(signals.map((s) => [s.itemId, s] as const));
   const shopMedianCvr = medianOrganicCvr(

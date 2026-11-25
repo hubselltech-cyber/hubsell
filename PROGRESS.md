@@ -23,6 +23,15 @@
 - ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. Thêm trần 60 dòng/phút/máy + dòng tổng "bỏ qua N" sau khi anh hỏi có theo mô hình lớn không. ✅ commit `358bfa5c` + PUSH 25/11 ~22:10 (anh "Commit và push"). ⏳ đọc log `[Đo request]` ~1 ngày rồi mới chọn sửa.
 
 ---
+## Phiên 25/11 ~23:35 — LỚP 2c: Gợi ý chạy ads cộng lịch sử trong database (+125 MB → +2 MB RSS) — code LOCAL, chưa commit
+
+- Anh: "Ừ, làm lớp 2c". Bằng chứng: `[Đo request]` prod 23:12 — một lượt `/api/quang-cao/shopee/recommendations` RSS 261 → 448 MB (+187).
+- Sửa `integrations/shopee/ads-recommend-data.ts`: `loadSingleItemAdsHistory` cộng bằng SQL (LATERAL theo chiến dịch → gộp theo sản phẩm) thay cho nạp ~118 nghìn dòng số rồi cộng bằng JS; đường lui `ADS_LOAD_ZERO_PERF_ROWS=1`.
+- Đo DB dev gian giả 118.380 dòng: phần lịch sử ads RSS +123/+125 MB → +1/+2 MB, ~950 ms → ~137 ms. Prod EXPLAIN ANALYZE gian lớn nhất: 161 ms, không tệp tạm.
+- Test đối chứng cũ = mới 4/4 (`ads-recommend-history-db.test.ts`); tsc sạch. 21 ca sổ cái ở `integrations/__tests__` đỏ SẴN trên mã gốc (đã đối chứng git stash). Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 8.13.
+- ⏳ anh cho commit + push → đọc lại `[Đo request]` trên prod.
+
+---
 ## Phiên 25/11 ~23:00 — Sửa gốc câu DANH SÁCH ĐƠN (`GET /api/orders`): 232 MB / lượt → ~1 MB — code LOCAL, chưa commit
 
 - Anh: "Ừ, sửa danh sách đơn". Gốc (EXPLAIN prod): câu lọc gian qua quan hệ + `ORDER BY createdAt LIMIT` bị Postgres đi lùi chỉ mục ngày tạo của CẢ BẢNG mọi shop (2.339 lượt, 232 MB / lượt, TB 14,2 s, max 110 s).
@@ -30,7 +39,8 @@
 - Kiểm: test db 828 phép so id + thứ tự với đường cũ; API thật local 64/64 trang khớp; 1.119 test đạt; tsc sạch. Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 8.10.
 - ✅ Commit `ba12a9aa` + push 22:55; Render KHÔNG tự deploy → bấm tay Manual Deploy 23:02, live 23:03:55. Đo 23:09: câu mới 15 lượt, 0 MB / lượt, TB 0–4 ms; 0 câu chờ đĩa; dòng `[Đo request]` từ ~25 dòng / phút còn 1 dòng / 3 phút. Chưa kết luận hết chậm — xem lại chiều tối 26/11.
 - Anh: "Sửa tiếp cho xong đi em" → đo chênh hiện tại (docs 8.11): quét bù kho ĐÃ sửa từ 20/11 (số 514 GB là bản cũ); cảnh báo hết hàng / price_detail TikTok / đếm sổ cái không phải lỗi kế hoạch chạy — cần anh chốt nhịp hoặc cần chỉ mục mới (chờ IO hồi) → DỪNG, không vá trong đêm.
-- Code LOCAL chưa commit: `middleware/auth.ts` — database lỗi → 503 `SERVER_BUSY` thay vì 401 (đá phiên) / ném lỗi (web tự thoát); test 6 ca.
+- ✅ `middleware/auth.ts` — database lỗi → 503 `SERVER_BUSY` thay vì 401 (đá phiên) / ném lỗi (web tự thoát); test 6 ca. Commit `23c2e108` + push ~23:13, Render tự deploy web + worker, live 23:15:52.
+- 23:20 anh "Kiểm tra lại đi em" (docs 8.12): Read IOPS từ ~950 (bị bóp) rơi xuống 100–250 từ 23:06, hết bảng cảnh báo Disk IO; DB 0 câu chờ đĩa; không tự thoát, P2028 lần cuối 23:05. Gai 23:17 = 4 câu đếm toàn bảng của HQ sau khi worker khởi động lại. ★ Log đo bắt được `/recommendations` +187 MB RSS một lượt (261 → 448) → lớp 2c là việc kế để hết OOM, ⏳ anh chốt. Chưa kết luận hết chậm — xem lại chiều tối 26/11.
 
 ---
 ## Phiên 25/11 ~22:20 — Anh báo "hiện tại đang rất chậm": database cạn Disk IO + web tự thoát 2 lần (chỉ đọc, chưa sửa)

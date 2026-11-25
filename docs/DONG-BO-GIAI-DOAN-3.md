@@ -1002,3 +1002,55 @@ Anh đúng: sửa 2 middleware (8.8) chỉ chặn web tự thoát, không làm n
   đăng xuất (`hubsell-mobile/src/api/client.ts` `onUnauthorized`) nên bản cũ đẩy khách ra màn đăng nhập mỗi khi DB nghẽn. Test
   `auth-db-busy.test.ts` 6 ca; `tsc` sạch; bộ `routes + middleware + lib + services` 1.124 đạt, 1 ca `pack-video/upload-db` "HẾT GIỜ" đỏ khi
   chạy chung nhưng chạy riêng đạt 15/15 (chập chờn do dùng chung DB local, không thuộc phần sửa này).
+
+### 8.12. Anh: "Kiểm tra lại đi em" — kiểm prod 23:15–23:20 ngày 25/11/2026 (chỉ đọc)
+
+- **Bản đang chạy:** `23c2e108` (sửa auth 8.11) — push ~23:13, lần này Render TỰ deploy cả web lẫn worker, `/health` đúng commit lúc 23:15:52.
+  Worker nhảy thẳng `358bfa5c` → `23c2e108` (không có sự kiện deploy `ba12a9aa`, bản đó chỉ đổi mã web).
+- **Read IOPS (Supabase, khung 22:50–23:19):** phẳng ~950 (bị bóp) tới **~23:06**, rồi rơi xuống **100–250** giữa các gai. Gai: ~23:09 (~1.100),
+  ~23:13 (~1.400, trùng lượt `/recommendations` + trang Quảng cáo lúc 23:12), ~23:17 (**~1.800**, trùng web + worker khởi động lại vì lượt
+  deploy 23:15) rồi xuống 704 lúc 23:19. Gai vượt được 1.000 = hạn mức bùng nổ đã có lại; bảng "about to deplete Disk IO Budget" đã hết hiện.
+- **Database:** 23:16:44 và 23:17:51 đều `active = 0`, `chờ đĩa = 0`. Câu danh sách đơn mới: 35 lượt, 0,00 MB / lượt, TB 2 ms, max 38 ms;
+  câu cũ đứng 2.397 lượt.
+- **Gai 23:17 là của HQ, không phải khách** (đo chênh 67 giây: 755 MB): `prisma.order.count()` cả bảng 164 MB · `MAX(COUNT(*)) … Order GROUP BY
+  DATE("createdAt")` 151 MB · `COUNT webhook_events` theo nguồn 122 MB · `COUNT Order WHERE createdAt >= …` 113 MB — mỗi câu 1 lượt, 11–17 s,
+  chạy ngay sau khi worker lên. Cộng dồn: 3.180 lượt (TB 67 MB) và ~710 lượt (29–74 MB). Thuộc HQ Tổng quan / Sức khỏe (⛔ để nguyên HQ) —
+  chỉ ghi: đây là bốn câu đếm toàn bảng, bảng càng lớn càng nặng.
+- **Web:** không có lần tự thoát nào sau 22:11; lỗi P2028 / "webhook không ghi được hàng đợi bền" lần cuối 23:05 (17 dòng 23:03, 8 dòng
+  23:05 — lúc đổi máy), sau đó 0. Dòng `[Đo request]` từ 23:06: 23:08 ×1, 23:12 ×10 (max 11,9 s), 23:15 ×1, 23:18 ×1.
+- **★ Log đo bắt được thủ phạm RAM:** 23:12:09 `GET /api/quang-cao/shopee/recommendations` **RSS 261 → 448 MB (+187 MB) trong 3,1 giây**;
+  hai lượt `GET /api/quang-cao/shopee` cùng phút +34 / +35 MB (23:15:57 thêm một lượt +39). Máy `mmxdk` boot 23:03:36 ở 176 MB → 23:12:11 đã
+  "SÁT TRẦN RSS 435 MB", tức MỘT lượt gợi ý quảng cáo đủ đưa máy lên sát trần 512 MB. Khớp nghi vấn 8.5 → **lớp 2c
+  (`ads-recommend-data.ts` chỉ nạp dòng khác 0) là việc phải làm để hết OOM**; ⏳ anh chốt.
+- **Chưa kết luận được:** hết chậm hẳn hay chưa — mới ~15 phút, giờ thưa khách. Mốc kiểm: chiều tối 26/11, Read IOPS ngoài gai có giữ dưới
+  ~1.000 không, và có còn dòng `[Đo request]` hàng chục giây không.
+
+### 8.13. Lớp 2c — Gợi ý chạy ads cộng lịch sử trong database (25/11/2026 ~23:35, anh: "Ừ, làm lớp 2c"; code LOCAL, chưa commit)
+
+- **Bằng chứng (8.12):** `[Đo request]` prod 23:12:09 — một lượt `GET /api/quang-cao/shopee/recommendations` RSS 261 → 448 MB (+187 MB).
+- **Gốc:** `computeChannelAdsRecommendations` (`integrations/shopee/ads-recommend-data.ts`) nạp TỪNG dòng số theo ngày (`expense`, `broadGmv`)
+  của mọi chiến dịch có `itemIds` trong 30 ngày rồi cộng bằng JS chỉ để ra 2 con số / sản phẩm. Gian lớn: 118–122 nghìn dòng / lượt.
+- **Sửa:** tách `loadSingleItemAdsHistory(channelId, since)` — MỘT câu SQL cộng theo từng chiến dịch (`LEFT JOIN LATERAL`, đi chỉ mục
+  `(adsCampaignId, date)`) rồi gộp theo sản phẩm; web nhận mỗi sản phẩm một dòng. Giữ nguyên luật: chỉ chiến dịch ĐÚNG 1 sản phẩm
+  (`btrim(itemIds, ',')` khác rỗng và không còn dấu phẩy = `split(",").filter(Boolean).length === 1`); sản phẩm có chiến dịch mà không có
+  dòng số vẫn có mặt với 0 / 0; cột `date` là DATE nên so theo ngày UTC của mốc như Prisma. Đường lui: `ADS_LOAD_ZERO_PERF_ROWS=1` (chung
+  công tắc lớp 2a). Chọn cộng ở DB thay vì "chỉ nạp dòng khác 0" (khuôn 2a) vì số dòng trả về khi đó bị chặn theo số sản phẩm, không theo
+  số dòng có số — gian 1.000 chiến dịch đang chạy thật vẫn là ~30 nghìn dòng khác 0.
+- **Đo trên DB dev** (gian giả 3.946 chiến dịch × 30 ngày = 118.380 dòng, 1.980 dòng khác 0; mỗi chế độ 2 lần, tiến trình riêng):
+  | | Bản cũ | Bản mới |
+  |---|---|---|
+  | riêng phần lịch sử ads | RSS **+123 / +125 MB**, heap 33 → 95 MB, 919–996 ms | RSS **+1 / +2 MB**, heap ~+1 MB, 136–139 ms |
+  | cả hàm gợi ý (gian giả không có sản phẩm / đơn) | RSS +136 / +137 MB, ~960 ms | RSS +12 / +14 MB, ~180 ms |
+  Prod +187 MB = ~125 MB phần này + phần còn lại (biên lãi, danh mục SKU) CHƯA đo riêng — sau khi lên prod đọc lại dòng `[Đo request]`.
+- **Đo prod (EXPLAIN ANALYZE, gian `…yxnvdy`):** dạng nối thẳng + GROUP BY: 1.183 ms, sắp 119.013 dòng, tràn tệp tạm (409 trang), đọc đĩa
+  5.037 trang (~39 MB, bộ đệm nguội) → đổi sang LATERAL: **161 ms**, sắp 3.970 dòng, không tệp tạm, 22.870 trang đều trúng bộ đệm (lượt
+  này bộ đệm đã ấm nên không so được phần đọc đĩa). Kết quả 115 sản phẩm. Lượng trang database phải chạm KHÔNG giảm so với bản cũ (vẫn
+  đọc ~119 nghìn dòng, 98 % toàn 0) — muốn giảm phải thôi ghi dòng 0 ở worker (đã ghi "để sau" ở 8.2).
+- **Kiểm:** `ads-recommend-history-db.test.ts` 4/4 — đường cũ = đường mới về tập sản phẩm + tổng (lệch cho phép < 0,005 vì cũ cộng số thực
+  JS, mới cộng thập phân chính xác) trên: hai chiến dịch cùng sản phẩm, toàn 0, không dòng, số ngoài cửa sổ, nhiều sản phẩm, dấu phẩy thừa
+  đầu / cuối / giữa, chỉ dấu phẩy, rỗng, gian shop khác cùng mã, 9 mốc ranh giới ngày quanh 29–32 ngày, cửa sổ 90 ngày, cửa sổ tương lai;
+  có chốt giá trị tay cho từng ca. `ads-margin-fallback-db` (chạy cả hàm gợi ý) + `ads-recommend` + `ads-insights-nonzero-load-db` đạt;
+  `tsc` sạch. Bộ `integrations/__tests__`: 21 ca sổ cái đỏ (10 tệp `*-ledger-db`, `channel-delete-db`, `ads-margin-sql-db`…) — đối chứng
+  `git stash` riêng tệp sửa: đỏ Y HỆT 21 ca trên mã gốc → có sẵn ở DB dev, không do lớp 2c (8.3 từng ghi 7 ca; nay 21, chưa tìm vì sao).
+- **Sau khi lên prod phải đo:** dòng `[Đo request] … /recommendations` không còn `+1xx MB`; `[Bộ nhớ]` không còn "SÁT TRẦN" sau một lượt
+  mở tab Gợi ý; 7 ngày không OOM (tiêu chí lớp 3).
