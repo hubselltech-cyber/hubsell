@@ -5,6 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 khuya (4) — Hạn khiếu nại lát 2b + 2c: dọn mã, commit `324424d5`, LÊN PROD (`8366a06e`)
+
+- Anh: "Dọn dẹp sạch code thừa, sắp xếp chuẩn cấu trúc tree chuyên nghiệp, commit rồi push lên em".
+- Dọn: câu đọc "sắp hết hạn" rời route kho về `lib/return-complaint-due-sql.ts` (`loadComplaintDueSoon`); bỏ re-export + bí danh
+  kiểu thừa ở `library.ts`; kiểu frontend đổi tên `ReturnComplaintDue` đặt cạnh `ReturnRow`; xóa 2 tệp tạm. Hành vi không đổi.
+- Push `9d9706e1..8366a06e`: `324424d5` (lát 2b + 2c) + `8366a06e` (tài liệu tồn của phiên 24–25/11). Render `/health` = `8366a06e`.
+- Soi prod thật: cột Thời hạn đứng sau Mã đơn, 6 đơn hàng hỏng hiện "Quá hạn N ngày · hết …", bảng không tràn, console sạch;
+  dải nhắc không hiện vì tài khoản soi không có đơn dưới 24 giờ (chưa thấy viên đỏ với dữ liệu thật).
+- Còn lại: lát 3 chuông + số ở menu; lưu hạn hiệu lực thành cột; đo câu groupBy của Đối soát + câu đếm thẻ tab Đơn hoàn;
+  đơn đã khiếu nại trên sàn có còn đếm ngược không. Chi tiết docs/HAN-KHIEU-NAI-DON-HOAN.md mục 17.
+
+---
 ## Phiên 25/11 khuya (3) — ĐÃ dựng chỉ mục `Order_return_complaint_due_idx` trên prod, đo lại 6,9 giây → 0,3 giây; chưa commit / push
 
 - Anh: "Em tự mở chrome lên chạy đi" → chạy `CREATE INDEX CONCURRENTLY` ở Supabase SQL Editor: Success, `indisvalid = true`, 144 kB.

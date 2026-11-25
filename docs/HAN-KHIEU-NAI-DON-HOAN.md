@@ -591,3 +591,29 @@ trước khi anh cho push.
 - Đã dọn: 20 đơn + 17 video + 3 gian thử trên database local, xóa `_tmp-hkn2-seed.ts`.
 - **Còn lại trước khi push:** anh cho lệnh commit + push. Migration trong repo chỉ `CREATE INDEX IF NOT EXISTS` → trên prod sẽ bỏ qua
   (chỉ mục đã có), không có bẫy khóa.
+
+## 17. Dọn mã + LÊN PROD `324424d5` (25/11 khuya — anh: "Dọn dẹp sạch code thừa, sắp xếp chuẩn cấu trúc tree chuyên nghiệp, commit rồi push lên em")
+
+**Dọn trước khi commit** (không đổi hành vi; tsc 2 phía + eslint frontend sạch, test hạn 40 / 40 sau khi dọn):
+- Câu đọc "sắp hết hạn" rời route: `loadDueSoon` trong `routes/warehouse.ts` → **`loadComplaintDueSoon(scope, now)`** ở
+  `lib/return-complaint-due-sql.ts` (nhận `ChannelScope`, không nhận request). Route bỏ mẹo `void _range`, tách `searchWhere` dùng lại.
+- `services/pack-video/library.ts`: bỏ re-export `COMPLAINT_DUE_SOON_HOURS` và bí danh `ReturnComplaintDueView` không ai dùng.
+- Frontend: kiểu `PackVideoReturnComplaintDue` → **`ReturnComplaintDue`**, dời lên cạnh `ReturnRow` trong `lib/api.ts` (hai trang cùng
+  dùng, không còn mang tên Video); `formatDueAt` thôi export (chỉ dùng trong tệp); sửa chú thích đầu tệp cho đúng hiện trạng.
+- Tệp tạm đã xóa: `_tmp-hkn2-seed.ts`, `_tmp-hkn2-sql.ts`. Chỉ mục tài liệu `docs/README.md` cập nhật dòng của tài liệu này.
+- KHÔNG đụng: `backend/scripts/_tmp-kcqt-seed.ts` (tệp tạm của việc kho chuẩn quốc tế, chưa theo dõi bằng git) và các bản nháp trong
+  `hubsell-marketing/` (luật: bài / kịch bản nháp không commit).
+
+**Commit + push** `9d9706e1..8366a06e` lên `master`:
+- `324424d5` — lát 2b + 2c (mã + migration chỉ mục + docs mục 14–16 + PROGRESS).
+- `8366a06e` — chỉ tài liệu của các phiên 24–25/11 còn tồn (`DONG-BO-GIAI-DOAN-3` mục 8.4–8.5, `VIDEO-DONG-HANG-THIET-KE` mục 29).
+
+**Deploy:** `/health` của backend Render báo `8366a06e` sau ~2 phút (migration chỉ mục bỏ qua vì chỉ mục đã có — không dính khóa).
+
+**Soi prod thật** (Chrome của anh, tài khoản chủ shop, màn 1920):
+- Trang Đối soát đơn hoàn: cột **Thời hạn** đứng sau Mã đơn; API trả `summary.dueSoon = 0`, `dueSoonNearestAt`, `complaintDue` mỗi
+  dòng → dải nhắc không hiện (đúng: lúc soi không có đơn nào còn dưới 24 giờ).
+- Bấm thẻ Hàng hỏng · khiếu nại sàn: 6 dòng hiện "Quá hạn 57 ngày 8 giờ · hết 12:07 29/09", "Quá hạn 5 ngày 8 giờ · hết 12:39 T6
+  20/11", hai dòng "ước tính · hết 10:38 06/10". Bảng 1.583 / 1.583 px, không ô nào tràn, console không lỗi.
+- **Chưa thấy trên prod:** viên đỏ "Còn … giờ" và dải nhắc với dữ liệu thật (tài khoản soi không có đơn sắp hết hạn); tab Đơn hoàn
+  bản mới; giao diện tối trên prod. Worker Render chưa kiểm riêng (chỉ kiểm `/health` của web).
