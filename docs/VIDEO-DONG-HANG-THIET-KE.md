@@ -2699,3 +2699,40 @@ tải bình thường (54 video đóng, nhãn Sắp tự xóa 15).
   HỢP LỆ (việc 03:00–05:00, mục 33.1).
 - ⏳ Chờ anh: bật `PACK_VIDEO_DELETE_ENABLED` (+ `PACK_VIDEO_ACCOUNT_PURGE`); duyệt phần thu hẹp chuông; số ngày lưới R2 + tách
   bucket prod; các số em tự diễn giải ở 32.1 (15 / 30 ngày trả hàng, ca đóng + 3, sàn 7).
+
+### 34.7 Anh chốt 26/11 ~00:25 — "1. Bật xóa thật · 2. Chuông → bỏ qua không cần · 3. R2 làm như đề xuất · 4. Push landing luôn", rồi "75 ngày dài quá… cứ giữ 60 ngày thôi"
+
+**Đã lên prod trước đó (00:17–00:19):** `bcd79c02` + `ee1d1340` (repo chính, `/health` = `ee1d1340` lúc 00:19:12) và landing `6c790ce`
+(câu 60 ngày + Chính sách bảo mật 26/11 thấy trên `hubsell.vn` lúc 00:18:05). Trên prod: nút "Xóa video" có trong hộp xem nhanh.
+
+**2. CHUÔNG — ĐÃ GỠ** (`c04189d2`). ⛔ Đừng đề xuất lại chuông báo trước khi xóa video. Mục 34.2 chỉ còn là ghi chép: đã xóa
+`cap-notice.ts` + test, bước 5 của worker dọn, mục thông báo `pack_video`, tùy chọn `ignoreCap`, việc đọc `?chip=`; migration
+`20261126100000_pack_videos_cap_idx_drop` gỡ chỉ mục vừa tạo cùng ngày. Chủ shop vẫn biết video sắp xóa qua nhãn "Sắp tự xóa"
+(3 ngày) trên trang.
+
+**3. R2 — ĐÃ ĐẶT lưới vòng đời 60 ngày** (Cloudflare, 00:33): luật `xoa-tep-sau-60-ngay` = "Delete objects after 60 day(s)", cả
+bucket `hubsell-video-thu`, đang Enabled (bên cạnh luật mặc định hủy tải dở 7 ngày). Anh bác số 75 em đề nghị. Hệ quả cần biết:
+- Luật tính theo TUỔI TỆP (từ lúc tải lên), không đọc sổ. Sổ xóa vào ngày quay + 60; tệp tải lên cùng ngày quay nên hai mốc sát
+  nhau — ngày cuối có thể có vài giờ tệp đã mất mà dòng sổ còn "đã lưu" (worker dọn chạy 6 giờ một lượt; lúc đó xóa tệp trả 404 vẫn
+  được coi là xong).
+- ⚠️ Nếu worker CHƯA xóa thật được (xem mục 1 dưới) thì từ ~15/01/2027 R2 tự xóa các video quay 16–18/11 trong khi sổ vẫn ghi còn lưu.
+- Bucket dùng chung với máy dev → clip thử trên local quá 60 ngày cũng mất tệp.
+- **Chưa tách bucket prod** (cần tạo khóa R2 mới + đổi biến trên Render — khóa bí mật, việc của anh).
+
+**1. BẬT XÓA THẬT — MỚI ĐƯỢC MỘT NỬA.**
+- Đếm lại trên prod 00:24: đúng **13 video "Đã tới hạn"** (9 chưa khớp đơn + 4 của đơn giao từ tháng 10), khớp số anh duyệt.
+- Đã thêm `PACK_VIDEO_DELETE_ENABLED=1` vào worker `hubsell-worker-sg` (Render → Environment, "Save only" 00:31; có hiệu lực từ lượt
+  deploy `a2a58a4f`).
+- ⛔ **PHÁT HIỆN: worker prod KHÔNG có 4 biến `R2_ENDPOINT` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`** — chỉ web
+  `hubsell-backend-sg` có (cùng `PACK_VIDEO_HOUR_SALES_OPEN`). Worker là nơi chạy việc xóa → **có cờ mà chưa xóa được tệp nào**.
+  Hai khóa R2 là khóa bí mật, em không tự chép / gõ → **⏳ anh thêm 4 biến R2 vào worker** (chép từ web), lượt worker dọn kế tiếp
+  (10 phút sau khi worker khởi động) sẽ xóa 13 video + dọn 1 lượt tải dở.
+- Sửa kèm (`a2a58a4f`): worker bật cờ mà thiếu R2 thì CHẠY BÓNG + ghi một dòng cảnh báo rõ; trước đó sẽ ghi một dòng lỗi cho từng
+  video và lượt dọn tải dở ném lỗi cả lượt.
+- `PACK_VIDEO_ACCOUNT_PURGE` (xóa video khi xóa tài khoản) CHƯA bật — anh chỉ bảo bật xóa thật; lệnh đó chạy ở tiến trình web (có R2).
+
+**4. Landing:** đã push từ 00:17 (trước tin nhắn này). `scripts/indexnow.mjs /quay-video-dong-hang /privacy` CHƯA chạy.
+
+**Test:** ca "HẾT GIỜ" của `upload-db.test.ts` lúc 00:22 đỏ cả khi chạy RIÊNG (00:10 chạy riêng thì đạt). Em không đụng phần giờ / tải
+lên; nghi do lệch vài mili giây giữa đồng hồ Node và Postgres local trong luật "video đang quay dở lúc hết giờ" — CHƯA chứng minh,
+cần một lát riêng. Các test còn lại của pack-video + luật + thông báo: 165 / 165; thư mục `workers`: 135 / 135.

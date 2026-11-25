@@ -5,9 +5,19 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 26/11 rạng sáng — Video đóng hàng, PHẦN XÓA: chủ shop tự xóa + chuông chạm trần + ghi trần 60 ngày + kiểm R2 — code LOCAL, chưa commit
+## Phiên 26/11 rạng sáng — Video đóng hàng, PHẦN XÓA: chủ shop tự xóa LÊN PROD · chuông ĐÃ GỠ · lưới R2 60 ngày · bật xóa thật MỚI MỘT NỬA (worker thiếu khóa R2)
 
 - Anh: "Tiếp tục làm phần còn dở và chưa làm" (sau khi hỏi phần xóa đang ở bước nào). Công tắc xóa thật VẪN TẮT.
+- **★ Chốt lại 00:25 (anh: "1. Bật xóa thật · 2. Chuông → bỏ qua không cần · 3. R2 làm như đề xuất · 4. Push landing luôn", rồi
+  "75 ngày dài quá… cứ giữ 60 ngày thôi") — các dòng dưới là ghi chép lúc làm, kết quả cuối ở đây:**
+  - Lên prod: `bcd79c02` + `ee1d1340` (`/health` 00:19:12), landing `6c790ce` (00:18); rồi `c04189d2` (gỡ chuông) + `a2a58a4f`.
+  - **Chuông ĐÃ GỠ** khỏi mã (+ migration gỡ chỉ mục `pack_videos_cap_idx`). ⛔ đừng đề xuất lại.
+  - **R2:** đã đặt luật vòng đời `xoa-tep-sau-60-ngay` (xóa tệp sau 60 ngày, cả bucket). Chưa tách bucket prod.
+  - **Bật xóa thật:** đã thêm `PACK_VIDEO_DELETE_ENABLED=1` vào worker, NHƯNG **worker prod không có 4 biến `R2_*`** (chỉ web có) →
+    chưa xóa được tệp nào. ⏳ **anh thêm 4 biến R2 vào `hubsell-worker-sg`** (em không gõ khóa bí mật); xong thì lượt dọn kế xóa 13
+    video thử (đã đếm lại 00:24, vẫn 13). Worker nay thiếu R2 thì chạy bóng + cảnh báo rõ.
+  - Chưa làm: `scripts/indexnow.mjs`; `REINDEX` chỉ mục mã vận đơn chiều hoàn; ca test "HẾT GIỜ" `upload-db` đỏ cả khi chạy riêng
+    lúc 00:22 (không do thay đổi này, chưa tìm gốc). Chi tiết docs mục 34.7.
 - **Chủ shop tự xóa từng video (G8):** `DELETE /api/pack-videos/:id` (`manual-delete.ts`) — chỉ chủ shop, xóa tệp R2 trước rồi ghi
   `DELETED` + lý do `MANUAL`, giờ đã quay không cộng lại. Web: nút "Xóa video" cạnh trình phát (hộp xem nhanh + hồ sơ đơn) + hộp
   hỏi lại, đơn có hoàn thì cảnh báo thêm. Lịch sử xóa hiện "Chủ shop tự xóa".
