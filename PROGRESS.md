@@ -5,6 +5,29 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 trưa — Khách mới "kéo sản phẩm về nhưng không nhập được giá vốn" = trang Giá vốn bị rào RSS chặn cho MỌI shop — sửa lớp 1 + 2 (rào theo cỡ lượt, Quảng cáo nạp dòng khác 0)
+
+- **Triệu chứng đo prod (log web Render, 12:55 → 13:45 VN):** 51/51 lượt `GET /api/finance/sku-products` bị `[Rào] sku-products: từ chối
+  (0 đang chạy, RSS 467–511 MB, trần 400 MB)` → 503 "Máy chủ đang bận…", trang `/finance/cost-prices` tự thử lại 30 giây/lần mãi, bảng không
+  hiện → khách không có ô để điền. Không lượt nào lọt. Không riêng khách nào: rào tính RSS của cả tiến trình.
+- **Chuỗi:** web OOM 2 lần hôm nay (12:11, 12:56). Máy `f9vkj` boot 12:56:38 RSS 173 MB → 13:01:28 RSS 461 MB (90 %) lúc đang chạy
+  `GET /api/quang-cao/shopee` + `/api/quang-cao/tiktok` → heap tụt lại 78 MB (mốc nền 13:26) nhưng **RSS kẹt 468–470 MB không trả lại** →
+  rào RSS > 400 MB đóng vĩnh viễn cho tới lần khởi động sau. Rào 03/11 (`lib/request-ledger.ts`) giả định RSS nền ~330 MB — nay sai.
+- **Khách mới nghi là người kêu (chưa xác nhận với anh):** user `cmwvqetk4024clr3autw0p00o` đăng ký 13:17, 1 gian TikTok, 31 dòng sàn về 13:18
+  (không mã SKU riêng, toàn combo), 0 giá vốn; gói thử ACTIVE tới 09/12 → không bị khóa gói. Dữ liệu khách không lỗi.
+- **Chưa làm:** sửa thiết kế rào (RSS không phải thước đo chỗ trống — heap 78 MB vẫn còn dư) + tìm request đẩy RSS lên 461 MB trong 5 phút
+  đầu (nghi Quảng cáo Shopee). Chờ anh chốt. ⛔ không nâng máy, ⛔ không chỉ nâng số 400.
+- **Anh: "cần một phương án để không bị lỗi" → đo thêm + phương án 3 lớp ở `docs/DONG-BO-GIAI-DOAN-3.md` mục 8** (chưa code): gian Shopee
+  của khách hoaphamsoc2025 (về 11:05 hôm nay) 3.946 chiến dịch, 118.380 dòng số/30 ngày, 98,3 % toàn 0 → trang Quảng cáo nạp ~30 nghìn
+  dòng/lượt. Lớp 1 rào theo cỡ lượt (gian nhỏ luôn qua); lớp 2 chỉ nạp dòng khác 0 + gộp lượt trùng, chứng minh kết quả trùng 100 %;
+  lớp 3 log đo + tiêu chí 7 ngày. Chờ anh chốt.
+- **Anh "Làm lớp 1 + 2" → ĐÃ CODE + TEST; anh "Commit và push" (docs mục 8.3):** sku-products chỉ rào gian > 5.000 dòng
+  (`admitHeavyRequest`); trang Quảng cáo chỉ nạp dòng khác 0, ba chỗ cần dòng 0 lấy bằng gộp DB (`perfDays`, mốc tự kiểm, chiến dịch hạ nấc
+  nạp đủ), đường lui `ADS_LOAD_ZERO_PERF_ROWS=1`; gộp lượt trùng đang chạy. Test đối chứng cũ = mới 4/4, rào qua app thật 3/3 (mã cũ đỏ
+  đúng ca gian nhỏ). Đo gian giả cỡ khách: RSS +123 MB → +22 MB/lượt. 7 test sổ cái đỏ sẵn (đối chứng stash). Chưa soi màn local (tài
+  khoản thử hết gói).
+
+---
 ## Phiên 24/11 khuya — HQ Kế toán nội bộ: ô tìm sổ quỹ theo GÓI / EMAIL khách — ĐÃ PUSH master (anh: "commit và push")
 
 - **Anh:** "Hubsell HQ anh muốn thêm thanh tìm kiếm, mục đích để tìm kiếm theo gói và email khách mua gói" (khoanh chỗ trống dưới thẻ

@@ -96,7 +96,14 @@ export function assistantDecisionActive(insight: CampaignInsight): boolean {
 
 export interface ChannelAdsInsights {
   config: ShopeeAssistantConfig;
+  /**
+   * `row.dailyPerf` CHỈ chứa dòng có số khác 0 (25/11/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 8) — cộng dồn thì như cũ,
+   * nhưng đừng đếm ngày hay lấy ngày đầu/cuối từ đó; cần thì dùng `perfDays`. Ngoại lệ: chiến dịch vừa bị HẠ mục tiêu
+   * ROAS được nạp đủ mọi dòng (stepProfitCheck đếm theo ngày).
+   */
   items: CampaignInsight[];
+  /** Mọi ngày (≥ mốc nạp) có ÍT NHẤT một dòng số của các chiến dịch đã nạp, kể cả dòng toàn 0 — biểu đồ cần đủ ngày. */
+  perfDays: string[];
   shop: {
     margin: number | null;
     breakevenRoas: number | null;
@@ -142,20 +149,83 @@ export function campaignsWorthLoading(perfFloor: Date): Prisma.AdsCampaignWhereI
   };
 }
 
-export async function computeChannelAdsInsights(
+/** Dòng số có ít nhất một cột khác 0 — dòng toàn 0 không góp gì vào phép cộng nào. */
+const NONZERO_PERF: Prisma.AdsCampaignDailyPerfWhereInput = {
+  OR: [
+    { expense: { not: 0 } },
+    { impression: { not: 0 } },
+    { clicks: { not: 0 } },
+    { broadOrder: { not: 0 } },
+    { broadGmv: { not: 0 } },
+    { directOrder: { not: 0 } },
+    { directGmv: { not: 0 } },
+    { broadOrderAmount: { not: 0 } },
+    { directOrderAmount: { not: 0 } },
+  ],
+};
+
+/** Đường lui: `ADS_LOAD_ZERO_PERF_ROWS=1` nạp lại mọi dòng như trước 25/11/2026 (test đối chứng cũng dùng). */
+function loadZeroPerfRows(): boolean {
+  return process.env.ADS_LOAD_ZERO_PERF_ROWS === "1";
+}
+
+/** Chiến dịch có phép so lãi trước/sau nấc hạ mục tiêu (stepProfitCheck đếm NGÀY → cần cả dòng toàn 0). */
+function needsAllPerfDays(c: AdsCampaign): boolean {
+  return (
+    c.roasTargetChangedAt != null &&
+    c.roasTarget != null &&
+    c.roasTargetPrev != null &&
+    Number(c.roasTargetPrev) > Number(c.roasTarget)
+  );
+}
+
+/**
+ * Lượt đang tính dở theo (gian, mốc nạp, nguồn biên, ngày VN): lượt thứ hai cùng khóa chờ chung kết quả thay vì nạp lại
+ * (25/11/2026: log có 2 lượt /api/quang-cao/shopee cùng lúc ngay trước khi RSS lên 461 MB). Chỉ gộp lúc ĐANG chạy,
+ * xong là xóa — không thành bộ đệm, số luôn mới như cũ. Người gọi KHÔNG được sửa kết quả (dùng chung).
+ */
+const inFlightInsights = new Map<string, Promise<ChannelAdsInsights>>();
+
+export function computeChannelAdsInsights(
   channel: AdsInsightChannel,
   opts: { perfFromKey?: string; marginSource?: AdsMarginSource } = {}
 ): Promise<ChannelAdsInsights> {
+  const key = [
+    channel.id,
+    dateKey(perfFloorOf(opts.perfFromKey)),
+    opts.marginSource ?? "",
+    vnDateKey(0),
+    loadZeroPerfRows() ? "all" : "nz",
+  ].join("|");
+  const running = inFlightInsights.get(key);
+  if (running) return running;
+  const p = computeChannelAdsInsightsNow(channel, opts).finally(() => inFlightInsights.delete(key));
+  inFlightInsights.set(key, p);
+  return p;
+}
+
+function perfFloorOf(perfFromKey: string | undefined): Date {
   let perfFloor = startOfDaysAgo(30);
-  if (opts.perfFromKey) {
-    const wanted = dateKeyToDbDate(opts.perfFromKey);
+  if (perfFromKey) {
+    const wanted = dateKeyToDbDate(perfFromKey);
     if (wanted < perfFloor) perfFloor = wanted;
   }
+  return perfFloor;
+}
+
+async function computeChannelAdsInsightsNow(
+  channel: AdsInsightChannel,
+  opts: { perfFromKey?: string; marginSource?: AdsMarginSource }
+): Promise<ChannelAdsInsights> {
+  const perfFloor = perfFloorOf(opts.perfFromKey);
+  const allRows = loadZeroPerfRows();
   // Chiến dịch đã kết thúc mà không có số nào trong khoảng thì không có gì để tính hay hiển thị, nên không nạp. Gian có 5.000
   // chiến dịch cũ kèm 131.162 dòng số toàn 0 từng làm RSS tăng 532 MB trong một lượt, web 512 MB chết (03/11/2026).
-  const campaignRows = await prisma.adsCampaign.findMany({
+  // 25/11/2026: gian 3.946 chiến dịch còn 996 chiến dịch được nạp × ~30 dòng, 98 % dòng toàn 0 → chỉ nạp dòng khác 0;
+  // ba chỗ cần biết dòng toàn 0 (ngày đầu có số, ngày biểu đồ, so nấc hạ) lấy bằng truy vấn gộp ở DB bên dưới.
+  const campaignRows: CampaignWithPerf[] = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id, ...campaignsWorthLoading(perfFloor) },
-    include: { dailyPerf: { where: { date: { gte: perfFloor } } } },
+    include: { dailyPerf: { where: { date: { gte: perfFloor }, ...(allRows ? {} : NONZERO_PERF) } } },
   });
 
   const configRow = await prisma.adsAssistantConfig.findUnique({
@@ -173,6 +243,59 @@ export async function computeChannelAdsInsights(
   const yesterdayKey = vnDateKey(1);
   const weekAgoKey = vnDateKey(7);
 
+  // Phần dòng toàn 0 còn ảnh hưởng tới kết quả — lấy gọn ở DB (một dòng mỗi chiến dịch / mỗi ngày), không nạp từng dòng.
+  const perfDaySet = new Set<string>();
+  /** Ngày đầu có dòng số (kể cả toàn 0) trong [30 ngày, hôm qua] — mốc tự kiểm Lát 4. */
+  const firstPerfKey = new Map<string, string>();
+  if (allRows) {
+    for (const c of campaignRows) {
+      for (const p of c.dailyPerf) {
+        const key = dateKey(p.date);
+        perfDaySet.add(key);
+        if (key > yesterdayKey || key < windowFloorKey["30d"]) continue;
+        const prev = firstPerfKey.get(c.id);
+        if (prev === undefined || key < prev) firstPerfKey.set(c.id, key);
+      }
+    }
+  } else if (campaignRows.length > 0) {
+    const ids = campaignRows.map((c) => c.id);
+    const stepIds = campaignRows.filter(needsAllPerfDays).map((c) => c.id);
+    const [firsts, days, stepRows] = await Promise.all([
+      prisma.adsCampaignDailyPerf.groupBy({
+        by: ["adsCampaignId"],
+        where: {
+          adsCampaignId: { in: ids },
+          // Cùng mốc nạp với include ở trên (gte perfFloor) + đúng cửa sổ vòng lặp cũ.
+          AND: [{ date: { gte: perfFloor } }, { date: { gte: dateKeyToDbDate(windowFloorKey["30d"]) } }],
+          date: { lte: dateKeyToDbDate(yesterdayKey) },
+        },
+        _min: { date: true },
+      }),
+      prisma.adsCampaignDailyPerf.groupBy({
+        by: ["date"],
+        where: { adsCampaignId: { in: ids }, date: { gte: perfFloor } },
+      }),
+      stepIds.length > 0
+        ? prisma.adsCampaignDailyPerf.findMany({ where: { adsCampaignId: { in: stepIds }, date: { gte: perfFloor } } })
+        : Promise.resolve([] as AdsCampaignDailyPerf[]),
+    ]);
+    for (const f of firsts) if (f._min.date) firstPerfKey.set(f.adsCampaignId, dateKey(f._min.date));
+    for (const d of days) perfDaySet.add(dateKey(d.date));
+    if (stepRows.length > 0) {
+      const full = new Map<string, AdsCampaignDailyPerf[]>();
+      for (const r of stepRows) {
+        const list = full.get(r.adsCampaignId);
+        if (list) list.push(r);
+        else full.set(r.adsCampaignId, [r]);
+      }
+      for (const c of campaignRows) {
+        const list = full.get(c.id);
+        if (list) c.dailyPerf = list;
+      }
+    }
+  }
+  const perfDays = [...perfDaySet].sort();
+
   // Map SKU sàn → campaign qua externalId của ChannelProduct ("item" | "item-model").
   const channelProducts = await prisma.channelProduct.findMany({
     where: { channelId: channel.id, externalId: { not: null } },
@@ -185,12 +308,12 @@ export async function computeChannelAdsInsights(
   const directGmvOf = new Map<string, number>();
   for (const c of campaignRows) {
     if (!c.itemIds) continue;
-    let from = "";
+    // Ngày đầu tính cả dòng toàn 0 (giữ đúng như trước 25/11/2026); tổng direct chỉ cần dòng khác 0.
+    const from = firstPerfKey.get(c.id) ?? "";
     let direct = 0;
     for (const p of c.dailyPerf) {
       const key = dateKey(p.date);
       if (key > yesterdayKey || key < windowFloorKey["30d"]) continue;
-      if (from === "" || key < from) from = key;
       direct += Number(p.directGmv);
     }
     if (from) {
@@ -319,6 +442,7 @@ export async function computeChannelAdsInsights(
   return {
     config,
     items,
+    perfDays,
     shop: {
       margin: shopMargin,
       breakevenRoas: shopBreakeven,

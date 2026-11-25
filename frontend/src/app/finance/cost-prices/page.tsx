@@ -495,7 +495,8 @@ export default function CostPricesPage() {
       // 503 SERVER_BUSY (03/11/2026, rào route nặng): máy chủ đang tải danh sách lớn cho
       // người khác → báo đúng câu thay vì bảng trống "Không có SKU nào", tự thử lại sau 30 giây.
       if (err instanceof ApiError && err.status === 503) {
-        toast.warning(err.message, { duration: 8000 });
+        // Cùng id: mỗi lần thử lại THAY câu cũ, không chồng thêm toast (chỉ gian lớn còn gặp, 25/11/2026).
+        toast.warning(`${err.message} Trang sẽ tự thử lại.`, { id: "sku-products-busy", duration: 8000 });
         setBusyRetry((n) => n + 1);
         return;
       }

@@ -20,7 +20,7 @@ import {
   listCatalogSyncState,
   requestProductSyncNow,
 } from "../workers/product-catalog-sync";
-import { heavyRouteGuard } from "../lib/request-ledger";
+import { admitHeavyRequest, heavyRouteGuard } from "../lib/request-ledger";
 import { countSkuSearchEverywhere, loadSkuCatalogPage } from "../lib/sku-catalog-page";
 import {
   applyChannelCostPrice,
@@ -1192,9 +1192,10 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 // Gian lớn (03/11/2026, lát 3.8 docs/DONG-BO-GIAI-DOAN-3.md mục 6): vượt catalogRowLimit() thì
 //   · `paged=1` → lọc, tìm, đếm và chia trang ở DB (lib/sku-catalog-page.ts), web chỉ giữ một trang;
 //   · không `paged` (lọc theo kỳ) → trả `limit` dòng đầu ưu tiên đang bán chưa có giá, kèm `truncated`;
-//   · chỉ SELECT đúng cột dùng; heavyRouteGuard chặn khi quá 2 request hoặc RSS sát trần (503).
-// Gian nhỏ tải hết, lọc trên trình duyệt như cũ.
-router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthRequest, res, next) => {
+//   · chỉ SELECT đúng cột dùng; CHỈ lượt của gian lớn qua rào (quá 2 request hoặc RSS sát trần → 503).
+// Gian nhỏ tải hết, lọc trên trình duyệt như cũ, KHÔNG bao giờ bị rào chặn (25/11/2026: RSS kẹt sau đỉnh của trang
+// Quảng cáo làm rào chặn cả gian 31 dòng — docs/DONG-BO-GIAI-DOAN-3.md mục 8).
+router.get("/sku-products", async (req: AuthRequest, res, next) => {
   try {
     const startedAt = Date.now();
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
@@ -1270,6 +1271,8 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
       // Đếm cả gian (không tính ô tìm) → biết có phải gian lớn không.
       totalRows = await prisma.channelProduct.count({ where: whereChannel });
       truncated = totalRows > maxRows;
+      // Rào chỉ cho gian lớn: gian ≤ trần nạp tối đa maxRows dòng, không đủ sức đẩy máy tới OOM.
+      if (truncated && !admitHeavyRequest("sku-products", req, res)) return;
       const whereSearch =
         q !== ""
           ? {

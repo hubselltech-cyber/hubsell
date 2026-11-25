@@ -100,25 +100,37 @@ export const SERVER_BUSY_CODE = "SERVER_BUSY";
  * tiến trình đã sát trần; nếu không, đánh dấu request là nặng rồi cho qua.
  */
 export function heavyRouteGuard(label: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (admitHeavyRequest(label, req, res)) next();
+  };
+}
+
+/**
+ * Cùng luật với heavyRouteGuard nhưng gọi TRONG handler, khi đã biết lượt này có nặng thật không.
+ * true = cho qua (đã đánh dấu nặng); false = đã trả 503, handler phải dừng.
+ *
+ * Vì sao (25/11/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 8): RSS không trả lại sau một đỉnh — máy boot 173 MB, lên 461 MB lúc
+ * trang Quảng cáo chạy, heap về 78 MB mà RSS kẹt ~470 MB → rào chặn 51/51 lượt Giá vốn, kể cả gian 31 dòng. Lượt nhỏ
+ * không đẩy được máy tới OOM nên không được phép bị chặn theo trạng thái chung của tiến trình; chỉ lượt lớn mới xét.
+ */
+export function admitHeavyRequest(label: string, req: Request, res: Response): boolean {
   const maxConcurrent = numEnv("HEAVY_ROUTE_MAX_CONCURRENT", 2);
   const rssLimitMb = numEnv("HEAVY_ROUTE_RSS_MB", 400);
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const running = heavyInFlight(label);
-    const rssMb = Math.round(process.memoryUsage().rss / MB);
-    if (running >= maxConcurrent || rssMb > rssLimitMb) {
-      console.warn(
-        `[Rào] ${label}: từ chối (${running} đang chạy, RSS ${rssMb} MB, trần ${rssLimitMb} MB) — ${describeInFlight(5)}`
-      );
-      res.setHeader("Retry-After", "30");
-      res.status(503).json({
-        error: "Máy chủ đang bận tải một danh sách lớn. Vui lòng thử lại sau 30 giây.",
-        code: SERVER_BUSY_CODE,
-      });
-      return;
-    }
-    const id = (req as Request & { __inFlightId?: number }).__inFlightId;
-    const row = id === undefined ? undefined : inFlight.get(id);
-    if (row) row.heavy = label;
-    next();
-  };
+  const running = heavyInFlight(label);
+  const rssMb = Math.round(process.memoryUsage().rss / MB);
+  if (running >= maxConcurrent || rssMb > rssLimitMb) {
+    console.warn(
+      `[Rào] ${label}: từ chối (${running} đang chạy, RSS ${rssMb} MB, trần ${rssLimitMb} MB) — ${describeInFlight(5)}`
+    );
+    res.setHeader("Retry-After", "30");
+    res.status(503).json({
+      error: "Máy chủ đang bận tải một danh sách lớn. Vui lòng thử lại sau 30 giây.",
+      code: SERVER_BUSY_CODE,
+    });
+    return false;
+  }
+  const id = (req as Request & { __inFlightId?: number }).__inFlightId;
+  const row = id === undefined ? undefined : inFlight.get(id);
+  if (row) row.heavy = label;
+  return true;
 }

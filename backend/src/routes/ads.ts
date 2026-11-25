@@ -303,6 +303,12 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           seriesMap.set(key, point);
         }
       }
+      // dailyPerf chỉ còn dòng khác 0 (25/11/2026) — ngày mà mọi chiến dịch đều 0 vẫn phải có điểm 0 trên biểu đồ như cũ.
+      for (const key of insights.perfDays) {
+        if (!seriesMap.has(key) && inRange(dateKeyToDbDate(key))) {
+          seriesMap.set(key, { spend: 0, broadGmv: 0, directGmv: 0 });
+        }
+      }
       const series = [...seriesMap.entries()]
         .map(([date, v]) => ({ date, ...v }))
         .sort((a, b) => a.date.localeCompare(b.date));

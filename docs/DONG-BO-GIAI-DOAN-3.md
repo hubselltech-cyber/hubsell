@@ -686,3 +686,73 @@ Nguồn: Render `hubsell-worker-sg` trang Logs 24 giờ (từ khóa `Catalog-syn
 - **Hệ quả:** (1) "chỉ ghi dòng khác biệt" chưa tiết kiệm được với TikTok — mẫu 31 lượt 04:37–05:06: Shopee 12 gian 40.627 dòng chỉ 265 cập nhật (0,65 %), TikTok 18 gian 17.741 dòng tới 5.696 cập nhật (32 %); (2) số `NGOÀI cửa sổ` của TikTok đang lẫn nhiễu ảnh nên không dùng để quyết bật được; 47 dòng lệch tồn mới là phần đáng xem.
 - **Đề xuất (chưa làm, chờ anh):** so ảnh theo đường dẫn bỏ phần tham số (sau dấu `?`) trong `diffChannelProductRow`, có test; rồi đọc lại đối chiếu 1–2 đêm. Trước khi sửa cần biết URL cũ có hết hạn không (mở thử một URL lưu từ tháng 10).
 - **Lỗi lặp không do lát 3.9:** Lazada "Vodka Store" `ServiceTimeout` mỗi 30 phút, có từ 09:09 05/11 (trước deploy 23:00), 49 lần trong 50 dòng Lazada gần nhất; TikTok "TORANO MENSWEAR" `36009005 Invalid credentials` (khách hủy ủy quyền 05/11 14:16) vẫn bị thử lại mỗi 30 phút.
+
+## 8. Sự cố 25/11/2026 — trang Giá vốn bị rào RSS khóa cho mọi shop + web OOM 2 lần (lớp 1 + 2 đã làm, mục 8.3)
+
+Anh Trung 25/11 trưa: khách mới "kéo sản phẩm về nhập giá vốn nhưng không được" → "anh cần một phương án để không bị lỗi".
+
+### 8.1. Số đo prod (chỉ đọc)
+
+- Web OOM 12:11 + 12:56. Máy `f9vkj` boot 12:56:38 RSS 173 MB → 12:58 391 MB → 13:01:28 **461 MB** lúc chạy 2 lượt
+  `GET /api/quang-cao/shopee` cùng lúc (5 s) + `/api/quang-cao/tiktok`; heap đỉnh chỉ 160 MB, ngoài heap 6 MB → ~300 MB nằm ở bộ nhớ
+  native (nghi engine Prisma 6 dạng thư viện trong tiến trình — **giả thuyết, chưa đo**). Heap về 78 MB (13:26) nhưng RSS kẹt 468–470 MB.
+- Rào `heavyRouteGuard("sku-products")` (mục 6, `lib/request-ledger.ts`) chặn khi RSS > 400 MB → 12:55–13:45 **51/51 lượt bị 503**, kể cả
+  gian 31 dòng. Phân trang 3.8 đã chặn được lượt lớn nên rào theo RSS toàn tiến trình nay chỉ còn chặn oan. `MALLOC_ARENA_MAX` đã đặt trên Render.
+- Gian Shopee `…yxnvdy` của khách đăng ký 25/11 11:05: 3.946 chiến dịch, 118.380 dòng số/30 ngày, **116.407 dòng (98,3 %) toàn 0**;
+  trang nạp 996 chiến dịch (26 ongoing + 2 deleted + 968 ended có số) × ~30 dòng ≈ 30 nghìn dòng mỗi lượt mở, kèm 698 SKU. Gian
+  `…wfg4v8` (03/11): 122.444 dòng/30 ngày, 100 % toàn 0, 0 chiến dịch được nạp (lọc 6.12 đang hiệu quả ở gian này).
+- Hai lần OOM rơi đúng ngày gian `…yxnvdy` về; **chưa chứng minh** request nào giết máy lúc 12:11 / 12:56 (log máy cũ không còn trong cửa sổ 1 giờ).
+
+### 8.2. Phương án 3 lớp
+
+**Lớp 1 — trang nhẹ không bao giờ chết lây (gỡ lỗi khách đang gặp).** Rào theo CỠ LƯỢT, không theo trạng thái cả tiến trình: sku-products
+đếm dòng trước (một `count` đã có sẵn); lượt ≤ `catalogRowLimit()` (gian nhỏ, trang đã phân trang) luôn cho qua; chỉ lượt lớn mới xét
+đồng thời + bộ nhớ. Giữ nguyên số 400 cho lượt lớn — không vá ngưỡng. Trang Giá vốn khi bị 503 nói rõ "đang thử lại lần N" thay vì toast lặp.
+
+**Lớp 2 — cắt gốc làm bộ nhớ phình ở trang Quảng cáo.**
+- (a) `computeChannelAdsInsights` chỉ nạp dòng số KHÁC 0 (dòng 0 không góp gì vào phép cộng) → gian `…yxnvdy` từ ~30 nghìn dòng còn ~2 nghìn.
+  Phải chứng minh kết quả TRÙNG 100 % trước/sau (cửa sổ today/3d/7d/30d, verdict, biểu đồ series, luật "không hiển thị N ngày") trên gian giả
+  cùng cỡ ở DB dev + bộ test `ads-insights-*` — đúng luật "đổi tài chính phải mô phỏng quảng cáo".
+- (b) Gộp lượt trùng: cùng gian + cùng khoảng ngày đang tính thì lượt sau chờ chung kết quả (single-flight), không tính lại — log 13:01
+  có 2 lượt `/api/quang-cao/shopee` cùng lúc.
+- (c) Đo trước/sau RSS một lượt mở trang trên gian giả (mốc 6.12: +72 MB sau sửa 03/11).
+
+**Lớp 3 — đo để biết đã hết.** Log `[ads-load] gian · chiến dịch · dòng · ms · RSS trước/sau` khi > 5.000 dòng. Tiêu chí đóng: 7 ngày
+không OOM web, 0 dòng `[Rào] … từ chối` cho lượt nhỏ.
+
+**Để sau / không làm:** không ghi dòng số 0 ở worker (98 % bảng là số 0 — đỡ cả Disk IO + băng thông, nhưng đụng luồng kéo, làm riêng);
+⛔ không nâng máy; ⛔ không chỉ nâng số 400.
+
+**Gỡ tạm trong lúc chờ code:** Restart web trên Render đưa RSS về ~170 MB, nhưng khả năng cao kẹt lại nếu gian lớn mở trang Quảng cáo.
+
+### 8.3. ĐÃ LÀM lớp 1 + 2 (25/11/2026 chiều, anh Trung: "Làm lớp 1 + 2"; "Commit và push")
+
+**Lớp 1 — rào theo cỡ lượt.** `lib/request-ledger.ts` thêm `admitHeavyRequest(label, req, res)` (cùng luật cũ: ≤ 2 lượt nặng,
+RSS ≤ `HEAVY_ROUTE_RSS_MB`, đọc env mỗi lượt); `heavyRouteGuard` gọi lại hàm này (apply-search giữ nguyên). `GET /api/finance/sku-products`
+bỏ middleware, chỉ gọi rào sau `count` khi `totalRows > catalogRowLimit()` (gian lớn). Gian ≤ 5.000 dòng không bao giờ bị 503. Trang Giá vốn:
+toast bận dùng `id` cố định (không chồng) + "Trang sẽ tự thử lại."
+
+**Lớp 2a — chỉ nạp dòng số khác 0.** `computeChannelAdsInsights` (`integrations/shopee/ads-insights.ts`): `dailyPerf` lọc `NONZERO_PERF`
+(9 cột số). Ba chỗ còn phụ thuộc dòng toàn 0 lấy bằng truy vấn gộp ở DB, không nạp từng dòng:
+- mốc tự kiểm Lát 4 "ngày đầu có dòng" → `groupBy adsCampaignId _min(date)` trong [mốc nạp ∩ 30 ngày, hôm qua];
+- ngày biểu đồ → `groupBy date` → trường mới `perfDays`; `routes/ads.ts` bù điểm 0 cho ngày chỉ có dòng 0;
+- `stepProfitCheck` đếm NGÀY → chiến dịch vừa hạ mục tiêu (`needsAllPerfDays`) nạp đủ mọi dòng.
+Đường lui: env `ADS_LOAD_ZERO_PERF_ROWS=1` (nạp như cũ). Ghi chú trên `ChannelAdsInsights.items`: đừng đếm ngày từ `row.dailyPerf`.
+
+**Lớp 2b — gộp lượt trùng.** `computeChannelAdsInsights` giữ Map lượt ĐANG chạy theo (gian, mốc nạp, nguồn biên, ngày VN, chế độ nạp);
+lượt thứ hai cùng khóa nhận chung Promise, xong là xóa — không thành bộ đệm. Đã rà: không người gọi nào sửa kết quả.
+
+**Đã kiểm:**
+- `ads-insights-nonzero-load-db.test.ts` 4/4: đường cũ vs mới trên gian giả (ngày 0 xen kẽ, chiến dịch hạ nấc, đã kết thúc có số, toàn 0,
+  không SP, số cũ 60 ngày) → kết quả TRÙNG (cửa sổ, verdict, hòa vốn, tự kiểm, deliveryCheck, perfDays) ở 30 và 60 ngày; gộp lượt trùng.
+  Thử làm hỏng `perfDays` / mốc ngày đầu → test đỏ (test bắt được).
+- `sku-products-guard-db.test.ts` 3/3 qua app thật: gian nhỏ + RSS vượt trần → 200; gian lớn + RSS vượt → 503; gian lớn còn chỗ → 200.
+  Chạy trên mã cũ → đỏ đúng ca gian nhỏ (tái hiện lỗi prod).
+- Đo trên DB dev, gian giả cỡ `…yxnvdy` (996 chiến dịch × 30 ngày, 1.992 dòng khác 0, 698 SKU), mỗi chế độ 2 lần, tiến trình riêng:
+  cũ 29.880 dòng, **RSS +123 MB**, heap +58 MB, ~2,5 s; mới 1.992 dòng, **RSS +21–23 MB**, heap +16–17 MB, ~2,0–2,2 s.
+- tsc backend + frontend sạch; bộ `ads|request-ledger|scorecard|sku-products-guard|finance` 542 đạt, 7 đỏ = test sổ cái đỏ SẴN trên mã gốc
+  (đã đối chứng `git stash`: ads-margin-sql 2, ads-rows-ledger 2, finance-views-ledger 3).
+- CHƯA soi màn local (tài khoản thử dev hết hạn gói, trang bị khóa gói).
+
+**Sau khi lên prod cần đo:** log web không còn `[Rào] sku-products` cho gian nhỏ; `[Bộ nhớ]` khi gian `…yxnvdy` mở trang Quảng cáo;
+OOM web 7 ngày (lớp 3, chưa làm).
