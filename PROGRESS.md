@@ -28,7 +28,9 @@
 - Anh: "Ừ, sửa danh sách đơn". Gốc (EXPLAIN prod): câu lọc gian qua quan hệ + `ORDER BY createdAt LIMIT` bị Postgres đi lùi chỉ mục ngày tạo của CẢ BẢNG mọi shop (2.339 lượt, 232 MB / lượt, TB 14,2 s, max 110 s).
 - Sửa: `services/order-list.ts` — mỗi gian tự lấy đơn mới nhất qua chỉ mục (channelId, createdAt), database trộn + cắt trang (LATERAL); không cần chỉ mục mới; đường lui `ORDERS_LIST_LEGACY=1`. Đo prod dạng mới: 62 ms / ~1 MB.
 - Kiểm: test db 828 phép so id + thứ tự với đường cũ; API thật local 64/64 trang khớp; 1.119 test đạt; tsc sạch. Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 8.10.
-- ⏳ anh cho commit + push → đo lại trên prod. Chưa làm: quét bù kho, cost-price, ops-alerts (thứ tự ở 8.9).
+- ✅ Commit `ba12a9aa` + push 22:55; Render KHÔNG tự deploy → bấm tay Manual Deploy 23:02, live 23:03:55. Đo 23:09: câu mới 15 lượt, 0 MB / lượt, TB 0–4 ms; 0 câu chờ đĩa; dòng `[Đo request]` từ ~25 dòng / phút còn 1 dòng / 3 phút. Chưa kết luận hết chậm — xem lại chiều tối 26/11.
+- Anh: "Sửa tiếp cho xong đi em" → đo chênh hiện tại (docs 8.11): quét bù kho ĐÃ sửa từ 20/11 (số 514 GB là bản cũ); cảnh báo hết hàng / price_detail TikTok / đếm sổ cái không phải lỗi kế hoạch chạy — cần anh chốt nhịp hoặc cần chỉ mục mới (chờ IO hồi) → DỪNG, không vá trong đêm.
+- Code LOCAL chưa commit: `middleware/auth.ts` — database lỗi → 503 `SERVER_BUSY` thay vì 401 (đá phiên) / ném lỗi (web tự thoát); test 6 ca.
 
 ---
 ## Phiên 25/11 ~22:20 — Anh báo "hiện tại đang rất chậm": database cạn Disk IO + web tự thoát 2 lần (chỉ đọc, chưa sửa)

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { SERVER_BUSY_CODE } from "../lib/request-ledger";
 import { hasPermission } from "../config/permission-registry";
 import { hasHqPermission } from "../config/platform-permission-registry";
 
@@ -60,12 +61,24 @@ export async function requireAuth(
     return;
   }
 
+  // BƯỚC 1 — kiểm chữ ký token. Chỉ lỗi Ở ĐÂY mới là "phiên không hợp lệ" (401 → app đăng xuất).
+  let userId: string;
   try {
     const payload = jwt.verify(header.slice(7), JWT_SECRET) as jwt.JwtPayload;
     if (!payload.sub) throw new Error("Token thiếu thông tin user");
+    userId = String(payload.sub);
+  } catch {
+    res.status(401).json({ error: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn" });
+    return;
+  }
 
+  // BƯỚC 2 — đọc tài khoản. Lỗi ở đây là lỗi DATABASE (quá tải, hết kết nối), KHÔNG phải phiên hỏng:
+  // trả 503 để app báo "máy chủ bận" và giữ nguyên phiên. Bản cũ gộp chung một khối catch → 25/11/2026
+  // database cạn Disk IO, mọi request nhận 401 và web / app đẩy khách ra màn đăng nhập
+  // (docs/DONG-BO-GIAI-DOAN-3.md mục 8.8).
+  try {
     const user = await prisma.user.findUnique({
-      where: { id: String(payload.sub) },
+      where: { id: userId },
       select: {
         id: true,
         email: true,
@@ -118,9 +131,27 @@ export async function requireAuth(
     }
 
     next();
-  } catch {
-    res.status(401).json({ error: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn" });
+  } catch (err) {
+    replyServerBusy(res, "requireAuth", err);
   }
+}
+
+/**
+ * Database không trả lời kịp trong một chốt kiểm tra (P2024 hết kết nối trong bể, P2028, mất mạng tới DB):
+ * trả 503 + Retry-After, cùng mã SERVER_BUSY mà giao diện đã biết. Không ném tiếp — middleware `async`
+ * của Express 4 ném lỗi là thành unhandled rejection và CẢ TIẾN TRÌNH thoát (25/11/2026: web tự thoát
+ * 22:07:15 và 22:11:30 vì `requireChannel` gặp P2024).
+ */
+function replyServerBusy(res: Response, where: string, err: unknown): void {
+  const e = err as { code?: string; message?: string };
+  const lastLine = String(e?.message ?? err).trim().split(/\r?\n/).pop() ?? "";
+  console.error(`[Auth] ${where}: database không trả lời (${e?.code ?? "?"}) — ${lastLine.slice(0, 200)}`);
+  if (res.headersSent) return;
+  res.setHeader("Retry-After", "10");
+  res.status(503).json({
+    error: "Máy chủ đang bận. Vui lòng thử lại sau ít giây.",
+    code: SERVER_BUSY_CODE,
+  });
 }
 
 // Middleware: bắt buộc shop đã kết nối ít nhất 1 gian hàng (Onboarding guard).
@@ -130,7 +161,13 @@ export async function requireChannel(
   res: Response,
   next: NextFunction
 ) {
-  const count = await prisma.channel.count({ where: { userId: req.ownerId! } });
+  let count: number;
+  try {
+    count = await prisma.channel.count({ where: { userId: req.ownerId! } });
+  } catch (err) {
+    replyServerBusy(res, "requireChannel", err);
+    return;
+  }
   if (count === 0) {
     res.status(409).json({
       error:

@@ -972,3 +972,33 @@ Anh đúng: sửa 2 middleware (8.8) chỉ chặn web tự thoát, không làm n
   `take`) có thể còn ở route khác — chưa rà; `pg_stat_statements` hiện chỉ ra câu này là lớn nhất.
 - **Sau khi lên prod phải đo:** `mb_per_call` + TB của câu cũ không tăng lượt nữa; câu mới (`CROSS JOIN LATERAL … "Order"`) xuất hiện với
   vài MB / lượt; dòng `[Đo request] … GET /api/orders` hết 14–25 s.
+
+### 8.11. Sau khi bản danh sách đơn lên prod + rà các câu còn lại (25/11/2026 22:55–23:12)
+
+- **Lên prod:** commit `ba12a9aa` push 22:55:21. **Render KHÔNG tự deploy** (Auto-Deploy vẫn "On Commit", status.render.com bình thường, 6 phút
+  không có sự kiện) → 23:02:04 bấm tay "Manual Deploy → Deploy latest commit" cho web (anh đã bảo push lên prod); `/health` = `ba12a9aa` lúc
+  23:03:55. Worker `hubsell-worker-sg` CHƯA kiểm có lên bản này không (bản này chỉ đổi mã web).
+- **Đo sau khi lên (23:09:43):** câu mới (3 dạng theo bộ lọc) 15 lượt, **0,00 MB đọc đĩa / lượt, TB 0–4 ms, lâu nhất 38 ms**; câu cũ đứng ở
+  2.397 lượt. `pg_stat_activity`: 3 câu đang chạy, **0 câu chờ đĩa**. Dòng `[Đo request]`: 23:03–23:05 còn 19–26 dòng / phút (máy cũ + lúc
+  máy mới khởi động); 23:06–23:09 chỉ còn **1 dòng** (17,9 s lúc 23:08). CHƯA kết luận hết chậm: mới vài phút, lại đúng giờ khách thưa dần —
+  phải xem lại chiều tối 26/11 (Read IOPS có còn vượt ~1.000 không).
+- **⚠️ Đính chính 8.9 — bảng cộng dồn lẫn câu ĐÃ SỬA.** Đo chênh 22:56:42 → 22:59:28 (2 phút 46 giây, cả DB đọc 1.027 MB, trước khi bản mới
+  lên) mới là số hiện tại:
+  | Đọc đĩa | Lượt | Câu | Nhận định |
+  |---|---|---|---|
+  | 268 MB | 4 | danh sách đơn (67 MB / lượt, 31 s / lượt) | ĐÃ SỬA ở 8.10 |
+  | 197 MB | 3 | pg-boss thống kê hàng đợi (66 MB / lượt) | đại tu hàng đợi 5e — chỉ ghi |
+  | 149 MB | 12 | `ops-alerts.ts` `detectStockouts` "WITH selling" (12 MB / lượt, 7 s / lượt) | kế hoạch chạy ĐÚNG (EXPLAIN: Channel → `Order_channelId_createdAt_idx` → `OrderItem_orderId_idx`); nặng vì cứ 10 phút / shop tính lại cả 30 ngày đơn; mốc chống quét lại nằm trong RAM |
+  | 70 MB | 7 | `tiktok/price-detail.ts` tìm đơn chưa đọc price_detail (10 MB / lượt) | quét mọi đơn 90 ngày của gian mỗi nhịp; cần cột đánh dấu / chỉ mục một phần |
+  | 56 MB | 6 | `ledgerFreshness` đếm dòng bẩn / bản cũ không kèm kỳ (9 MB / lượt) | kế hoạch chạy ĐÚNG (chỉ mục `dirtyAt` từng mảnh); tốn vì trang chỉ mục nguội |
+  Không có mặt trong lượt đo: **quét bù kho** (câu 514 GB là bản TRƯỚC 20/11 — bản hiện tại `pickSweepCandidates` đã đi qua chỉ mục một
+  phần `Order_stock_held_idx`, KHÔNG cần sửa) và **`cost-price.ts` "WITH lines"** (chỉ chạy khi khách nhập giá vốn; 106 MB / lượt là thật,
+  cần chỉ mục một phần cho dòng `costPriceAtSale = 0`).
+- **Vì sao em DỪNG ở đây, không sửa tiếp 3 câu kia tối nay:** không câu nào là lỗi kế hoạch chạy sửa được bằng viết lại. (a) cảnh báo hết hàng
+  = đổi nhịp / lưu kết quả → đổi độ trễ chuông, anh phải chốt; (b) price_detail TikTok + giá vốn = cần chỉ mục mới, ⛔ không dựng khi hạn mức
+  IO chưa hồi; (c) pg-boss = pha 5e. Làm ẩu ba chỗ này trong đêm là vá.
+- **Đã code thêm (LOCAL, chưa commit):** `middleware/auth.ts` — `requireAuth` tách "token sai" (401) khỏi "database lỗi" (503 `SERVER_BUSY`,
+  `Retry-After: 10`), `requireChannel` bắt lỗi database → 503 thay vì ném (gốc 2 lần web tự thoát 22:07 / 22:11). Web + mobile coi 401 là
+  đăng xuất (`hubsell-mobile/src/api/client.ts` `onUnauthorized`) nên bản cũ đẩy khách ra màn đăng nhập mỗi khi DB nghẽn. Test
+  `auth-db-busy.test.ts` 6 ca; `tsc` sạch; bộ `routes + middleware + lib + services` 1.124 đạt, 1 ca `pack-video/upload-db` "HẾT GIỜ" đỏ khi
+  chạy chung nhưng chạy riêng đạt 15/15 (chập chờn do dùng chung DB local, không thuộc phần sửa này).
