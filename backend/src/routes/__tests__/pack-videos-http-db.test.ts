@@ -27,7 +27,7 @@ const dbReady: boolean = await (async () => {
 const TAG = `pvh-${Date.now()}`;
 
 /** Mọi đường của nhóm — thêm đường mới vào routes/pack-videos.ts thì thêm vào đây. */
-const ROUTES: [method: "GET" | "POST", path: string][] = [
+const ROUTES: [method: "GET" | "POST" | "DELETE", path: string][] = [
   ["POST", "/"],
   ["POST", "/order-flags"],
   ["POST", "/abc123/parts"],
@@ -38,6 +38,8 @@ const ROUTES: [method: "GET" | "POST", path: string][] = [
   ["GET", "/stats"],
   ["GET", "/by-order/abc123"],
   ["GET", "/abc123/url"],
+  ["GET", "/deleted"],
+  ["DELETE", "/abc123"],
 ];
 
 describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () => {
@@ -155,10 +157,13 @@ describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () =>
     expect((await call(staffId, "GET", "/api/pack-videos?limit=1")).status).toBe(200);
     expect((await call(staffId, "GET", "/api/pack-videos/summary")).status).toBe(200);
     // Việc của chủ shop.
-    for (const path of ["/returns", "/stats"]) {
+    for (const path of ["/returns", "/stats", "/deleted"]) {
       const r = await call(staffId, "GET", `/api/pack-videos${path}`);
       expect([r.status, r.body?.code], path).toEqual(DENIED);
     }
+    // Xóa video: chỉ chủ shop — nhân viên bị chặn TRƯỚC khi máy chủ tìm video.
+    const del = await call(staffId, "DELETE", "/api/pack-videos/khong-co");
+    expect([del.status, del.body?.code]).toEqual(DENIED);
     const dl = await call(staffId, "GET", "/api/pack-videos/khong-co/url?download=1");
     expect([dl.status, dl.body?.code]).toEqual(DENIED);
     const view = await call(staffId, "GET", "/api/pack-videos/khong-co/url");

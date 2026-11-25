@@ -34,6 +34,7 @@ import {
   isSeenAnchoredRule,
   vnDateKey,
   type RetentionDecision,
+  type RetentionOptions,
   type RetentionOrder,
   type RetentionVideo,
 } from "../../lib/pack-video-retention";
@@ -85,7 +86,7 @@ export interface DueReport {
   shadow: boolean;
 }
 
-interface VideoRow {
+export interface VideoRow {
   recordedDate: Date;
   id: string;
   ownerId: string;
@@ -100,7 +101,7 @@ type DueRow = VideoRow & { deleteAfter: Date; deleteRule: string | null; trackin
 const dateKey = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Đọc đơn của một lô video theo KHÓA CHÍNH; trả map orderId → (chủ shop, cột luật cần). */
-async function loadOrders(rows: VideoRow[]): Promise<Map<string, { ownerId: string; order: RetentionOrder }>> {
+export async function loadOrders(rows: VideoRow[]): Promise<Map<string, { ownerId: string; order: RetentionOrder }>> {
   const ids = [...new Set(rows.map((r) => r.orderId).filter((x): x is string => !!x))];
   if (ids.length === 0) return new Map();
   const orders = await prisma.order.findMany({
@@ -166,10 +167,11 @@ async function loadOrders(rows: VideoRow[]): Promise<Map<string, { ownerId: stri
 }
 
 /** Luật cho một dòng — đơn của chủ shop KHÁC (không thể xảy ra, nhưng chặn) coi như không đọc được. */
-function decideFor(
+export function decideFor(
   row: VideoRow,
   orders: Map<string, { ownerId: string; order: RetentionOrder }>,
-  now: Date
+  now: Date,
+  opts: RetentionOptions = {}
 ): RetentionDecision {
   const found = row.orderId ? orders.get(row.orderId) : undefined;
   const order = found && found.ownerId === row.ownerId ? found.order : null;
@@ -178,7 +180,7 @@ function decideFor(
     recordedDate: dateKey(row.recordedDate),
     orderId: row.orderId,
   };
-  return decideRetention(video, order, now);
+  return decideRetention(video, order, now, opts);
 }
 
 const bump = (m: Record<string, number>, k: string) => void (m[k] = (m[k] ?? 0) + 1);

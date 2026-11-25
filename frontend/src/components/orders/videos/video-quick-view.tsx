@@ -11,9 +11,13 @@ import type { PackVideoRow } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { formatClipDuration } from "@/lib/pack-video";
 
+import { DeleteVideoButton } from "./video-delete";
 import { VideoPlayer } from "./video-player";
 
-/** Hộp XEM NHANH một video ngay từ bảng; việc chuẩn bị bằng chứng làm ở trang hồ sơ của đơn. */
+/**
+ * Hộp XEM NHANH một video ngay từ bảng; việc chuẩn bị bằng chứng làm ở trang hồ sơ của đơn.
+ * Chủ shop có nút "Xóa video" ngay dưới trình phát (26/11/2026) — xóa xong hộp tự đóng, bảng tự tải lại.
+ */
 export function QuickViewDialog({
   video,
   onClose,
@@ -21,7 +25,7 @@ export function QuickViewDialog({
   video: PackVideoRow | null;
   onClose: () => void;
 }) {
-  // Khung dọc: bề ngang tối đa tính từ chiều cao màn để trình phát không tràn khỏi hộp.
+  // Khung dọc: bề ngang tối đa tính từ chiều cao màn để trình phát + hàng nút Xóa không tràn khỏi hộp.
   const ratio = video && video.width > 0 && video.height > 0 ? video.width / video.height : 0.75;
   return (
     <Dialog
@@ -40,8 +44,11 @@ export function QuickViewDialog({
                 {video.recordedByName ? ` · ${video.recordedByName}` : ""}
               </DialogDescription>
             </DialogHeader>
-            <div className="mx-auto w-full" style={{ maxWidth: `calc((100dvh - 14rem) * ${ratio})` }}>
+            <div className="mx-auto w-full" style={{ maxWidth: `calc((100dvh - 17rem) * ${ratio})` }}>
               <VideoPlayer video={video} autoPlay />
+            </div>
+            <div className="flex justify-end empty:hidden">
+              <DeleteVideoButton video={video} onDeleted={onClose} />
             </div>
           </>
         )}

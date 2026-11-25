@@ -7,12 +7,15 @@
 //   3. video tới hạn: CHẠY BÓNG mặc định — chỉ đếm "sẽ xóa", KHÔNG xóa tệp nào trên R2.
 //      Xóa thật chỉ khi env PACK_VIDEO_DELETE_ENABLED=1 (sau một tuần chạy bóng + anh duyệt).
 //   4. lượt tải lên dở dang quá 7 ngày: cùng công tắc — chạy bóng chỉ đếm, bật thì hủy lượt tải + xóa mảnh.
+//   5. chuông báo trước: video ĐANG GIỮ làm bằng chứng sắp chạm trần 60 ngày → báo chủ shop tải về
+//      (services/pack-video/cap-notice.ts). Chạy bóng chỉ đếm — chưa xóa thật thì không báo "sắp xóa".
 // Nhịp 6 giờ là SỐ TỰ CHỌN: luật tính bằng ngày. Lượt đầu 10 phút sau khi bật (không chen lúc khởi động).
 // Tắt cả worker bằng PACK_VIDEO_JANITOR_OFF=1. Mọi trạng thái nghiệp vụ (mốc gộp, con trỏ gán hạn) nằm ở
 // database (maintenance_jobs); biến cấp tệp chỉ là cờ chống chạy chồng (test no-module-state).
 // ============================================================
 
 import { isR2Configured, getR2Storage } from "../integrations/r2/client";
+import { notifyCapExpiring } from "../services/pack-video/cap-notice";
 import { assignRetention, processDueVideos, sweepStalePending } from "../services/pack-video/retention";
 import { rollUpUsageDaily } from "../services/pack-video/usage-daily";
 import { packVideoDeleteEnabled } from "../config/pack-video";
@@ -60,6 +63,15 @@ export async function runPackVideoJanitor(now: Date = new Date()): Promise<void>
         stale.shadow
           ? `[pack-video-janitor] CHẠY BÓNG — lượt tải dở quá hạn: SẼ dọn ${stale.found}`
           : `[pack-video-janitor] Lượt tải dở quá hạn: đã dọn ${stale.cleared}/${stale.found} · lỗi ${stale.errors}`
+      );
+    }
+
+    const cap = await notifyCapExpiring({ now: () => now, deleteEnabled });
+    if (cap.held > 0) {
+      console.log(
+        cap.shadow
+          ? `[pack-video-janitor] CHẠY BÓNG — video đang giữ sắp chạm trần: ${cap.held} của ${cap.owners} chủ shop (không phát chuông)`
+          : `[pack-video-janitor] Video đang giữ sắp chạm trần: ${cap.held} của ${cap.owners} chủ shop · đã phát ${cap.notified} chuông`
       );
     }
   } catch (err) {

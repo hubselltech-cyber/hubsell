@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 rạng sáng — Video đóng hàng, PHẦN XÓA: chủ shop tự xóa + chuông chạm trần + ghi trần 60 ngày + kiểm R2 — code LOCAL, chưa commit
+
+- Anh: "Tiếp tục làm phần còn dở và chưa làm" (sau khi hỏi phần xóa đang ở bước nào). Công tắc xóa thật VẪN TẮT.
+- **Chủ shop tự xóa từng video (G8):** `DELETE /api/pack-videos/:id` (`manual-delete.ts`) — chỉ chủ shop, xóa tệp R2 trước rồi ghi
+  `DELETED` + lý do `MANUAL`, giờ đã quay không cộng lại. Web: nút "Xóa video" cạnh trình phát (hộp xem nhanh + hồ sơ đơn) + hộp
+  hỏi lại, đơn có hoàn thì cảnh báo thêm. Lịch sử xóa hiện "Chủ shop tự xóa".
+- **Chuông báo trước khi xóa (G7) — em THU HẸP:** chỉ báo khi video ĐANG GIỮ làm bằng chứng chạm trần 60 ngày (trước 3 ngày),
+  một chuông / chủ shop; không báo các lượt xóa đã qua hạn khiếu nại (tránh chuông nhiễu hằng ngày). Chạy bóng không phát.
+  `cap-notice.ts` + mục thông báo `pack_video` + chỉ mục `pack_videos_cap_idx` (migration `20261126090000`, bảng nhỏ, không cần
+  dựng tay trên prod). ⏳ anh duyệt phần thu hẹp.
+- **Trần 60 ngày:** landing `/quay-video-dong-hang` (câu cũ "không xóa theo số ngày cố định" sai với luật) + Chính sách bảo mật
+  mục 8 + `PRIVACY_VERSION` 2026-11-26. Repo `hubsell-landing`, chưa commit; sau khi push phải chạy `scripts/indexnow.mjs`.
+- **R2 (chỉ đọc):** chỉ có MỘT bucket `hubsell-video-thu`, **prod và máy dev dùng chung**; không có luật vòng đời xóa tệp (chỉ luật
+  mặc định hủy tải dở 7 ngày). Em KHÔNG đặt luật (công tắc xóa còn tắt + số ngày phải chọn lại theo trần 60, em đề nghị 75).
+  ⏳ anh quyết: tách bucket prod riêng + số ngày lưới.
+- Prod: tab Lịch sử xóa mở được, trống (đúng chạy bóng).
+- Kiểm: tsc 3 phần sạch; pack-video + luật + thông báo 174 / 174; bộ rộng 1.272 đạt, 1 đỏ = ca "HẾT GIỜ" `upload-db` (chạy riêng
+  đạt, chập chờn khi chạy chung — có từ 19/11); soi local 1366 sáng + tối, xóa thật một clip thử.
+- Còn lại: commit + push (2 repo) · bật công tắc xóa · `REINDEX` chỉ mục mã vận đơn chiều hoàn 03:00–05:00 · chưa nhìn chuông
+  trên app điện thoại. Chi tiết: docs/VIDEO-DONG-HANG-THIET-KE.md mục 34.
+
+---
 ## Phiên 25/11 ~22:30 — Kho chuẩn quốc tế: xem lại theo lịch hẹn (chỉ đọc prod) — chuỗi đối chiếu 7/7
 
 - Lịch `kho-chuan-quoc-te-xem-lai-25-11` tự chạy. Không sửa mã, không ghi prod, không bật shop nào, không commit.
@@ -23,13 +45,13 @@
 - ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. Thêm trần 60 dòng/phút/máy + dòng tổng "bỏ qua N" sau khi anh hỏi có theo mô hình lớn không. ✅ commit `358bfa5c` + PUSH 25/11 ~22:10 (anh "Commit và push"). ⏳ đọc log `[Đo request]` ~1 ngày rồi mới chọn sửa.
 
 ---
-## Phiên 25/11 ~23:35 — LỚP 2c: Gợi ý chạy ads cộng lịch sử trong database (+125 MB → +2 MB RSS) — code LOCAL, chưa commit
+## Phiên 25/11 ~23:35 — LỚP 2c: Gợi ý chạy ads cộng lịch sử trong database (+125 MB → +2 MB RSS) — LÊN PROD `a8e4f945` 23:43
 
 - Anh: "Ừ, làm lớp 2c". Bằng chứng: `[Đo request]` prod 23:12 — một lượt `/api/quang-cao/shopee/recommendations` RSS 261 → 448 MB (+187).
 - Sửa `integrations/shopee/ads-recommend-data.ts`: `loadSingleItemAdsHistory` cộng bằng SQL (LATERAL theo chiến dịch → gộp theo sản phẩm) thay cho nạp ~118 nghìn dòng số rồi cộng bằng JS; đường lui `ADS_LOAD_ZERO_PERF_ROWS=1`.
 - Đo DB dev gian giả 118.380 dòng: phần lịch sử ads RSS +123/+125 MB → +1/+2 MB, ~950 ms → ~137 ms. Prod EXPLAIN ANALYZE gian lớn nhất: 161 ms, không tệp tạm.
 - Test đối chứng cũ = mới 4/4 (`ads-recommend-history-db.test.ts`); tsc sạch. 21 ca sổ cái ở `integrations/__tests__` đỏ SẴN trên mã gốc (đã đối chứng git stash). Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 8.13.
-- ⏳ anh cho commit + push → đọc lại `[Đo request]` trên prod.
+- ✅ Commit `a8e4f945` + push 23:41, live 23:43:46. 23:45: câu mới chạy 2 lượt thật (gian nhỏ, 1 ms); CHƯA có lượt của 2 gian lớn → ⏳ 26/11 đối chiếu `pg_stat_statements` (rows / calls lớn) với việc vắng dòng `[Đo request] … /recommendations +1xx MB` + theo dõi 7 ngày không OOM.
 
 ---
 ## Phiên 25/11 ~23:00 — Sửa gốc câu DANH SÁCH ĐƠN (`GET /api/orders`): 232 MB / lượt → ~1 MB — code LOCAL, chưa commit

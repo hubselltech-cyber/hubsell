@@ -197,6 +197,7 @@ const DELETE_REASON_LABEL: Record<string, string> = {
   L6: "Đã lưu đủ 60 ngày",
   L7: "Đơn hoàn đã qua hạn khiếu nại 3 ngày",
   ACCOUNT: "Tài khoản đã xóa",
+  MANUAL: "Chủ shop tự xóa",
 };
 
 export function deleteReasonLabel(rule: string | null, kind: "PACK" | "UNBOX"): string {

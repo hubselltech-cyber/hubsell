@@ -25,6 +25,7 @@ import { usePackVideoCaps } from "@/lib/use-feature";
 import { cn } from "@/lib/utils";
 
 import { ChannelBadge, CodeWithCopy, MetaBadge, VideoProductsCell, shopNameOf } from "./video-bits";
+import { DeleteVideoButton } from "./video-delete";
 import { downloadPackVideo } from "./video-download";
 import { VideoPlayer } from "./video-player";
 
@@ -70,7 +71,7 @@ function DossierVideo({ video }: { video: PackVideoRow }) {
             {hint.label}
           </span>
           {manage && (
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -88,6 +89,7 @@ function DossierVideo({ video }: { video: PackVideoRow }) {
                 )}
                 Tải {PACK_VIDEO_KIND_LABEL[video.kind].toLowerCase()} về
               </Button>
+              <DeleteVideoButton video={video} />
             </div>
           )}
         </>

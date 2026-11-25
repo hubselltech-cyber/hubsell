@@ -19,6 +19,7 @@
 //   GET  /by-order/:orderId  hồ sơ video của một đơn
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
+//   DELETE /:id            chủ shop tự xóa một video đã lưu (không khôi phục được)
 // Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
 //
 // QUYỀN TỪNG ĐƯỜNG (24/11/2026 — nhân viên của chủ đã mở được vào, docs VIDEO-DONG-HANG-THIET-KE mục 28;
@@ -27,7 +28,7 @@
 //   quay KHUI (UNBOX) = chủ, hoặc nhân viên có quyền Đối soát đơn hoàn → như trên
 //   ký mảnh / báo tải xong: nhân viên chỉ video CHÍNH MÌNH quay (upload.ts)
 //   xem danh sách / số chip / hồ sơ đơn / cờ đơn / xem video: ai qua cổng cũng được (theo gian được giao)
-//   tải về (`download=1`), thống kê, tab đơn hoàn: CHỈ chủ shop (`manage`)
+//   tải về (`download=1`), thống kê, tab đơn hoàn, lịch sử xóa, XÓA video: CHỈ chủ shop (`manage`)
 //   /hours: nhân viên thấy SỐ GIỜ, không thấy sổ tiền; mua giờ: chỉ chủ (requireAdmin)
 // ============================================================
 
@@ -60,6 +61,7 @@ import {
   type ReturnCard,
   type ReturnSort,
 } from "../services/pack-video/library";
+import { deleteVideoByOwner } from "../services/pack-video/manual-delete";
 import {
   PackVideoError,
   beginUpload,
@@ -239,7 +241,7 @@ router.get(
   })
 );
 
-// Lịch sử xóa: video hệ thống đã tự xóa + lý do. Chỉ chủ shop (cùng nhóm với tab Đơn hoàn / Thống kê).
+// Lịch sử xóa: video đã xóa (hệ thống tự xóa hoặc chủ shop tự xóa) + lý do. Chỉ chủ shop (cùng nhóm với tab Đơn hoàn / Thống kê).
 router.get(
   "/deleted",
   handle(async (req, res) => {
@@ -325,6 +327,15 @@ router.get(
     // Nhân viên xem được, không tải về (anh Trung 24/11/2026).
     if (download) requireManage(req);
     res.json(await videoUrl(scopeOf(req), requireId(req.params.id), download));
+  })
+);
+
+// Chủ shop tự xóa một video đã lưu. Nhân viên không xóa được (kể cả video mình quay); giờ đã quay không cộng lại.
+router.delete(
+  "/:id",
+  handle(async (req, res) => {
+    requireManage(req);
+    res.json(await deleteVideoByOwner(req.ownerId!, requireId(req.params.id)));
   })
 );
 

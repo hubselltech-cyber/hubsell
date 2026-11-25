@@ -57,6 +57,14 @@ function useChannelIds(filter: ChannelFilterValue): string[] {
   }, [filter, data]);
 }
 
+const URL_CHIPS: readonly PackVideoChip[] = ["returns", "unmatched", "pending", "expiring"];
+
+function chipFromUrl(): PackVideoChip {
+  if (typeof window === "undefined") return "all";
+  const raw = new URLSearchParams(window.location.search).get("chip");
+  return URL_CHIPS.find((c) => c === raw) ?? "all";
+}
+
 /**
  * TAB VIDEO ĐÓNG HÀNG — một dòng = một video, mới nhất trên cùng.
  *
@@ -70,7 +78,9 @@ export function VideosTab() {
   const [q, setQ] = React.useState("");
   const [range, setRange] = React.useState<DateRange | null>(null);
   const [channelFilter, setChannelFilter] = React.useState<ChannelFilterValue>(ALL_CHANNELS);
-  const [chip, setChip] = React.useState<PackVideoChip>("all");
+  // Chuông "video sắp tự xóa" dẫn tới ?chip=expiring → mở sẵn đúng nhãn. Đọc window (không useSearchParams) để
+  // khỏi bọc Suspense cho cả trang; tab này chỉ dựng phía trình duyệt, sau cổng tính năng.
+  const [chip, setChip] = React.useState<PackVideoChip>(() => chipFromUrl());
   const [pageSize, setPageSize] = React.useState(20);
   const [viewing, setViewing] = React.useState<PackVideoRow | null>(null);
   /** Mã vừa được Enter / máy quét bắn vào — ra đúng một đơn thì mở thẳng hồ sơ. */

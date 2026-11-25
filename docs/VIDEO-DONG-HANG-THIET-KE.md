@@ -2611,3 +2611,91 @@ Một câu: **xóa sau khi HẾT HẠN 3 ngày**. "Hạn" của từng trường
 - Web prod: tab "Lịch sử xóa" đã có trên trang; cột "Giữ tới" hiện hạn mới (vd 10/12/2026 · còn 15 ngày). ❌ Chưa bấm được vào tab trên
   prod để xem API `/deleted` trả lời (trang đang chậm, em không thử tiếp) — chạy bóng thì tab vốn trống.
 - Dữ liệu thử local đã dọn, tệp `_tmp-lsx-seed.ts` đã xóa.
+
+## 34. Phần xóa: làm nốt việc còn dở (26/11/2026 rạng sáng, anh: "Tiếp tục làm phần còn dở và chưa làm") — code LOCAL, chưa commit / push
+
+Phạm vi: bốn việc "chưa làm" của mục 32.4 (G6, G7, G8, ghi trần 60 ngày) + xem tab Lịch sử xóa trên prod. Công tắc xóa thật **vẫn TẮT**.
+
+### 34.1 G8 — chủ shop TỰ XÓA từng video (đã code + thử trên local)
+
+- Máy chủ: `DELETE /api/pack-videos/:id` (`services/pack-video/manual-delete.ts`). Chỉ CHỦ SHOP (`requireManage` — nhân viên bị
+  403 kể cả video mình quay); chỉ video `STORED`; xóa tệp trên R2 **trước** (ngoài giao dịch database) rồi mới ghi `DELETED` +
+  `deleteRule = MANUAL`; R2 lỗi thì dòng giữ nguyên để bấm lại; bấm lần hai trả luôn "đã xóa", không gọi kho.
+- **Giờ đã quay KHÔNG cộng lại** (sổ giờ vốn tính cả `DELETED`). Không phụ thuộc `PACK_VIDEO_DELETE_ENABLED` — công tắc đó là
+  của luật TỰ xóa, đây là lệnh của chủ dữ liệu.
+- Web: nút "Xóa video" nằm **cạnh trình phát** (hộp xem nhanh + trang hồ sơ đơn), KHÔNG thêm nút vào dòng bảng — người xóa nhìn
+  thấy đúng video sắp xóa, bảng không rộng thêm (bảng ở 1280 vốn đã cuộn ngang). Hộp hỏi lại nói rõ: không khôi phục được ·
+  giờ không cộng lại · mã vận đơn vẫn ở Lịch sử xóa. Đơn có hoàn / video khui / đang được giữ → thêm hộp vàng "nên tải về
+  trước" (cảnh báo, không khóa). Xóa xong: hộp đóng, mọi ô đệm của trang tải lại.
+- Tab Lịch sử xóa hiện lý do **"Chủ shop tự xóa"**.
+- Chưa làm (cố ý): xóa hàng loạt; xóa video đang chờ tải lên (worker dọn sau 7 ngày).
+
+### 34.2 G7 — chuông báo trước khi xóa: THU HẸP so với đề nghị ở 31.3
+
+Đề nghị cũ là "mỗi ngày một chuông khi có video của đơn có hoàn sắp xóa". Làm đúng như vậy thì shop đông đơn nhận chuông
+**mỗi ngày**, mà video L5 / L7 bị xóa lúc đã QUA hạn khiếu nại (hết giá trị bằng chứng) → chuông nhiễu, trái nguyên tắc anh
+chốt 25/10 (không push nhiễu). Trường hợp DUY NHẤT video còn giá trị mà vẫn bị xóa: **đang được GIỮ làm bằng chứng mà chạm
+TRẦN 60 ngày** (đơn hoàn còn mở, kho báo hỏng đang khiếu nại, kiện hủy đang quay về, video khui chưa khớp đơn). Chuông chỉ báo
+đúng trường hợp này — em tự quyết phần thu hẹp, anh xem lại.
+
+- `services/pack-video/cap-notice.ts`, worker dọn gọi ở bước 5 (sau gán hạn + tới hạn). Đọc video `STORED` luật `L6` có hạn
+  trong (mốc đã báo, hôm nay + 3], hỏi lại luật thuần với `ignoreCap` ("không có trần thì video này có đang được giữ không" —
+  cùng một nguồn luật với việc gán hạn), gộp theo chủ shop → **một chuông / chủ shop / lượt**, mỗi video báo một lần (mốc
+  `maintenance_jobs` key `pack-cap-notice`). Báo trước **3 ngày** = `RETENTION_DAYS.CAP_NOTICE` có sẵn.
+- **Chạy bóng thì KHÔNG phát chuông**, chỉ đếm vào nhật ký, không dời mốc — chưa xóa thật mà báo "sắp xóa" là báo sai.
+- Câu chữ (công thức giá trị, tiêu đề ≤ 70 ký tự có test): "3 video đơn hoàn chưa xong sắp tự xóa — tải về trước 28/11"; đường
+  dẫn `/orders/videos?chip=expiring` (tab Video đóng hàng nay đọc `?chip=` để mở sẵn đúng nhãn).
+- Mục thông báo mới `pack_video` ("Video đóng hàng sắp tự xóa", nhóm Đơn hàng, tắt được), **chỉ chủ shop** nhận (nhân viên
+  không tải về được). App điện thoại không cần ra bản: mục lạ rơi về biểu tượng chung, đường dẫn web hiện nhãn "chỉ có trên web".
+- Chỉ mục mới `pack_videos_cap_idx ("deleteAfter") WHERE status = 'STORED' AND "deleteRule" = 'L6'` (migration
+  `20261126090000_pack_videos_cap_idx`): không có thì câu hỏi phải đi qua MỌI video tới hạn trong khoảng (đa số L4). Bảng
+  mới ~55 dòng nên migration chạy tức thì lúc deploy, **không cần dựng tay trên prod**.
+- Giới hạn đã biết: (1) video mà lúc tính hạn thì hạn đã ở quá khứ (worker nghỉ ≥ 3 ngày) bị xóa cùng lượt, không kịp báo;
+  (2) lúc BẬT công tắc lần đầu, các video đã tới hạn bị xóa ngay lượt đó không có chuông (13 video thử hiện nay);
+  (3) video chạm trần vì đơn treo "đang giao" 60 ngày không báo (không phải bằng chứng đang dùng).
+
+### 34.3 Ghi "tối đa 60 ngày" — landing + Chính sách bảo mật (repo `hubsell-landing`, chưa commit)
+
+Câu cũ trên landing **sai với luật đã chốt**: "Không xóa theo số ngày cố định… còn tranh chấp thì video còn được giữ" — trần
+60 ngày áp cả đơn đang tranh chấp. Đã sửa:
+
+- `/quay-video-dong-hang`: mục Lưu trữ + câu hỏi "Nên lưu video bao lâu" + hình minh họa → "giữ theo trạng thái đơn… tối đa
+  60 ngày từ ngày quay. Cần giữ lâu hơn thì tải video về máy"; `features.ts` `updatedAt` 2026-11-26.
+- Chính sách bảo mật mục 8: thêm "tối đa 60 ngày kể từ ngày quay; chủ tài khoản có thể tự xóa từng video bất cứ lúc nào";
+  ngày cập nhật 26/11/2026 + `PRIVACY_VERSION = "2026-11-26"` (backend `lib/legal.ts`).
+- Sau khi push landing: chạy `scripts/indexnow.mjs` (luật của trang) — CHƯA chạy.
+
+### 34.4 G6 — lưới vòng đời bucket R2: ĐÃ KIỂM (chỉ đọc, Cloudflare 26/11 ~00:20), CHƯA đặt
+
+- Tài khoản Cloudflare chỉ có **MỘT bucket: `hubsell-video-thu`** (APAC, tạo 14/11, 82 tệp / 345 MB). CORS của nó cho
+  `app.hubsell.vn`, `app.hubsell.tech` và `localhost` → **prod và máy dev đang dùng CHUNG bucket này**; trong bucket có hai thư
+  mục chủ shop (một của database local, một của prod).
+- Luật vòng đời: chỉ có luật mặc định "hủy lượt tải theo mảnh dở sau 7 ngày". **Không có luật xóa tệp** → tệp mồ côi (sổ
+  không biết) nằm mãi.
+- Em KHÔNG đặt luật, vì: (a) công tắc xóa còn tắt — đặt luật xóa theo tuổi tệp lúc này thì R2 xóa tệp trong khi sổ vẫn ghi
+  "còn lưu"; (b) số ngày của lưới (thiết kế cũ 95 ngày, đặt khi trần còn 90) phải chọn lại theo trần 60 — em đề nghị **75 ngày**
+  (60 + 7 ngày chờ tải lên muộn + biên 8 ngày; số tự chọn); (c) bucket đang dùng chung với máy dev.
+- ⚠️ Việc phát sinh, chờ anh: **tách bucket prod riêng** trước khi mở cho khách? Hiện script seed local (chỉ chặn bằng tên
+  bucket kết thúc "-thu") và mọi thao tác thử trên local đều ghi / xóa vào cùng bucket với video prod. Khóa tệp có tiền tố chủ
+  shop nên không đè nhau, nhưng "Empty bucket" hay một luật vòng đời đặt cho việc thử sẽ mất cả video prod.
+
+### 34.5 Tab Lịch sử xóa trên prod — ĐÃ XEM (26/11 ~00:25)
+
+`app.hubsell.vn/orders/videos` → tab Lịch sử xóa mở được, hiện "Chưa có video nào bị xóa." (đúng với chạy bóng). Trang video
+tải bình thường (54 video đóng, nhãn Sắp tự xóa 15).
+
+### 34.6 Đã kiểm / chưa kiểm
+
+- ✅ `tsc` backend + frontend + landing sạch; eslint frontend thư mục video sạch.
+- ✅ Test mới: xóa tay trên sổ thật 5 ca (`manual-delete-db.test.ts`), chuông 8 ca (`cap-notice-db.test.ts`), cổng HTTP thêm
+  `DELETE /:id` + `/deleted` (nhân viên 403). Thư mục pack-video + luật + thông báo: 174 / 174. Bộ rộng `services routes lib
+  workers middleware`: 1.272 đạt, 1 đỏ = ca "HẾT GIỜ" của `upload-db` — chạy riêng 15 / 15 (chập chờn khi chạy chung, đã ghi
+  từ 19/11; em nghi do `retention-db` dời mốc gộp giờ của cả database trong lúc chạy song song — chưa chứng minh).
+- ✅ Local 1366, sáng + tối: nút trong hộp xem nhanh, hộp hỏi lại (có / không hộp vàng), xóa thật một clip thử
+  (`QUAYTAY214506`) → máy chủ 200, hộp đóng, bảng tải lại, số giờ không đổi, Lịch sử xóa hiện "Chủ shop tự xóa"; trang hồ sơ
+  đơn có nút cạnh nút tải; `?chip=returns` mở sẵn đúng nhãn.
+- ❌ Chưa commit / push (backend + frontend ở repo chính, landing ở repo `hubsell-landing`). ❌ Chuông chưa phát lần nào ngoài
+  test (chạy bóng không phát). ❌ Chưa nhìn chuông trên app điện thoại. ❌ `Order_returnTrackingCode_idx` trên prod vẫn KHÔNG
+  HỢP LỆ (việc 03:00–05:00, mục 33.1).
+- ⏳ Chờ anh: bật `PACK_VIDEO_DELETE_ENABLED` (+ `PACK_VIDEO_ACCOUNT_PURGE`); duyệt phần thu hẹp chuông; số ngày lưới R2 + tách
+  bucket prod; các số em tự diễn giải ở 32.1 (15 / 30 ngày trả hàng, ca đóng + 3, sàn 7).

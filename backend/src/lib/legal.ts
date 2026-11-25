@@ -12,7 +12,8 @@
  */
 export const TERMS_VERSION = "2026-09-19";
 // 22/11/2026: thêm video đóng hàng (dữ liệu, quyền Camera, kho lưu video ngoài VN, thời hạn lưu).
-export const PRIVACY_VERSION = "2026-11-22";
+// 26/11/2026: video đóng hàng — ghi rõ lưu tối đa 60 ngày từ ngày quay + chủ tài khoản tự xóa được từng video.
+export const PRIVACY_VERSION = "2026-11-26";
 
 /** Nguồn đồng ý — phân biệt tick tay với đồng ý ngầm qua nút Google. */
 export type TermsAcceptanceSource =

@@ -10424,6 +10424,13 @@ export function fetchPackVideoUrl(id: string, download: boolean) {
   );
 }
 
+/** Chủ shop tự xóa MỘT video đã lưu — không khôi phục được, giờ đã quay không cộng lại. */
+export function deletePackVideo(id: string) {
+  return apiFetch<{ id: string; status: PackVideoStatus }>(`/api/pack-videos/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 /** Trong các đơn của MỘT trang danh sách, đơn nào đã có video — một lượt gọi cho cả trang. */
 export function fetchPackVideoOrderFlags(orderIds: string[]) {
   return apiFetch<{ withVideo: string[] }>("/api/pack-videos/order-flags", {

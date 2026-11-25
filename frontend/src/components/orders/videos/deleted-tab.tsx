@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { CodeWithCopy, CursorPager, useCursorPages } from "./video-bits";
 
 /**
- * TAB LỊCH SỬ XÓA — video hệ thống đã tự xóa, kèm lý do, để chủ shop (và người hỗ trợ) trả lời được câu
+ * TAB LỊCH SỬ XÓA — video đã xóa (hệ thống tự xóa theo luật, hoặc chủ shop tự xóa), kèm lý do, để chủ shop (và người hỗ trợ) trả lời được câu
  * "video của đơn này đâu rồi". Anh Trung 25/11/2026: chỉ HAI cột — mã vận đơn và lý do — cùng một ô tìm theo
  * mã vận đơn. Ngày xóa là dòng phụ của lý do, không phải cột thứ ba. Chỉ đọc; video đã xóa không khôi phục được.
  */
