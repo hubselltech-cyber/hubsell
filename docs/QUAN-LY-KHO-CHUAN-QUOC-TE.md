@@ -1039,6 +1039,47 @@ Commit `df53e87f` (mã) + `71eb5fbf` (tài liệu), push `c21c3143..71eb5fbf`. S
 - **Chưa kiểm:** em không đăng nhập nên chưa NHÌN màn prod; số trên là đọc từ database. Nhân viên của shop dùng app mobile bản hiện tại sẽ thấy "Tồn" theo cách cũ (thấp hơn web đúng bằng phần đang giữ) cho tới khi app ra bản.
 - **Tắt lại:** `UPDATE shop_sync_settings SET "stockModel" = 'LEGACY' WHERE "userId" = (SELECT id FROM "User" WHERE email = 'admin@hubsell.vn')` — màn về như cũ ngay, không phải chuyển dữ liệu.
 
+### 19.3. Xem lại sau 6 ngày — 25/11/2026 ~22:30 (lịch hẹn `kho-chuan-quoc-te-xem-lai-25-11`; CHỈ ĐỌC prod, không sửa, không bật shop nào)
+
+Mọi số đọc bằng câu SELECT / EXPLAIN của câu SELECT qua Supabase SQL Editor. Em không đăng nhập tài khoản nào, không xem log Render.
+
+**Chuỗi đối chiếu: 7/7 — ĐỦ điều kiện em đã đề nghị ở mục 19 bước 5**
+
+- Dòng `stock-committed-check`: lần cuối 25/11 21:12:54 (giờ VN), `processed` = 0 (lệch cứng 0), `streak` = 7, `lastMismatchAt` = trống (từ 19/11 chưa lần nào lệch).
+- Lần cuối: 348 đơn đang giữ; bộ đếm 371 = tính lại từ đơn 371 = theo "Chờ giao" 371; lệch theo mã 0, theo vị trí 0; đơn đã rời kho còn dấu 0; đơn hủy còn giữ 0; đơn giữ lâu nhất 128 giờ.
+- Dòng `stock-committed-sweep`: `processed` = 0, nhánh "sàn đã giao" 0, nhánh "gian không còn hoạt động" 0, chuỗi lỗi 0, chưa có lỗi nào được ghi. Tức sau 6 ngày chưa thấy đường ghi trạng thái giao nào quên gọi "rời kho".
+- ⚠️ Nhịp quét bù lúc 22:08 chạy 28,7 giây (`ms` = 28699). Lúc đó database đang cạn Disk IO (PROGRESS phiên 25/11 ~22:20). Em chạy lại đúng câu chọn của quét bù bằng EXPLAIN ANALYZE lúc 22:35: qua `Order_stock_held_idx`, 48 ms, 500 khối (28 đọc đĩa), máy ước 613 dòng, thật 417. Em suy ra 28,7 giây là do database nghẽn chung, CHƯA chứng minh (bảng chỉ giữ nhịp cuối).
+- Bộ đếm âm: 0 mã trên toàn hệ thống.
+
+**Câu lệnh chậm (`pg_stat_statements`)**
+
+- Chỉ MỘT câu trung bình trên 1 giây: câu chọn quét bù của bản HAI CỘT cũ (`… "stockCommittedAt" IS NOT NULL AND "stockShippedAt" IS NULL … ORDER BY o."id" LIMIT`), 2.417 lần, trung bình 10,5 giây, lớn nhất 51,4 giây, đếm từ 12/11. Bản này đã bị thay từ 19/11 21:17; con số là tích lũy cũ (15/11 đã là 2.296 lần), không phải câu đang chạy.
+- Câu đếm của trang Đối soát đơn hoàn (có `pack_videos`): 82 lần, trung bình 274 ms, lớn nhất 3,8 giây. Câu danh sách hạn khiếu nại: 424 lần, trung bình 17 ms, lớn nhất 4,1 giây. Hai câu này thuộc việc khác (video đóng hàng, hạn khiếu nại), nêu để biết.
+- **Chưa kiểm được:** câu quét bù và câu đối chiếu của bản MỚI, câu báo cáo lát 4, câu "chưa về kho", câu của `stocktake_*` đều KHÔNG có trong `pg_stat_statements`. Bảng thống kê đang đầy (4.850 / 5.000 dòng, đã phải loại bớt 621 lượt từ 12/10), câu chạy thưa bị đẩy ra. Vắng mặt ở đây không có nghĩa là nhanh. Câu quét bù em đã đo thay bằng EXPLAIN ở trên; ba loại còn lại chưa đo lại.
+
+**Shop admin@hubsell.vn sau 6 ngày ON_HAND**
+
+- Cài đặt: vẫn `ON_HAND / ON_CANCEL`, dòng chưa đổi từ lúc bật 19/11 23:14. Anh không đổi `restockOnReturn`.
+- 219 mã (19/11: 151). Sổ tồn bán 1.940, giữ cho đơn 19 trên 16 mã, giữ tạm (đơn chưa thanh toán) 1; hàng trong kho = 1.959. 18 đơn đang giữ. Không mã nào âm.
+- 171 mã có vị trí: tổng `quantity` ở vị trí 1.940 = sổ 1.940; tổng `committed` ở vị trí 19 = bộ đếm 19; 0 mã lệch số tồn, 0 mã lệch số giữ. 3 vị trí, không ô không bán.
+- Nhật ký kho từ 19/11 23:07: RESERVE 322 dòng, SHIP 279, SET 79 (đều ngày 23/11, tổng −1.253), không có `kind` 71 (23–24/11, tổng +1.785), RELEASE 40, RETURN 1. Dòng nào cũng có `onHandAfter`.
+- 12 dòng (5 mã) có `onHandAfter` thấp hơn `balanceAfter + heldAfter` đúng 1, không dòng nào lệch khác 1. Bảy dòng là của một mã ngày 25/11, mã đó hiện có giữ tạm = 1 → khớp cách ghi (`heldAfter` gồm cả giữ tạm, hàng trong kho không cộng giữ tạm hai lần). Năm dòng còn lại (20–23/11, 4 mã) hiện giữ tạm = 0 nên em không dựng lại được giữ tạm lúc ghi: **cần xem tay**, em không kết luận là lỗi, cũng không kết luận là đúng.
+
+**Tính năng mới đã có ai dùng**
+
+- Lý do theo danh sách: toàn hệ thống MỘT dòng `RECEIVED` (một shop khách, 24/11 08:12, +1.000). DAMAGED / LOST / GIFT / OFFLINE_SALE / CORRECTION / RETURN_RESTOCK: 0 dòng.
+- Từ 19/11 23:07 toàn hệ thống: RESERVE 5.122, SHIP 4.148, không có `kind` 2.467 (đều là dòng không gắn đơn), RELEASE 677, RELEASE_INACTIVE 123, SET 107, RETURN 70, RECEIVED 1.
+- Kiểm kê theo phiên: `stocktake_sessions` 0 dòng. Chưa ai mở phiên nào.
+- `shop_sync_settings` 4 dòng: 1 shop ON_HAND (admin@hubsell.vn), không shop khách nào ON_HAND. 1 shop khách đã tự đổi `restockOnReturn` sang `ON_RECEIVE` ngày 23/11 09:17 (shop này chưa có sản phẩm kho nào, nên chưa có gì để cộng / không cộng).
+
+**Chưa kiểm**
+
+- Chưa NHÌN màn prod (không đăng nhập). Chưa xem log Render.
+- Chưa thấy trên prod một lượt hủy sau giao ở `ON_RECEIVE` có hàng thật, một phiên kiểm kê, một lượt xuất có lý do.
+- Sáu lần đối chiếu ở giữa (20 → 24/11) em không đọc được từng lần (bảng chỉ giữ lần cuối); căn cứ là `streak` = 7 và `lastMismatchAt` trống.
+
+**Việc kế, CHỜ anh:** bật ON_HAND cho 2–3 shop tình nguyện (thứ tự mục 8). Còn thiếu: app mobile ra bản trước khi bật cho shop có nhân viên dùng app (OTA cho khách 1.4.3 phải dựng từ nhánh `ota/1.4.3-ten-khong-cat`); xem tay 5 dòng nhật ký nêu trên.
+
 ## 12. Nguồn
 
 Shopify: help.shopify.com/en/manual/products/inventory/fundamentals/inventory-states · …/inventory/managing-inventory-quantities/adjustment-history · …/inventory-and-locations/adjusting-inventory/adjusting-inventory-quantities · …/inventory-and-locations/inventory-counts/performing-and-reviewing-counts · …/fulfillment/managing-orders/canceling-orders · shopify.dev/docs/apps/build/orders-fulfillment/inventory-management-apps/manage-quantities-states

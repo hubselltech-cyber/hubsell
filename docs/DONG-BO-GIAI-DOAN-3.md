@@ -1054,3 +1054,11 @@ Anh đúng: sửa 2 middleware (8.8) chỉ chặn web tự thoát, không làm n
   `git stash` riêng tệp sửa: đỏ Y HỆT 21 ca trên mã gốc → có sẵn ở DB dev, không do lớp 2c (8.3 từng ghi 7 ca; nay 21, chưa tìm vì sao).
 - **Sau khi lên prod phải đo:** dòng `[Đo request] … /recommendations` không còn `+1xx MB`; `[Bộ nhớ]` không còn "SÁT TRẦN" sau một lượt
   mở tab Gợi ý; 7 ngày không OOM (tiêu chí lớp 3).
+- **✅ LÊN PROD `a8e4f945`** — push 23:41, Render tự deploy, `/health` đúng commit 23:43:46; máy web mới `4zj2z` boot 23:43:36 RSS 176 MB.
+  23:45:55: câu cộng lịch sử ads mới đã chạy **2 lượt thật** trên prod (TB 1 ms, max 3 ms, 0 MB đọc đĩa, 5 dòng / lượt = gian nhỏ); 0 câu
+  chờ đĩa. **CHƯA có lượt nào của hai gian lớn** (`…yxnvdy`, `…wfg4v8`) trên bản mới → chưa đo được RAM thật. Lưu ý cách đọc: lượt gợi ý
+  nào nhẹ hơn 20 MB và nhanh hơn 5 s thì KHÔNG ra dòng `[Đo request]` — phải đối chiếu số lượt của câu này trong `pg_stat_statements`
+  (`query like '%btrim%itemIds%LATERAL%AdsCampaignDailyPerf%'`, xem `rows / calls` lớn = gian lớn) với việc vắng dòng `+1xx MB`.
+- **`[Đo request]` 23:15 → 23:45 (30 phút):** 10 dòng (lúc nghẽn ~25 dòng / phút). Còn chậm: `admin/stats` 18,1 s, `admin/health` 14,2 s,
+  `admin/investor-report` 13,9 s (trang HQ — 4 câu đếm toàn bảng ở 8.12), `finance/cash-flow/refresh` 6,5–16,1 s (3 lượt),
+  `quang-cao/shopee` +25…+39 MB / lượt (đã qua lớp 2a).
