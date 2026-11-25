@@ -8,9 +8,8 @@
 // Video KHUI hàng hoàn: kho thường quét mã chiều đi in trên tem cũ (Order.trackingCode); không ra
 // thì thử mã vận đơn chiều hoàn (Order.returnTrackingCode).
 //
-// ⚠️ Order chưa có chỉ mục riêng cho trackingCode (schema + migration tới 16/11/2026). Câu dưới đi
-// qua các gian của chủ shop rồi lọc — cùng hạng với đường Quét đóng gói (routes/packing.ts). Phải
-// EXPLAIN trên shop lớn trước khi mở cho khách; KHÔNG tự thêm chỉ mục vào Order khi chưa có số đo.
+// Chỉ mục: "Order_trackingCode_idx" + "Order_returnTrackingCode_idx" (một phần, migration
+// 20261125230000_order_tracking_code_idx) — trước đó câu dưới đi qua mọi đơn của các gian rồi mới lọc theo mã.
 // ============================================================
 
 import type { Prisma } from "@prisma/client";

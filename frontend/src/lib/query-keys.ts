@@ -117,6 +117,7 @@ export const qk = {
   packVideoSummary: (params: Record<string, unknown>) => ["pack-videos", "summary", params] as const,
   packVideoReturns: (params: Record<string, unknown>) => ["pack-videos", "returns", params] as const,
   packVideoStats: (params: Record<string, unknown>) => ["pack-videos", "stats", params] as const,
+  packVideoDeleted: (params: Record<string, unknown>) => ["pack-videos", "deleted", params] as const,
   packVideoHours: () => ["pack-videos", "hours"] as const,
   packVideosByOrder: (orderId: string) => ["pack-videos", "by-order", orderId] as const,
   /** Khóa theo đúng danh sách id của một trang đơn — id không đổi thì không gọi lại. */

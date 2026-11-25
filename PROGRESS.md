@@ -5,6 +5,50 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 ~21:50 — Anh hỏi "hôm nay web sập mấy lần": 4 lần OOM web (chỉ đọc, chưa sửa)
+
+- Render Events: web hết RAM 512 MB lúc **12:11, 12:56, 13:45, 18:24** (+ trang Giá vốn bị rào 503 12:55→14:23). 21:47 web + app đang chạy bình thường.
+- Máy sau deploy 20:51: RSS 174 → 413 sau 9 phút → 476 lúc 21:09 → kẹt 437; trong giờ này KHÔNG có `/recommendations` → nghi phạm 8.5 chưa đủ; `GET /api/orders` 6–19 s có mặt ở mọi lần sát trần.
+- Chi tiết + đề xuất đo (log request đẩy RSS / chạy lâu) ở docs/DONG-BO-GIAI-DOAN-3.md mục 8.6. ⏳ anh chốt.
+
+---
+## Phiên 25/11 khuya (7) — Video đóng hàng: LUẬT XÓA bản chốt (hết hạn + 3 ngày, trần 60) + tab LỊCH SỬ XÓA — code LOCAL, chưa commit
+
+- Anh chốt: "Hết hạn khiếu nại 3 ngày thì xóa, trần 90 ngày… 60 ngày là đủ rồi" + "thêm 1 tab lịch sử xóa kèm lý do (chỉ cần 2 cột
+  là mã vận đơn và cột lý do, thêm thanh tìm kiếm mã vận đơn)".
+- Luật mới (`lib/pack-video-retention.ts`): giao + 15 + 3 (Lazada 30 + 3) · đơn hoàn = hạn khiếu nại (cùng hàm cột Thời hạn) + 3 · ca
+  đóng + 3 · sàn ngày quay + 7 · trần 60 cho MỌI video · chưa khớp đơn ngày quay + 7 sau khi khớp lại tem. Dịch vụ: bản luật (gỡ
+  hạn cũ, tính lại), đọc lại đơn lúc tới hạn + dời hạn, khớp lại tem, dọn lượt tải dở quá 7 ngày. Migration 2 chỉ mục mã vận đơn.
+- Tab Lịch sử xóa (web + `GET /api/pack-videos/deleted`): 2 cột, ô tìm theo đầu mã vận đơn; soi local sáng + tối.
+- Kiểm: tsc 2 phía + eslint sạch; 17 tệp test liên quan 301 / 301 (luật thuần viết lại 55 ca, thêm 3 ca trên sổ thật).
+- ⚠️ Chưa commit / push; **prod chưa có 2 chỉ mục mã vận đơn** (phải dựng CONCURRENTLY trước khi push); công tắc xóa VẪN TẮT — lên
+  prod thì chạy bóng lại một lượt, anh xem danh sách "sẽ xóa" rồi mới bật. Chỗ em tự diễn giải (15 / 30 ngày trả hàng, ca đóng + 3,
+  sàn 7 ngày) ghi ở docs/VIDEO-DONG-HANG-THIET-KE.md mục 32.1.
+
+---
+## Phiên 25/11 khuya (6) — Video đóng hàng: PHƯƠNG ÁN XÓA chưa chốt — rà lại + số thật tuần chạy bóng (chưa code, chờ anh D1–D5)
+
+- Anh: "Anh nghĩ vẫn còn một vài chỗ em chưa làm. Chưa chốt phương án xóa video" → đúng: mới chốt NGUYÊN TẮC (14/11), các số 3 / 1 /
+  7 / 10 / 20 / 35 và 3 câu X-a / X-b / X-c + "đã đối soát" vẫn treo. Em sửa lời nói sai ở phiên (5): bán giờ ĐÃ bật prod 18/11, anh đã
+  mua thật 20 giờ.
+- Đọc sổ prod (chỉ đọc): 55 video / 176 MB; nếu bật xóa thật hôm nay mất ngay 13 video (9 chưa khớp đơn + 4 video quay 18–20/11 cho
+  đơn giao từ tháng 10 — hạn rơi vào quá khứ); 1 video tải dở nằm từ 18/11 không ai dọn.
+- 8 lỗ hổng G1–G8 (không có sàn tối thiểu theo ngày quay; chưa khớp lại tem trước khi xóa; ca hoàn mở giữ vô hạn; đơn không bao giờ
+  giao / hủy giữ vô hạn; tải dở không dọn; chưa kiểm lưới vòng đời bucket R2; không chuông báo trước; khách không tự xóa được).
+- Bảng luật đề nghị chốt + 5 câu D1–D5: docs/VIDEO-DONG-HANG-THIET-KE.md mục 31. ⛔ KHÔNG bật công tắc xóa trước khi vá + chạy bóng lại.
+
+---
+## Phiên 25/11 khuya (5) — Video đóng hàng: rà điều kiện MỞ CHO KHÁCH (danh sách + 4 câu chờ anh); sửa 2 ca test đỏ sẵn
+
+- Anh: "Phần Quay video gói hàng mình còn phần nào nữa làm nốt trong hôm nay luôn để mở cho khách dùng".
+- Rà mục 8 / 23 / 28 / 29 + mã: **6 việc chặn mở em làm được hôm nay** (chỉ mục tra mã vận đơn — mỗi lần giơ tem đang quét hết đơn của
+  gian; đo câu danh sách + đếm thẻ; đổi cổng mở; bước đồng ý lần đầu; soi tuần chạy bóng rồi bật xóa thật + xóa theo tài khoản; landing),
+  **2 việc chỉ anh làm** (bật bán giờ + mua thử 40.000 đ; quay webcam thật), **app điện thoại không kịp hôm nay** (nhánh thử, phải nộp kho).
+- Sửa `retention-db.test.ts`: 2 ca đỏ sẵn từ ~18/11 là do mốc gộp giờ của database local trôi qua ngày quay giả lập — lỗi bài test,
+  không phải sản phẩm. Cả thư mục test pack-video 84 / 84. CHƯA commit (đi cùng lượt mở cổng).
+- Chi tiết + 4 câu Q1–Q4: docs/VIDEO-DONG-HANG-THIET-KE.md mục 30. Chưa code phần mở (đợi anh chốt).
+
+---
 ## Phiên 25/11 khuya (4) — Hạn khiếu nại lát 2b + 2c: dọn mã, commit `324424d5`, LÊN PROD (`8366a06e`)
 
 - Anh: "Dọn dẹp sạch code thừa, sắp xếp chuẩn cấu trúc tree chuyên nghiệp, commit rồi push lên em".

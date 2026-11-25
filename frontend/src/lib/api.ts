@@ -10470,6 +10470,26 @@ export function fetchPackVideoReturns(params: {
   return apiFetch<PackVideoReturnsResponse>(`/api/pack-videos/returns?${qs.toString()}`);
 }
 
+/** Một dòng của tab Lịch sử xóa. `deleteRule` = mã luật máy chủ ghi (L1–L7, ACCOUNT). */
+export interface PackVideoDeletedRow {
+  id: string;
+  trackingCode: string;
+  kind: PackVideoKind;
+  deleteRule: string | null;
+  deletedAt: string | null;
+}
+
+/** Tab Lịch sử xóa: video hệ thống đã tự xóa, quay mới nhất trước; `q` = mã vận đơn bắt đầu bằng chuỗi này. */
+export function fetchPackVideoDeleted(params: { q?: string; cursor?: string; limit?: number }) {
+  const qs = new URLSearchParams();
+  if (params.q?.trim()) qs.set("q", params.q.trim());
+  if (params.cursor) qs.set("cursor", params.cursor);
+  if (params.limit) qs.set("limit", String(params.limit));
+  return apiFetch<{ items: PackVideoDeletedRow[]; nextCursor: string | null }>(
+    `/api/pack-videos/deleted?${qs.toString()}`
+  );
+}
+
 export interface PackVideoStats {
   totalVideos: number;
   totalSeconds: number;

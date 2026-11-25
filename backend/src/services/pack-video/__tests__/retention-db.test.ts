@@ -13,9 +13,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { buildPackVideoKey } from "../../../lib/pack-video-key";
 import { prisma } from "../../../lib/prisma";
-import { listVideos, summarizeVideos } from "../library";
+import { listDeletedVideos, listVideos, summarizeVideos } from "../library";
 import { purgeOwnerPackVideos } from "../owner-purge";
-import { assignRetention, processDueVideos } from "../retention";
+import { assignRetention, processDueVideos, sweepStalePending } from "../retention";
 import { USAGE_JOB_KEY, rollUpUsageDaily, usedSecondsOf, usageWatermark } from "../usage-daily";
 import { createFakeStorage } from "./fake-storage";
 
@@ -50,7 +50,10 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
     orderIds[key] = o.id;
   }
 
-  async function addVideo(key: string, opts: { orderKey?: string; kind?: "PACK" | "UNBOX"; durationSec?: number }) {
+  async function addVideo(
+    key: string,
+    opts: { orderKey?: string; kind?: "PACK" | "UNBOX"; durationSec?: number; trackingCode?: string }
+  ) {
     seq += 1;
     const id = `${TAG.replace(/-/g, "")}v${seq}`;
     const orderId = opts.orderKey ? orderIds[opts.orderKey] : null;
@@ -62,7 +65,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
         clientId: `${TAG}-c${seq}`,
         channelId: orderId ? (opts.orderKey === "lazada" ? chLazada : chShopee) : null,
         orderId,
-        trackingCode: `${TAG}-T${seq}`,
+        trackingCode: opts.trackingCode ?? `${TAG}-T${seq}`,
         kind: opts.kind ?? "PACK",
         recordedById: owner,
         recordedAt: new Date(`${REC_DATE}T03:00:00.000Z`),
@@ -90,6 +93,12 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
       where: { key: USAGE_JOB_KEY },
       select: { cursor: true, processed: true },
     });
+    // Mốc thật của database local trôi theo ngày (worker dọn chạy mỗi 6 giờ): khi nó đã vượt REC_DATE thì video
+    // thử (quay 10/11) rơi vào vùng "đã gộp" mà chưa có dòng gộp → ca "giờ đã quay không tụt" đọc ra 0 và kéo đỏ
+    // ca sau (đỏ sẵn từ ~18/11, tìm ra gốc 25/11/2026). Lùi mốc về trước REC_DATE trong lúc test; afterAll trả lại.
+    if (savedUsageJob?.cursor && savedUsageJob.cursor >= REC_DATE) {
+      await prisma.maintenanceJob.update({ where: { key: USAGE_JOB_KEY }, data: { cursor: "2026-11-09" } });
+    }
     owner = (
       await prisma.user.create({
         data: { email: `${TAG}@test.local`, passwordHash: "x", fullName: TAG },
@@ -145,40 +154,40 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
     expect(r.waiting).toBe(1); // đang giao
 
     expect(await row("giao")).toMatchObject({ deleteRule: "L4", holdReason: null });
-    expect(day((await row("giao")).deleteAfter)).toBe("2026-12-03");
-    expect(day((await row("lazada")).deleteAfter)).toBe("2026-12-18"); // Lazada + 35
+    expect(day((await row("giao")).deleteAfter)).toBe("2026-12-01"); // giao 13/11 + 15 + 3
+    expect(day((await row("lazada")).deleteAfter)).toBe("2026-12-16"); // Lazada + 30 + 3
     expect(await row("hoan")).toMatchObject({ deleteAfter: null, holdReason: "RETURN_OPEN" });
     expect(await row("huy-ngang")).toMatchObject({ deleteRule: "L2" });
     expect(day((await row("huy-ngang")).deleteAfter)).toBe("2026-11-19");
     expect(await row("dang-giao")).toMatchObject({ deleteAfter: null, holdReason: null });
     expect(await row("khong-khop")).toMatchObject({ deleteRule: "L1" });
-    expect(day((await row("khong-khop")).deleteAfter)).toBe("2026-11-13");
+    expect(day((await row("khong-khop")).deleteAfter)).toBe("2026-11-17"); // ngày quay + 7
     expect(await row("khui-khong-khop")).toMatchObject({ deleteAfter: null, holdReason: "UNBOX_UNMATCHED" });
   });
 
   it("trang danh sách trả hạn giữ + lý do giữ; chip 'Sắp tự xóa' đếm hạn trong 3 ngày tới (kể cả đã qua)", async () => {
     const scope = { ownerId: owner, allowedChannelIds: null };
     const sum = await summarizeVideos(scope, {});
-    // Hôm nay thật (giờ máy) ≥ 18/11/2026 → L1 (13/11) và L2 (19/11) nằm trong "3 ngày tới"; L4 (03/12) chưa.
+    // Hôm nay thật (giờ máy) ≥ 25/11/2026 → L1 (17/11) và L2 (19/11) nằm trong "3 ngày tới" (kể cả đã qua).
     expect(sum.expiring).toBeGreaterThanOrEqual(2);
     const page = await listVideos(scope, {}, { chip: "expiring" });
     expect(page.items.every((v) => v.deleteAfter !== null)).toBe(true);
     const all = await listVideos(scope, {}, {});
     expect(all.items.find((v) => v.id === videoIds.hoan)).toMatchObject({ deleteAfter: null, holdReason: "RETURN_OPEN" });
-    expect(all.items.find((v) => v.id === videoIds.giao)).toMatchObject({ deleteAfter: "2026-12-03" });
+    expect(all.items.find((v) => v.id === videoIds.giao)).toMatchObject({ deleteAfter: "2026-12-01" });
   });
 
   it("hạn ghi MỘT lần: đơn đổi mốc giao sau đó, lượt sau không ghi đè", async () => {
     await prisma.order.update({ where: { id: orderIds.giao }, data: { deliveredAt: new Date("2026-11-15T05:00:00Z") } });
     await assignRetention({ now: () => NOW, onlyOwnerId: owner });
-    expect(day((await row("giao")).deleteAfter)).toBe("2026-12-03");
+    expect(day((await row("giao")).deleteAfter)).toBe("2026-12-01");
   });
 
   it("CHẠY BÓNG: tới hạn chỉ đếm 'sẽ xóa', không gọi lệnh xóa nào, video vẫn STORED", async () => {
     // Khách xin hoàn đơn "hoan-muon" sau khi đã gán hạn L4.
     await prisma.order.update({ where: { id: orderIds["hoan-muon"] }, data: { returnRequestedAt: NOW } });
     const storage = createFakeStorage();
-    const later = new Date("2026-12-20T03:00:00.000Z"); // sau mọi hạn L1 / L2 / L4 (trừ Lazada 18/12 cũng đã qua)
+    const later = new Date("2026-12-20T03:00:00.000Z"); // sau mọi hạn L1 / L2 / L4 (Lazada 16/12 cũng đã qua)
     const r = await processDueVideos({
       now: () => later,
       deleteEnabled: false,
@@ -207,7 +216,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
     expect(r.deleted).toBe(3);
     expect(storage.objects.has(g.objectKey)).toBe(false);
     expect((await row("giao")).status).toBe("DELETED");
-    expect((await row("lazada")).status).toBe("STORED"); // hạn 18/12 chưa tới
+    expect((await row("lazada")).status).toBe("STORED"); // hạn 16/12 chưa tới
     expect((await row("hoan")).status).toBe("STORED");
     expect((await row("khui-khong-khop")).status).toBe("STORED");
   });
@@ -238,5 +247,116 @@ describe.skipIf(!dbReady)("Video đóng hàng — luật giữ / tự xóa trên
     expect(on).toMatchObject({ enabled: true, found: 2, deleted: 2, errors: 0 });
     expect(storage.calls.filter((c) => c === "remove")).toHaveLength(2);
     expect(await row("purge-1")).toMatchObject({ status: "DELETED", deleteRule: "ACCOUNT" });
+  });
+
+  it("tới hạn mà KHỚP LẠI được tem (mã vận đơn cấp muộn) → gắn đơn, gỡ hạn, KHÔNG xóa", async () => {
+    await addOrder("cap-muon", chShopee, { shippingStatus: ShippingStatus.SHIPPING });
+    // Lúc quay đơn chưa về sổ → video không khớp; tem mang đúng mã vận đơn của đơn về sau.
+    await addVideo("muon", { trackingCode: `${TAG}-VD-cap-muon` });
+    await assignRetention({ now: () => NOW, onlyOwnerId: owner });
+    expect(await row("muon")).toMatchObject({ deleteRule: "L1" });
+    const storage = createFakeStorage();
+    const r = await processDueVideos({
+      now: () => new Date("2026-11-20T03:00:00.000Z"),
+      deleteEnabled: true,
+      storage: () => storage,
+      onlyOwnerId: owner,
+    });
+    expect(r).toMatchObject({ rematched: 1, deleted: 0 });
+    expect(storage.calls).not.toContain("remove");
+    expect(await row("muon")).toMatchObject({ status: "STORED", deleteAfter: null, deleteRule: null });
+    const linked = await prisma.packVideo.findFirstOrThrow({ where: { ownerId: owner, id: videoIds.muon }, select: { orderId: true } });
+    expect(linked.orderId).toBe(orderIds["cap-muon"]);
+  });
+
+  it("đơn hoàn: xóa sau HẠN KHIẾU NẠI 3 ngày; sàn dời hạn muộn hơn thì ghi hạn mới, chưa xóa", async () => {
+    const delivered = new Date("2026-11-13T05:00:00.000Z");
+    await addOrder("hoan-han", chShopee, {
+      shippingStatus: ShippingStatus.DELIVERED,
+      deliveredAt: delivered,
+      returnStatus: ReturnStatus.AWAITING,
+      returnComplaintDueAt: new Date("2026-11-19T07:00:00.000Z"), // 19/11 14:00 VN
+    });
+    await addVideo("hoan-han", { orderKey: "hoan-han" });
+    await assignRetention({ now: () => NOW, onlyOwnerId: owner });
+    expect(await row("hoan-han")).toMatchObject({ deleteRule: "L7", holdReason: null });
+    expect(day((await row("hoan-han")).deleteAfter)).toBe("2026-11-22"); // hạn 19/11 + 3
+
+    // Sàn đặt lại hạn (kiện về muộn hơn dự kiến) → 25/11.
+    await prisma.order.update({
+      where: { id: orderIds["hoan-han"] },
+      data: { returnComplaintDueAt: new Date("2026-11-25T07:00:00.000Z") },
+    });
+    const storage = createFakeStorage();
+    const first = await processDueVideos({
+      now: () => new Date("2026-11-23T03:00:00.000Z"),
+      deleteEnabled: true,
+      storage: () => storage,
+      onlyOwnerId: owner,
+    });
+    expect(first).toMatchObject({ postponed: 1, deleted: 0 });
+    expect(day((await row("hoan-han")).deleteAfter)).toBe("2026-11-28");
+    expect((await row("hoan-han")).status).toBe("STORED");
+
+    const second = await processDueVideos({
+      now: () => new Date("2026-11-29T03:00:00.000Z"),
+      deleteEnabled: true,
+      storage: () => storage,
+      onlyOwnerId: owner,
+    });
+    expect(second.deleted).toBe(1);
+    expect(await row("hoan-han")).toMatchObject({ status: "DELETED", deleteRule: "L7" });
+
+    // Tab Lịch sử xóa: thấy đúng video vừa xóa kèm mã luật; ô tìm theo đầu mã vận đơn (gõ chữ thường cũng ra).
+    const scope = { ownerId: owner, allowedChannelIds: null };
+    const history = await listDeletedVideos(scope, {});
+    expect(history.items.find((v) => v.id === videoIds["hoan-han"])).toMatchObject({ deleteRule: "L7", kind: "PACK" });
+    expect(history.items.every((v) => v.deletedAt !== null)).toBe(true);
+    const code = (await prisma.packVideo.findFirstOrThrow({ where: { ownerId: owner, id: videoIds["hoan-han"] }, select: { trackingCode: true } })).trackingCode;
+    expect((await listDeletedVideos(scope, { q: code.slice(0, code.length - 1) })).items.map((v) => v.id)).toContain(videoIds["hoan-han"]);
+    expect((await listDeletedVideos(scope, { q: "khong-co-ma-nay" })).items).toEqual([]);
+    // Video còn lưu không lọt vào lịch sử xóa.
+    expect(history.items.some((v) => v.id === videoIds.muon)).toBe(false);
+  });
+
+  it("lượt tải lên dở dang quá 7 ngày: chạy bóng chỉ đếm; bật thì hủy lượt tải + xóa mảnh + đánh dấu LOST", async () => {
+    const mk = async (suffix: string, createdAt: Date) => {
+      const id = `${TAG.replace(/-/g, "")}p${suffix}`;
+      await prisma.packVideo.create({
+        data: {
+          id,
+          recordedDate: new Date(`${REC_DATE}T00:00:00.000Z`),
+          ownerId: owner,
+          clientId: `${TAG}-p${suffix}`,
+          trackingCode: `${TAG}-P${suffix}`,
+          kind: "PACK",
+          recordedById: owner,
+          recordedAt: new Date(`${REC_DATE}T03:00:00.000Z`),
+          durationSec: 60,
+          sizeBytes: BigInt(40_000_000),
+          objectKey: buildPackVideoKey({ ownerId: owner, recordedDate: REC_DATE, id }),
+          uploadId: `up-${suffix}`,
+          status: "PENDING",
+          createdAt,
+        },
+      });
+      return id;
+    };
+    const stale = await mk("cu", new Date("2026-11-10T03:00:00.000Z")); // 8 ngày trước NOW
+    const fresh = await mk("moi", new Date("2026-11-15T03:00:00.000Z")); // 3 ngày trước NOW
+    const statusOf = async (id: string) =>
+      (await prisma.packVideo.findFirstOrThrow({ where: { ownerId: owner, id }, select: { status: true } })).status;
+
+    const storage = createFakeStorage();
+    const shadow = await sweepStalePending({ now: () => NOW, deleteEnabled: false, storage: () => storage, onlyOwnerId: owner });
+    expect(shadow).toMatchObject({ shadow: true, found: 1, cleared: 0 });
+    expect(storage.calls).toHaveLength(0);
+    expect(await statusOf(stale)).toBe("PENDING");
+
+    const real = await sweepStalePending({ now: () => NOW, deleteEnabled: true, storage: () => storage, onlyOwnerId: owner });
+    expect(real).toMatchObject({ shadow: false, found: 1, cleared: 1, errors: 0 });
+    expect(storage.calls).toEqual(expect.arrayContaining(["abortMultipart", "remove"]));
+    expect(await statusOf(stale)).toBe("LOST");
+    expect(await statusOf(fresh)).toBe("PENDING");
   });
 });

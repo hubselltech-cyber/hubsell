@@ -137,6 +137,13 @@ export function packVideoAccountPurgeEnabled(): boolean {
   return process.env.PACK_VIDEO_ACCOUNT_PURGE === "1";
 }
 
+/**
+ * Lượt tải lên DỞ DANG (dòng PENDING) quá ngần này ngày thì dọn: hủy lượt tải theo mảnh, xóa mảnh tệp, đánh dấu
+ * LOST. 7 ngày = cùng mốc "video chờ tải lên" của bảng gộp giờ (FREEZE_LAG_DAYS) — SỐ TỰ CHỌN. Máy khách gửi tiếp
+ * sau mốc này nhận 409 "Video này đã bị xóa" (services/pack-video/upload.ts), không hỏng gì.
+ */
+export const PACK_VIDEO_PENDING_STALE_DAYS = 7;
+
 /** Mỗi lượt worker dọn đọc tối đa ngần này video (đọc theo khóa, không quét bảng). SỐ TỰ CHỌN. */
 export const PACK_VIDEO_JANITOR_BATCH = 500;
 

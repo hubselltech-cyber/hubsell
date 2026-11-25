@@ -178,11 +178,41 @@ export const PACK_VIDEO_EXPIRING_DAYS = 3;
 export type PackVideoHoldReasonKey = "RETURN_OPEN" | "RETURN_DAMAGED" | "UNBOX_UNMATCHED" | "PARCEL_RETURNING";
 
 export const HOLD_REASON_LABEL: Record<PackVideoHoldReasonKey, string> = {
-  RETURN_OPEN: "Đơn có hoàn — giữ tới khi xử lý xong",
+  RETURN_OPEN: "Đơn có hoàn — giữ tới qua hạn khiếu nại",
   RETURN_DAMAGED: "Kiện hoàn hỏng / thiếu — giữ để khiếu nại",
   UNBOX_UNMATCHED: "Video khui chưa khớp đơn — giữ lại",
   PARCEL_RETURNING: "Đơn hủy, kiện đang quay về — giữ tới khi nhận",
 };
+
+/**
+ * LÝ DO XÓA cho tab Lịch sử xóa — đổi mã luật máy chủ ghi ở cột deleteRule (backend lib/pack-video-retention.ts)
+ * ra câu khách đọc được. Luật anh Trung chốt 25/11/2026: xóa sau khi HẾT HẠN 3 ngày, lưu tối đa 60 ngày.
+ */
+const DELETE_REASON_LABEL: Record<string, string> = {
+  L1: "Không khớp được đơn nào sau 7 ngày",
+  L2: "Đơn đã hủy trước khi giao cho đơn vị vận chuyển",
+  L3: "Đơn hủy, kiện đã về kho nguyên vẹn",
+  L4: "Đơn giao thành công, đã qua hạn người mua trả hàng 3 ngày",
+  L5: "Đơn hoàn đã xử lý xong",
+  L6: "Đã lưu đủ 60 ngày",
+  L7: "Đơn hoàn đã qua hạn khiếu nại 3 ngày",
+  ACCOUNT: "Tài khoản đã xóa",
+};
+
+export function deleteReasonLabel(rule: string | null, kind: "PACK" | "UNBOX"): string {
+  const reason = (rule && DELETE_REASON_LABEL[rule]) || "Hệ thống tự xóa theo trạng thái đơn";
+  return kind === "UNBOX" ? `Video khui hàng · ${reason}` : reason;
+}
+
+/** "25/11/2026" theo giờ Việt Nam từ một mốc ISO. */
+export function formatVnDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 /** Số ngày từ hôm nay (giờ máy) tới một ngày "YYYY-MM-DD"; âm = đã qua. */
 export function daysUntil(dateKey: string, now: Date = new Date()): number {

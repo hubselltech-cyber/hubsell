@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 import { HoursBalanceBar } from "./hours-balance";
 import { OrderVideoDossier } from "./order-video-dossier";
+import { DeletedTab } from "./deleted-tab";
 import { ReturnsTab } from "./returns-tab";
 import { StatsTab } from "./stats-tab";
 import { VideosTab } from "./videos-tab";
@@ -30,12 +31,13 @@ const RecordScreen = dynamic(() => import("./record/record-screen").then((m) => 
   loading: () => <p className="py-10 text-center text-sm text-muted-foreground">Đang mở màn quay…</p>,
 });
 
-type TabKey = "videos" | "returns" | "stats";
+type TabKey = "videos" | "returns" | "stats" | "deleted";
 
 const TABS: readonly PageTabItem<TabKey>[] = [
   { key: "videos", label: "Video đóng hàng" },
   { key: "returns", label: "Đơn hoàn" },
   { key: "stats", label: "Thống kê" },
+  { key: "deleted", label: "Lịch sử xóa" },
 ];
 
 const STAFF_TABS: readonly PageTabItem<TabKey>[] = [TABS[0]];
@@ -77,13 +79,13 @@ function PackVideoGate({ children }: { children: React.ReactNode }) {
 /**
  * TRANG VIDEO ĐÓNG HÀNG (/orders/videos) — docs/VIDEO-DONG-HANG-THIET-KE.md.
  *
- * Ba tab cấp trang: Video đóng hàng (một dòng = một video) · Đơn hoàn (một dòng = một đơn,
+ * Bốn tab cấp trang: Video đóng hàng (một dòng = một video) · Đơn hoàn (một dòng = một đơn,
  * gồm cả video khui hàng) · Thống kê. Mỗi tab tự giữ bộ lọc của mình và chỉ được dựng khi
- * đang chọn — tab Đơn hoàn và Thống kê không gọi máy chủ cho tới lúc mở.
+ * đang chọn — tab Đơn hoàn, Thống kê và Lịch sử xóa (video hệ thống đã tự xóa + lý do) không gọi máy chủ cho tới lúc mở.
  */
 export function PackVideosPage() {
   const [tab, setTab] = React.useState<TabKey>("videos");
-  // Nhân viên (24/11/2026, docs mục 28): chỉ tab Video đóng hàng (xem, không tải về); Đơn hoàn + Thống kê là của chủ.
+  // Nhân viên (24/11/2026, docs mục 28): chỉ tab Video đóng hàng (xem, không tải về); Đơn hoàn + Thống kê + Lịch sử xóa là của chủ.
   const caps = usePackVideoCaps();
   const tabs = caps.manage ? TABS : STAFF_TABS;
   const shown: TabKey = caps.manage ? tab : "videos";
@@ -121,6 +123,7 @@ export function PackVideosPage() {
         {shown === "videos" && <VideosTab />}
         {shown === "returns" && <ReturnsTab />}
         {shown === "stats" && <StatsTab />}
+        {shown === "deleted" && <DeletedTab />}
       </div>
     </PackVideoGate>
   );

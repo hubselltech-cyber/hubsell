@@ -2370,3 +2370,192 @@ tới ClickHouse / chia nhiều DB — chưa cần.
 | Q-4 | M2.4 (đổi hợp đồng + migration) làm sau khi M2.1–2.3 lên, gộp vào bản app kế | có |
 | Q-5 | Ở quy mô lớn, xóa tệp bằng luật vòng đời R2 theo tiền tố ngày + chép clip phải giữ sang tiền tố giữ (đảo đề xuất 14/11 "bỏ ngăn hold/") | có, nhưng chỉ khi làm M2.7 |
 | Q-6 | Khi số khách tiến tới ≈ 100.000 bàn: gửi đơn xin nâng hạn mức Cloudflare + hỏi đường Việt Nam → R2 | có, chưa phải bây giờ |
+
+## 30. Rà điều kiện MỞ CHO KHÁCH (25/11/2026 khuya — anh: "còn phần nào nữa làm nốt trong hôm nay luôn để mở cho khách dùng") — DANH SÁCH, chờ anh chốt 4 câu
+
+Đọc lại mục 8 (điều kiện mở cho khách thứ hai), mục 23, 28, 29 + mã hiện tại. Trạng thái từng điều kiện:
+
+### 30.1 Đã xong (không còn chặn)
+
+| Điều kiện | Ở đâu |
+|---|---|
+| Lọc theo gian cho nhân viên + quyền xem (mục 8 điều 2) | mục 28, prod `2fd1599a` |
+| Chính sách bảo mật có video đóng hàng (điều 3) | bản 22/11/2026 trên hubsell.vn |
+| Mua giờ qua payOS + chứng từ + hóa đơn; giá 2.000 đ / giờ; tặng 2 giờ lần đầu | mục 20, 27 (mã đã trên prod, công tắc bán giờ theo env) |
+| Hàng chờ bền web + cứu clip dở + gửi tiếp ở mọi trang | mục 21, 24 |
+| Mã dọn video khi xóa tài khoản + luật tự xóa theo trạng thái đơn | có mã, đang SAU CỜ (30.2) |
+| Hai ca test `retention-db` đỏ sẵn từ ~18/11 | **gốc = bài test, không phải sản phẩm** (30.4) — đã sửa, 84 / 84 |
+
+### 30.2 CHẶN mở — em làm được trong hôm nay (cần anh gật các câu ở 30.5)
+
+| # | Việc | Vì sao chặn | Cỡ việc |
+|---|---|---|---|
+| B1 | **Chỉ mục tra mã vận đơn** `Order("trackingCode")` (+ `"returnTrackingCode"` cho khui) dựng CONCURRENTLY | `order-match.ts` chạy MỖI LẦN giơ tem, đi qua mọi đơn của các gian rồi mới lọc. Cùng kiểu quét em đo chiều nay ở câu hạn khiếu nại: 6,9 giây / 36.344 trang cho shop lớn nhất (docs HAN-KHIEU-NAI mục 16). Một tài khoản thí điểm thì không lộ; mở cho shop 1.000 đơn / ngày là nghẽn | EXPLAIN chỉ đọc → dựng 2 chỉ mục trên prod → đo lại; migration IF NOT EXISTS |
+| B2 | **Đo câu danh sách video + câu đếm thẻ tab Đơn hoàn** trên shop lớn | cùng nhóm JOIN Order, chưa từng đo trên shop thật | EXPLAIN chỉ đọc; có thể thêm 1 chỉ mục |
+| B3 | **Cổng mở**: đổi từ danh sách một email sang mở theo luật anh chọn (câu Q1) + giữ công tắc tắt gấp | hiện `PACK_VIDEO_PILOT_EMAILS = ["admin@hubsell.vn"]` viết cứng | nhỏ; không migration nếu mở cho mọi chủ shop |
+| B4 | **Bước đồng ý lần đầu** ở cửa tính năng (video có hình + tên, địa chỉ người mua; lưu ở Cloudflare R2 ngoài Việt Nam) | Chính sách bảo mật mục 13 đã HỨA xin đồng ý khi thêm bên nhận dữ liệu | vừa: 1 hộp thoại + ghi nhận đồng ý (cần chỗ lưu — xem câu Q4) |
+| B5 | **Soi kết quả chạy bóng của luật xóa** trên prod (video "sẽ xóa" 18–25/11 đối chiếu đơn thật) rồi bật `PACK_VIDEO_DELETE_ENABLED=1` + `PACK_VIDEO_ACCOUNT_PURGE=1` | Chính sách bảo mật mục 8 đã HỨA tự xóa theo trạng thái đơn + xóa cùng tài khoản; mục 8 điều 4 đòi chạy bóng đủ một tuần (18/11 → 25/11 vừa đủ) | SQL chỉ đọc + anh (hoặc em, nếu anh cho) đặt 2 biến trên Render |
+| B6 | **Landing** `/quay-video-dong-hang`: `AVAILABILITY` "early" → "open", sửa chữ "đang mở dần"; trang Hướng dẫn trong app | nút hiện là "Đăng ký dùng sớm" | nhỏ |
+
+### 30.3 CHẶN mở — chỉ anh làm được
+
+| # | Việc | Ghi chú |
+|---|---|---|
+| A1 | Bật `PACK_VIDEO_HOUR_SALES_OPEN=1` trên Render (nếu chưa) + **mua thử một khoản thật 20 giờ = 40.000 đ** ở giá mới, xem giờ cộng + tờ hóa đơn | mục 20.8 điều 6; em không tự trả tiền |
+| A2 | Quay webcam thật một buổi với bố cục mới + rút mạng thật (mục 24.5, 26.3) | em chỉ thử được bằng camera giả |
+
+### 30.4 KHÔNG kịp hôm nay / không chặn mở WEB
+
+- **App điện thoại**: màn quay chỉ có ở nhánh thử `thu/video-dong-goi-lat-0` (TestFlight 1.5.1 (44)). Lên kho = gộp nhánh vào master + bản dựng phát hành + chờ Apple / Google duyệt (tính bằng ngày), và còn nợ: Android chưa in mã, chưa thử lại các màn quét cũ với CameraX mới, clip đang quay lúc app tắt vẫn mất. → **mở WEB (webcam) trước, app theo bản nộp kho sau**; landing giữ chữ "điện thoại sắp có".
+- **M2 (mục 29)**: ≈ 27 câu + 2 lượt ghi / clip — đủ cho vài chục shop đầu; M2.1 → M2.3 làm ngay sau khi mở, không phải điều kiện mở. M2.6 (chặn gọi dồn) nên có trước khi quảng bá rộng.
+- **HQ theo dõi R2** (mục 23 việc 4), **màn Nhiều bàn** (việc 3): chưa làm, không chặn.
+- **Kiểm chéo thời lượng (mục 8 điều 5)**: máy chủ đang tin thời lượng trình duyệt báo, chỉ gắn cờ lệch ±40 %. Khách sửa mã trình duyệt có thể khai ít giờ. Rủi ro tiền nhỏ ở giai đoạn đầu; nên chốt biên rồi từ chối clip lệch — làm sau khi có số của vài shop thật.
+- **Gốc hai ca test đỏ** (`retention-db.test.ts`): mốc gộp giờ (`maintenance_jobs`, key `pack-usage-daily`) là của CẢ database và trôi theo ngày; khi mốc local vượt ngày quay giả lập 10/11 thì video thử rơi vào vùng "đã gộp" mà chưa có dòng gộp → đọc ra 0, kéo đỏ ca sau. Sửa: test lùi mốc về trước ngày quay trong lúc chạy, `afterAll` trả lại. Không đổi mã sản phẩm. (Ca thật tương ứng — clip tải lên muộn hơn 7 ngày — được gộp lại ở lượt worker kế trong 6 giờ, đúng thiết kế 19.6.)
+
+### 30.5 Chờ anh — 4 câu
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| Q1 | Mở cho AI: mọi chủ shop, hay chỉ shop còn hạn gói (kể cả dùng thử), hay một danh sách đăng ký dùng sớm? | mọi chủ shop **còn hạn gói**; shop hết hạn thấy mờ như hiện nay |
+| Q2 | Cho em chạy EXPLAIN chỉ đọc + dựng 2 chỉ mục mã vận đơn trên prod (như chiều nay)? | có |
+| Q3 | Sau khi em soi danh sách "sẽ xóa" của tuần chạy bóng: bật XÓA THẬT ngay hôm nay? Ai đặt biến trên Render? | bật nếu danh sách sạch; anh đặt biến (hoặc bảo em đặt qua Chrome) |
+| Q4 | Bước đồng ý: lưu "đã đồng ý + ngày" ở đâu? (a) một dòng trong sổ giờ cạnh dòng tặng 2 giờ — không migration; (b) cột mới trên tài khoản — có migration | (a) |
+
+## 31. PHƯƠNG ÁN XÓA VIDEO — rà lại để anh chốt (25/11/2026 khuya — anh: "vẫn còn một vài chỗ em chưa làm. Chưa chốt phương án xóa video")
+
+Anh nói đúng. Mục 30 em xếp "bật xóa thật" thành việc bật công tắc; thật ra **luật xóa mới chốt NGUYÊN TẮC, chưa chốt con số và còn
+lỗ hổng**. Sửa luôn một chỗ em nói sai ở mục 30.3: bán giờ **đã bật trên prod từ 18/11 21:35** và anh **đã mua thật 20 giờ** (giá
+1.500 đ cũ) — việc còn lại chỉ là mua thử một khoản ở giá 2.000 đ.
+
+### 31.1 Đã chốt / chưa chốt
+
+| Phần | Trạng thái |
+|---|---|
+| Nguyên tắc: giữ tới QUA HẠN KHIẾU NẠI, tự xóa theo trạng thái đơn; ⛔ không "cố định N ngày từ ngày quay" | **anh chốt 14/11** (tài liệu khảo sát mục 54) |
+| Các con số 3 / 1 / 7 / 10 ngày | số em tự chọn, anh chưa duyệt |
+| Giao + 20 ngày (Lazada + 35) | em đề nghị (15 ngày người mua được xin hoàn + 5 biên; ca thật 16,2 ngày), anh chưa duyệt |
+| X-a ca hoàn mở quá 90 ngày giữ hay xóa · X-b khớp lại tem trước khi xóa video chưa khớp đơn · X-c bật sau một tuần bóng | treo từ 18/11 (mục 19.9) |
+| "Đã đối soát" có là mốc xóa không | anh nêu 14/11; em đề nghị KHÔNG (19–64 % yêu cầu hoàn đến sau đối soát); anh chưa trả lời |
+
+### 31.2 Số thật của tuần chạy bóng (prod, đọc sổ `pack_videos` 25/11 ~21:20, chỉ đọc) — 55 video, 176 MB, quay 16–20/11
+
+| Luật gán | Số video | Hạn xóa | Đã tới hạn | Nhận xét |
+|---|---|---|---|---|
+| L4 đã giao | 40 | 02/11 → 15/12 | **4** | 4 video quay 18–20/11 cho đơn đã giao từ tháng 10 → hạn rơi vào QUÁ KHỨ; bật xóa thật là mất ngay lượt dọn đầu |
+| L1 chưa khớp đơn | 9 | 21/11 | **9** | đều là video quay thử; nhưng đây đúng là nhóm rủi ro X5 (mã vận đơn cấp muộn) |
+| L5 ca hoàn đã đóng | 3 (1 khui) | 03/12 | 0 | |
+| Giữ — ca hoàn đang mở | 2 | không hạn | — | |
+| Tải dở (`PENDING`) | 1 (7 MB) | — | — | nằm từ 18/11, **không có việc nào dọn** |
+
+Nếu bật công tắc hôm nay: 13 / 55 video bị xóa ngay. Với tài khoản thí điểm thì đúng là video thử, nhưng hai lỗ hổng lộ ra là thật.
+
+### 31.3 Lỗ hổng của luật hiện tại (phải vá TRƯỚC khi bật xóa thật)
+
+| # | Lỗ hổng | Hậu quả | Em đề nghị |
+|---|---|---|---|
+| G1 | **Không có sàn tối thiểu theo ngày quay**: hạn L4 tính từ ngày giao, có thể rơi vào quá khứ | video vừa quay bị xóa trong vòng 6 giờ (ca thật: 4 video ở 31.2) | không xóa video nào trước **ngày quay + 7 ngày** (số em đề nghị, chưa có số đo) |
+| G2 | **Video đóng chưa khớp đơn xóa sau 3 ngày mà không khớp lại** (X5 / X-b): Shopee cấp mã vận đơn muộn, đơn chưa đồng bộ lúc quay | xóa nhầm video của đơn thật | khớp lại tem một lượt trước khi xóa (cần chỉ mục mã vận đơn — việc B1 mục 30) + nới 3 → 7 ngày |
+| G3 | **Ca hoàn đang mở thì giữ vô thời hạn** (X-a), kể cả quá 90 ngày | đơn hoàn treo "chờ hàng về" không bao giờ đóng → video không bao giờ xóa: tiền lưu ăn dần lãi (mục 19: không có luật xóa thì sau 9–14 tháng hết lãi) + vượt trần 90 ngày của Shopee DPP. Số thật: soi 23/11 có 17.665 đơn hoàn TikTok đang mở lâu ngày trên cả hệ thống | **đổi đề nghị cũ của em**: trần 90 ngày từ ngày quay áp cho MỌI video, kể cả ca đang mở; trước đó 7 ngày hiện chip "Sắp tự xóa" để khách tải về |
+| G4 | **Video của đơn không bao giờ giao / hủy trên sổ** (gian mất kết nối, shop ngủ đông) nằm ở trạng thái "chờ" mãi, trần 90 không chạm tới | giữ vô thời hạn | cùng trần 90 ngày của G3 |
+| G5 | **Video tải dở (`PENDING`) không ai dọn** | mảnh tệp nằm lại trên R2 + dòng sổ rác | dọn `PENDING` quá 48 giờ (cửa sổ tải lên muộn hiện là 25 giờ): hủy lượt tải, xóa mảnh, đánh dấu |
+| G6 | **Lưới an toàn vòng đời trên bucket R2** (95 ngày, mục 6 D3) — em CHƯA kiểm đã đặt trên bucket chưa | tệp mồ côi (sổ không biết) không bao giờ xóa | kiểm trong Cloudflare; chưa có thì đặt |
+| G7 | **Không có chuông báo trước khi xóa** (chỉ có chip "Sắp tự xóa" 3 ngày trong danh sách) | khách ít mở trang thì không biết | chuông gộp một lần / ngày khi có video của ĐƠN CÓ HOÀN sắp xóa; video đơn giao bình thường không báo |
+| G8 | **Khách không tự xóa được video** (không có đường xóa tay) | khách muốn xóa sớm phải nhờ Hubsell | để sau khi mở — nêu để anh biết |
+
+### 31.4 Bảng luật em đề nghị CHỐT (thay bảng đang chạy bóng)
+
+| Trường hợp | Xóa khi nào | Đổi so với đang chạy |
+|---|---|---|
+| Đã giao, không có dấu hiệu hoàn | ngày giao + 20 ngày (Lazada + 35) | giữ nguyên |
+| Hủy khi kiện chưa rời kho | 1 ngày sau khi thấy hủy | giữ nguyên |
+| Hủy sau khi kiện rời kho | kho nhận nguyên vẹn + 7 ngày | giữ nguyên |
+| Có dấu hiệu hoàn, ca đang mở | GIỮ | giữ nguyên, **nhưng** chịu trần 90 ngày (G3) |
+| Có hoàn, ca đã đóng | ca đóng + 10 ngày | giữ nguyên |
+| Video đóng chưa khớp đơn | ngày quay + **7** ngày, sau khi đã thử khớp lại | 3 → 7 + khớp lại (G2) |
+| Video khui chưa khớp đơn | GIỮ tới trần 90 | thêm trần |
+| Sàn tối thiểu | không xóa trước ngày quay + 7 ngày | **mới** (G1) |
+| Trần cứng | ngày quay + 90 ngày, MỌI video | áp cả ca đang mở / đang chờ (G3, G4) |
+| "Đã đối soát" | không phải mốc xóa | như cũ |
+| Xóa tài khoản | xóa hết video của chủ shop | bật cờ |
+
+### 31.5 Chờ anh
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| D1 | Duyệt bảng 31.4 (kèm các số 1 / 7 / 10 / 20 / 35 / 90)? | duyệt |
+| D2 | Trần 90 ngày áp cả ca hoàn đang mở (G3)? | có — kèm chip báo trước 7 ngày |
+| D3 | Sàn tối thiểu ngày quay + 7 ngày (G1)? | có |
+| D4 | "Đã đối soát" KHÔNG làm mốc xóa? | không làm mốc |
+| D5 | Chuông báo trước khi xóa (G7): làm trước khi mở, hay sau? | sau khi mở (cùng lát chuông hạn khiếu nại) |
+
+Thứ tự làm sau khi anh chốt: vá G1 + G3 + G4 (luật thuần + test) → B1 chỉ mục mã vận đơn → G2 khớp lại → G5 dọn tải dở → chạy bóng lại
+MỘT lượt trên prod, đọc danh sách "sẽ xóa" → anh duyệt → mới bật `PACK_VIDEO_DELETE_ENABLED`. **Không bật công tắc trước các bước này.**
+
+### 31.6 Việc treo khác tìm thấy khi rà lại (ngoài mục 30)
+
+- Hoa hồng 10 % cho khoản mua giờ + luồng hoàn tiền giờ quay (H3, H4 mục 19.8): anh chưa quyết.
+- Tờ hóa đơn của khoản mua giờ đầu tiên 18/11: chờ anh ký trên meInvoice (mục 20.9).
+- Giá giờ quay chưa có ở Điều khoản / trang Bảng giá (mục 27.3) — mở công khai thì phải ghi.
+- Tên sản phẩm "HubPac" anh nêu 18/11 chưa đổi chữ trên giao diện.
+- Máy chủ chưa từ chối tệp nặng bất thường, chỉ gắn cờ lệch ±40 % (mục 25.14).
+
+## 32. LUẬT XÓA BẢN CHỐT 25/11/2026 + tab LỊCH SỬ XÓA — ĐÃ CODE TRÊN LOCAL (chưa commit / push; công tắc xóa VẪN TẮT)
+
+Anh Trung 25/11 khuya: **"Hết hạn khiếu nại 3 ngày thì xóa, trần 90 ngày anh nghĩ đang thừa, 60 ngày là đủ rồi. Và cần phải thêm 1 tab
+lịch sử xóa kèm lý do (chỉ cần 2 cột là mã vận đơn và cột lý do, thêm thanh tìm kiếm mã vận đơn) thế là đủ, khách mà hỏi còn dễ trả
+lời."** → thay bảng luật mục 19.4 / 31.4. ⛔ Đừng đề xuất lại trần 90, "ca đóng + 10", "giao + 20".
+
+### 32.1 Bảng luật đang nằm trong mã (`backend/src/lib/pack-video-retention.ts`, bản `2026-11-25`)
+
+Một câu: **xóa sau khi HẾT HẠN 3 ngày**. "Hạn" của từng trường hợp:
+
+| Mã | Trường hợp | Hạn | Xóa | Ai chốt |
+|---|---|---|---|---|
+| L4 | Đã giao, không có dấu hiệu hoàn | hết thời gian người mua được xin trả hàng: giao + 15 ngày (Lazada + 30) | hạn + 3 → **giao + 18** (Lazada + 33) | 3 ngày: anh. 15 / 30: **em diễn giải** "hạn khiếu nại" của đơn giao bình thường (bản cũ là 15 + 5 = 20) — anh xem lại |
+| L7 | Đơn hoàn, kiện đã về, ca còn mở | hạn khiếu nại của người bán — CÙNG hàm với cột Hạn khiếu nại / Thời hạn (`complaintDueOf`) | hạn + 3 | anh |
+| L5 | Đơn hoàn đã xử lý xong (kho nhập nguyên vẹn / khiếu nại có kết quả) | lúc ca đóng | + 3 (bản cũ + 10) | em áp cùng số 3 của anh |
+| L3 | Đơn hủy, kiện quay đầu về kho nguyên vẹn | lúc kho nhận | + 3 (bản cũ + 7) | em áp cùng số 3 |
+| L2 | Đơn hủy khi kiện chưa rời kho | — | 1 ngày sau khi thấy hủy | số em tự chọn (giữ như cũ) |
+| L1 | Video đóng không khớp đơn nào | — | ngày quay + 7, **sau khi đã thử khớp lại tem** | số em tự chọn (cũ: 3, không khớp lại) |
+| — | GIỮ: kho báo hỏng (đang khiếu nại) · kiện hoàn chưa về / mới có hạn TẠM của sàn · kiện hủy đang quay đầu · video khui chưa khớp đơn · đơn chưa giao xong | | tới trần | |
+| sàn | Không xóa video nào trước **ngày quay + 7 ngày** | | | số em tự chọn — vá G1 (anh chưa nói gì về sàn) |
+| L6 | **Trần ngày quay + 60 ngày, MỌI video** kể cả đang giữ / đang chờ (vá G3, G4) | | | 60: anh |
+
+- Video đang giữ / đang chờ: sát trần 3 ngày thì mới ghi hạn = trần → chip "Sắp tự xóa" (3 ngày, không đổi) kịp hiện.
+- ⚠️ Hệ quả của trần 60: TikTok cho khiếu nại kiện giao thất bại tới 40 ngày — kiện về muộn thì trần 60 ngày có thể tới trước "hạn + 3".
+- "Đã đối soát" vẫn KHÔNG là mốc xóa (anh chưa trả lời riêng câu này; luật không đọc cột đối soát).
+
+### 32.2 Dịch vụ (`services/pack-video/retention.ts`, worker `pack-video-janitor.ts`)
+
+- **Bản luật** `RETENTION_RULE_VERSION = "2026-11-25"` lưu ở `maintenance_jobs` (key `pack-retention-rule-version`): lượt dọn đầu tiên
+  sau khi lên bản mới GỠ mọi hạn đã ghi theo luật cũ trên video còn lưu rồi tính lại (hạn chỉ ghi một lần nên không tự đổi). Chưa
+  từng xóa thật nên an toàn.
+- **Đọc lại đơn lúc tới hạn và tính lại**: phải giữ → gỡ hạn; hạn tính lại muộn hơn (sàn dời hạn khiếu nại) → ghi hạn mới, chưa
+  xóa; L2 / L3 / L5 tính từ "lúc thấy" nên cùng luật thì không dời nữa (không thì dời mãi).
+- **Khớp lại tem trước khi xóa video chưa khớp đơn** (vá G2 / X5): khớp được → gắn đơn, gỡ hạn, tính theo đơn.
+- **Dọn lượt tải lên dở dang** quá 7 ngày (vá G5, số em tự chọn = mốc "video chờ tải lên" của bảng gộp giờ): hủy lượt tải theo mảnh,
+  xóa mảnh, đánh dấu `LOST`. Cùng công tắc xóa — chạy bóng chỉ đếm. Máy khách gửi tiếp sau đó nhận 409 "Video này đã bị xóa".
+- **Chỉ mục tra mã vận đơn** (B1 / M2.5): migration `20261125230000_order_tracking_code_idx` —
+  `Order_trackingCode_idx`, `Order_returnTrackingCode_idx` (một phần, `IS NOT NULL`). Local: câu khớp tem đi đúng
+  `Order_trackingCode_idx`. ⚠️ **Prod CHƯA dựng** — phải `CREATE INDEX CONCURRENTLY` tay TRƯỚC khi push (câu nằm trong tệp migration).
+
+### 32.3 Tab LỊCH SỬ XÓA (`frontend/src/components/orders/videos/deleted-tab.tsx`, `GET /api/pack-videos/deleted`)
+
+- Tab thứ tư của trang Video đóng hàng, chỉ chủ shop (cùng nhóm Đơn hoàn / Thống kê). **Hai cột: Mã vận đơn (có nút chép) · Lý do
+  xóa**; ngày xóa là dòng phụ dưới lý do, không phải cột thứ ba. Ô tìm = mã vận đơn BẮT ĐẦU bằng chuỗi gõ (gõ chữ thường cũng ra).
+- Lý do theo mã luật: "Đơn giao thành công, đã qua hạn người mua trả hàng 3 ngày" · "Đơn hoàn đã qua hạn khiếu nại 3 ngày" · "Đơn
+  hoàn đã xử lý xong" · "Đơn hủy, kiện đã về kho nguyên vẹn" · "Đơn đã hủy trước khi giao cho đơn vị vận chuyển" · "Không khớp được
+  đơn nào sau 7 ngày" · "Đã lưu đủ 60 ngày"; video khui có tiền tố "Video khui hàng ·".
+- Nguồn = dòng `DELETED` của sổ video (đi theo chỉ mục chủ shop + giờ quay, quay mới nhất trước). Lượt tải dở bị dọn không hiện.
+- Chạy bóng thì chưa có dòng nào → tab trống trên prod cho tới khi bật xóa thật.
+
+### 32.4 Đã kiểm / chưa kiểm
+
+- ✅ `tsc` backend + frontend sạch, eslint frontend sạch. Test: luật thuần **55** (viết lại theo bảng 32.1), luật trên sổ thật thêm 3
+  ca (khớp lại tem · sàn dời hạn → ghi hạn mới rồi mới xóa + lịch sử xóa thấy đúng dòng · lượt tải dở); 17 tệp liên quan **301 / 301**.
+- ✅ Soi local 1366 sáng + tối: tab Lịch sử xóa 8 dòng thử đủ 7 lý do, ô tìm ra đúng dòng, bảng không tràn.
+- ❌ Chưa commit / push. ❌ Hai chỉ mục mã vận đơn chưa dựng trên prod. ❌ Luật mới chưa chạy bóng trên prod (cần push) — **công tắc
+  `PACK_VIDEO_DELETE_ENABLED` vẫn TẮT**; sau khi lên, đọc danh sách "sẽ xóa" một lượt rồi anh mới duyệt bật.
+- ❌ Chưa làm: G6 kiểm lưới vòng đời trên bucket R2 · G7 chuông báo trước khi xóa · G8 khách tự xóa video · ghi "tối đa 60 ngày" vào
+  landing / Chính sách bảo mật (hiện chỉ ghi "lưu theo trạng thái đơn… rồi tự động xóa", không trái luật mới).
+- Tệp tạm `backend/scripts/_tmp-lsx-seed.ts` (8 video "đã xóa" để soi tab) còn trong database local — `cleanup` + xóa tệp sau khi anh xem.

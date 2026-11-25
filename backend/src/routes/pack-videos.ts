@@ -11,6 +11,7 @@
 //   GET  /                 danh sách video (con trỏ)
 //   GET  /summary          số trên chip
 //   GET  /returns          danh sách ĐƠN hoàn + số trên thẻ
+//   GET  /deleted          lịch sử xóa: mã vận đơn + lý do (chỉ chủ shop)
 //   GET  /stats            thống kê thời gian quay
 //   GET  /hours            giờ đã mua · đã quay · còn lại + các gói giờ
 //   POST /hours/checkout   { hours } → mã QR payOS mua giờ quay (máy chủ tự tính tiền)
@@ -44,6 +45,7 @@ import {
   PACK_VIDEO_CHIPS,
   RETURN_CARDS,
   RETURN_SORTS,
+  listDeletedVideos,
   listReturnOrders,
   listVideos,
   matchTem,
@@ -229,6 +231,21 @@ router.get(
       await listReturnOrders(scopeOf(req), {
         card: RETURN_CARDS.includes(card) ? card : "all",
         sort: RETURN_SORTS.includes(sort) ? sort : undefined,
+        q: str(req.query.q) || undefined,
+        cursor: str(req.query.cursor) || undefined,
+        limit: Number(req.query.limit),
+      })
+    );
+  })
+);
+
+// Lịch sử xóa: video hệ thống đã tự xóa + lý do. Chỉ chủ shop (cùng nhóm với tab Đơn hoàn / Thống kê).
+router.get(
+  "/deleted",
+  handle(async (req, res) => {
+    requireManage(req);
+    res.json(
+      await listDeletedVideos(scopeOf(req), {
         q: str(req.query.q) || undefined,
         cursor: str(req.query.cursor) || undefined,
         limit: Number(req.query.limit),

@@ -1920,6 +1920,10 @@ model Order {
   // complaintDueCandidateSql (lib/return-complaint-due-sql.ts):
   //   Order_return_complaint_due_idx (channelId) WHERE returnStatus IN ('AWAITING','RECEIVED','DAMAGED')
   //     AND (returnComplaintDueAt IS NOT NULL OR returnDeliveredAt IS NOT NULL OR returnedAt IS NOT NULL)
+  // Chỉ mục MỘT PHẦN tra mã vận đơn (khớp tem ra đơn — video đóng hàng / khui, 25/11/2026) chỉ có trong SQL
+  // migration 20261125230000_order_tracking_code_idx:
+  //   Order_trackingCode_idx (trackingCode) WHERE trackingCode IS NOT NULL
+  //   Order_returnTrackingCode_idx (returnTrackingCode) WHERE returnTrackingCode IS NOT NULL
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

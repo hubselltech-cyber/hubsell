@@ -331,6 +331,58 @@ export async function listVideos(
   };
 }
 
+/** Một dòng của tab Lịch sử xóa: mã vận đơn + lý do (luật đã xóa) + ngày xóa. */
+export interface DeletedVideoRow {
+  id: string;
+  trackingCode: string;
+  kind: PackVideoKind;
+  /** L1–L7 (lib/pack-video-retention.ts) hoặc ACCOUNT; web đổi ra câu tiếng Việt. */
+  deleteRule: string | null;
+  deletedAt: string | null;
+}
+
+/**
+ * LỊCH SỬ XÓA (anh Trung 25/11/2026: "thêm 1 tab lịch sử xóa kèm lý do — chỉ cần 2 cột là mã vận đơn và cột lý do,
+ * thêm thanh tìm kiếm mã vận đơn… khách mà hỏi còn dễ trả lời"). Video hệ thống ĐÃ tự xóa, quay mới nhất trước
+ * (đi theo chỉ mục pack_videos_owner_recorded_idx — không sắp theo ngày xóa để khỏi sắp trong bộ nhớ). Ô tìm =
+ * mã vận đơn BẮT ĐẦU bằng chuỗi gõ (chỉ mục pack_videos_owner_tracking_idx). Lượt tải dở bị dọn (LOST) không
+ * phải video nên không nằm ở đây.
+ */
+export async function listDeletedVideos(
+  scope: PackVideoScope,
+  page: { q?: string; cursor?: string; limit?: number }
+): Promise<{ items: DeletedVideoRow[]; nextCursor: string | null }> {
+  const limit = clampLimit(page.limit);
+  const conds = [...scopeConds(scope), Prisma.sql`v."status" = 'DELETED'`];
+  const q = page.q?.trim().slice(0, 64);
+  if (q) {
+    const prefix = `${escapeLikePrefix(q)}%`;
+    // Mã vận đơn lưu nguyên như trên tem (thường chữ HOA) — nhận cả khi khách gõ chữ thường.
+    conds.push(Prisma.sql`(v."trackingCode" LIKE ${prefix} OR v."trackingCode" LIKE ${prefix.toUpperCase()})`);
+  }
+  const after = decodeCursor(page.cursor);
+  if (after) conds.push(Prisma.sql`(v."recordedAt", v."id") < (${after.at}::timestamptz, ${after.id})`);
+  const rows = await prisma.$queryRaw<
+    { id: string; trackingCode: string; kind: string; deleteRule: string | null; deletedAt: Date | null; recordedAt: Date }[]
+  >(Prisma.sql`
+    SELECT v."id", v."trackingCode", v."kind", v."deleteRule", v."deletedAt", v."recordedAt"
+    FROM "pack_videos" v
+    WHERE ${and(conds)}
+    ORDER BY v."recordedAt" DESC, v."id" DESC
+    LIMIT ${limit + 1}`);
+  const pageRows = rows.slice(0, limit);
+  return {
+    items: pageRows.map((r) => ({
+      id: r.id,
+      trackingCode: r.trackingCode,
+      kind: r.kind === "UNBOX" ? "UNBOX" : "PACK",
+      deleteRule: r.deleteRule,
+      deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
+    })),
+    nextCursor: rows.length > limit ? encodeCursor(pageRows[pageRows.length - 1]) : null,
+  };
+}
+
 /** Số trên bốn chip — cùng bộ lọc với danh sách, KHÔNG áp chip. */
 export async function summarizeVideos(
   scope: PackVideoScope,
