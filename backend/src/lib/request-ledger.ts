@@ -30,6 +30,9 @@ interface InFlight {
   startedAt: number;
   /** Nhãn route nặng (heavyRouteGuard) — null = request thường. */
   heavy: string | null;
+  /** RSS (byte) lúc vào và đỉnh thấy được trong lúc chạy (memory-watch gọi sampleInFlightRss mỗi tick). */
+  rssStart: number;
+  rssPeak: number;
 }
 
 const inFlight = new Map<number, InFlight>();
@@ -43,16 +46,153 @@ function numEnv(name: string, fallback: number): number {
 /** Middleware toàn cục: ghi sổ request đang chạy (đường dẫn không kèm query). */
 export function trackInFlight(req: Request, res: Response, next: NextFunction): void {
   const id = ++seq;
-  inFlight.set(id, {
+  const rss = process.memoryUsage.rss();
+  const row: InFlight = {
     id,
     method: req.method,
     path: (req.originalUrl || req.url).split("?")[0],
     startedAt: Date.now(),
     heavy: null,
-  });
+    rssStart: rss,
+    rssPeak: rss,
+  };
+  inFlight.set(id, row);
   (req as Request & { __inFlightId?: number }).__inFlightId = id;
-  res.once("close", () => inFlight.delete(id));
+  res.once("close", () => {
+    inFlight.delete(id);
+    logFinishedRequest(row, req, res);
+  });
   next();
+}
+
+/**
+ * ĐO REQUEST ĐẨY RSS / CHẠY LÂU (25/11/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 8.6–8.7).
+ *
+ * Web OOM 4 lần 25/11; log `[Bộ nhớ]` chỉ chụp "đang chạy" lúc vượt ngưỡng nên không biết request nào làm RSS tăng
+ * (máy sau deploy 20:51 lên 413 MB sau 9 phút mà không có `/recommendations`). Cũng chưa biết request nào giữ bể kết
+ * nối DB lâu (P2028, 19/11). Dòng `[Đo request]` ghi khi một request XONG mà:
+ *   - RSS tăng ≥ REQUEST_LOG_RSS_MB (mặc định 20 MB) tính từ lúc vào tới đỉnh/lúc ra, HOẶC
+ *   - chạy ≥ REQUEST_LOG_SLOW_MS (mặc định 5.000 ms).
+ * Kèm chủ shop (ownerId) + gian (channelId nếu có ở query/params) + số request thường đang chạy cùng — RSS là của cả
+ * tiến trình nên một lượt tăng có thể do request chạy song song; gom nhiều dòng mới kết luận. Chỉ là dụng cụ đo.
+ * Số 20 MB / 5 s là MẶC ĐỊNH TỰ CHỌN (một lượt nặng đo dev 8.3 = +22…+123 MB; /api/orders thấy 6–19 s); 0 = tắt điều kiện đó.
+ *
+ * Quy mô lớn: lúc hệ thống chậm, số request ≥ 5 s tăng theo tải → log không được phình theo. Mỗi tiến trình ghi tối đa
+ * REQUEST_LOG_MAX_PER_MIN dòng/phút (mặc định 60, tự chọn); phần vượt KHÔNG im lặng: hết phút in một dòng tổng "bỏ qua N
+ * dòng" kèm dòng có RSS tăng nhiều nhất trong số bị bỏ. Sổ là RAM theo từng tiến trình — đúng vì RSS cũng là của từng
+ * tiến trình; chạy nhiều instance thì mỗi máy tự ghi (Render gắn mã máy đầu dòng). Không phải khóa / tiền.
+ */
+function envNonNeg(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** memory-watch gọi mỗi tick: cập nhật đỉnh RSS cho mọi request đang chạy + in dòng tổng của phút đã qua nếu có. */
+export function sampleInFlightRss(rss: number = process.memoryUsage.rss(), now: number = Date.now()): void {
+  for (const r of inFlight.values()) if (rss > r.rssPeak) r.rssPeak = rss;
+  rollLogWindow(now);
+}
+
+/** Trần dòng `[Đo request]` mỗi phút — đếm theo cửa sổ phút, phần vượt gom thành một dòng tổng. */
+const logWindow = { start: 0, written: 0, dropped: 0, worstGrowMb: -1, worstLine: "" };
+
+function rollLogWindow(now: number): void {
+  if (now - logWindow.start < 60_000) return;
+  if (logWindow.dropped > 0) {
+    console.log(
+      `[Đo request] bỏ qua ${logWindow.dropped} dòng trong phút trước (trần ${envNonNeg("REQUEST_LOG_MAX_PER_MIN", 60)}/phút)` +
+        ` — RSS tăng nhiều nhất trong số bỏ: ${logWindow.worstLine.replace("[Đo request] ", "")}`
+    );
+  }
+  logWindow.start = now;
+  logWindow.written = 0;
+  logWindow.dropped = 0;
+  logWindow.worstGrowMb = -1;
+  logWindow.worstLine = "";
+}
+
+/** true = được in; false = đã đếm vào phần bỏ qua. Xuất ra để test. */
+export function admitLogLine(line: string, growMb: number, now: number = Date.now()): boolean {
+  rollLogWindow(now);
+  const max = envNonNeg("REQUEST_LOG_MAX_PER_MIN", 60);
+  if (max === 0 || logWindow.written < max) {
+    logWindow.written++;
+    return true;
+  }
+  logWindow.dropped++;
+  if (growMb > logWindow.worstGrowMb) {
+    logWindow.worstGrowMb = growMb;
+    logWindow.worstLine = line;
+  }
+  return false;
+}
+
+export interface FinishedRequestInfo {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  rssStartMb: number;
+  rssPeakMb: number;
+  rssEndMb: number;
+  ownerId?: string;
+  channelId?: string;
+  concurrent: number;
+  heavy: string | null;
+}
+
+/** null = không cần ghi. Tách riêng để test. */
+export function formatFinishedRequest(
+  info: FinishedRequestInfo,
+  thresholds: { rssMb: number; slowMs: number }
+): string | null {
+  if (LONG_LIVED_PATHS.has(info.path)) return null;
+  const grew = Math.max(info.rssPeakMb, info.rssEndMb) - info.rssStartMb;
+  const hitRss = thresholds.rssMb > 0 && grew >= thresholds.rssMb;
+  const hitSlow = thresholds.slowMs > 0 && info.durationMs >= thresholds.slowMs;
+  if (!hitRss && !hitSlow) return null;
+  const why = [hitRss ? "RSS" : null, hitSlow ? "LÂU" : null].filter(Boolean).join("+");
+  return (
+    `[Đo request] ${why} ${info.method} ${info.path}${info.heavy ? ` [${info.heavy}]` : ""} ${info.status} ` +
+    `${(info.durationMs / 1000).toFixed(1)}s RSS ${info.rssStartMb}→${info.rssPeakMb}→${info.rssEndMb} MB (+${grew}) ` +
+    `chủ shop ${info.ownerId ?? "-"} gian ${info.channelId ?? "-"} cùng chạy ${info.concurrent}`
+  );
+}
+
+function pickChannelId(req: Request): string | undefined {
+  const q = (req.query ?? {}) as Record<string, unknown>;
+  const p = (req.params ?? {}) as Record<string, unknown>;
+  for (const v of [q.channelId, p.channelId, q.channel, p.channel]) {
+    if (typeof v === "string" && v && v !== "all") return v.slice(0, 40);
+  }
+  return undefined;
+}
+
+function logFinishedRequest(row: InFlight, req: Request, res: Response): void {
+  try {
+    const end = process.memoryUsage.rss();
+    const line = formatFinishedRequest(
+      {
+        method: row.method,
+        path: row.path,
+        status: res.statusCode,
+        durationMs: Date.now() - row.startedAt,
+        rssStartMb: Math.round(row.rssStart / MB),
+        rssPeakMb: Math.round(Math.max(row.rssPeak, end) / MB),
+        rssEndMb: Math.round(end / MB),
+        ownerId: (req as Request & { ownerId?: string }).ownerId,
+        channelId: pickChannelId(req),
+        concurrent: realInFlightCount(),
+        heavy: row.heavy,
+      },
+      { rssMb: envNonNeg("REQUEST_LOG_RSS_MB", 20), slowMs: envNonNeg("REQUEST_LOG_SLOW_MS", 5000) }
+    );
+    if (line && admitLogLine(line, Math.round((Math.max(row.rssPeak, end) - row.rssStart) / MB))) console.log(line);
+  } catch {
+    // dụng cụ đo không được làm hỏng request
+  }
 }
 
 /** Số request đang chạy. */
@@ -62,6 +202,13 @@ export function inFlightCount(): number {
 
 /** Luồng SSE chuông thông báo: mở hàng giờ, không nặng — đừng để che request thật (đính chính 03/11/2026). */
 const LONG_LIVED_PATHS = new Set(["/api/notifications/stream"]);
+
+/** Số request thường đang chạy (bỏ luồng SSE). */
+function realInFlightCount(): number {
+  let n = 0;
+  for (const r of inFlight.values()) if (!LONG_LIVED_PATHS.has(r.path)) n++;
+  return n;
+}
 
 /**
  * Dòng mô tả sổ in-flight: BỎ luồng SSE (chỉ đếm), route nặng trước rồi lâu nhất trước, tối đa `limit`

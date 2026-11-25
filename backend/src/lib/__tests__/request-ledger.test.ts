@@ -110,3 +110,96 @@ describe("request-ledger — sổ in-flight + rào route nặng", () => {
     delete process.env.HEAVY_ROUTE_RSS_MB;
   });
 });
+
+// Dòng [Đo request] (25/11/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 8.7).
+import { formatFinishedRequest, sampleInFlightRss } from "../request-ledger";
+
+describe("request-ledger — dòng [Đo request]", () => {
+  const base = {
+    method: "GET",
+    path: "/api/orders",
+    status: 200,
+    durationMs: 800,
+    rssStartMb: 200,
+    rssPeakMb: 205,
+    rssEndMb: 204,
+    ownerId: "owner1",
+    channelId: undefined as string | undefined,
+    concurrent: 3,
+    heavy: null as string | null,
+  };
+  const th = { rssMb: 20, slowMs: 5000 };
+
+  it("request nhanh, RSS gần như không đổi → không ghi", () => {
+    expect(formatFinishedRequest(base, th)).toBeNull();
+  });
+
+  it("chạy lâu → ghi LÂU, kèm chủ shop + số cùng chạy", () => {
+    const line = formatFinishedRequest({ ...base, durationMs: 11_200 }, th)!;
+    expect(line).toContain("[Đo request] LÂU GET /api/orders 200 11.2s");
+    expect(line).toContain("chủ shop owner1");
+    expect(line).toContain("cùng chạy 3");
+  });
+
+  it("RSS tăng tới đỉnh rồi hạ vẫn tính theo đỉnh", () => {
+    const line = formatFinishedRequest({ ...base, rssPeakMb: 260, rssEndMb: 230, channelId: "ch1" }, th)!;
+    expect(line).toContain("[Đo request] RSS ");
+    expect(line).toContain("RSS 200→260→230 MB (+60)");
+    expect(line).toContain("gian ch1");
+  });
+
+  it("cả hai điều kiện → RSS+LÂU; ngưỡng 0 = tắt điều kiện đó", () => {
+    const heavy = { ...base, rssPeakMb: 300, durationMs: 9000 };
+    expect(formatFinishedRequest(heavy, th)).toContain("RSS+LÂU");
+    expect(formatFinishedRequest(heavy, { rssMb: 0, slowMs: 0 })).toBeNull();
+  });
+
+  it("luồng SSE chuông không bao giờ ghi dù mở hàng giờ", () => {
+    expect(formatFinishedRequest({ ...base, path: "/api/notifications/stream", durationMs: 3_600_000 }, th)).toBeNull();
+  });
+
+  it("sampleInFlightRss nâng đỉnh của request đang chạy, ghi ra khi request đóng", () => {
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (m: string) => logs.push(m);
+    try {
+      const res = fakeRes();
+      trackInFlight(fakeReq("/api/do-thu-rss"), res as unknown as Response, noop);
+      sampleInFlightRss(process.memoryUsage().rss + 300 * 1024 * 1024);
+      res.emit("close");
+    } finally {
+      console.log = orig;
+    }
+    const line = logs.find((l) => l.includes("/api/do-thu-rss"));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/\[Đo request\] RSS GET \/api\/do-thu-rss 200/);
+  });
+});
+
+// Trần dòng [Đo request] mỗi phút — quy mô lớn, phần vượt không im lặng (25/11/2026).
+import { admitLogLine } from "../request-ledger";
+
+describe("request-ledger — trần dòng [Đo request]/phút", () => {
+  it("quá trần thì bỏ, hết phút in một dòng tổng kèm dòng RSS tăng nhiều nhất", () => {
+    process.env.REQUEST_LOG_MAX_PER_MIN = "3";
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (m: string) => logs.push(m);
+    try {
+      const t0 = 9_000_000_000_000; // mốc xa (sau Date.now()) để mở cửa sổ mới, không lẫn ca khác
+      const admitted = [1, 2, 3, 4, 5, 6].map((i) =>
+        admitLogLine(`[Đo request] LÂU GET /api/r${i} 200 6.0s RSS 1→${i * 10}→1 MB (+${i * 10})`, i * 10, t0 + i)
+      );
+      expect(admitted).toEqual([true, true, true, false, false, false]);
+      expect(logs).toHaveLength(0);
+      sampleInFlightRss(1, t0 + 61_000); // tick memory-watch sang phút mới
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toContain("bỏ qua 3 dòng trong phút trước (trần 3/phút)");
+      expect(logs[0]).toContain("/api/r6"); // dòng tăng nhiều nhất (+60) không mất
+      expect(admitLogLine("x", 0, t0 + 61_001)).toBe(true); // phút mới đếm lại
+    } finally {
+      console.log = orig;
+      delete process.env.REQUEST_LOG_MAX_PER_MIN;
+    }
+  });
+});

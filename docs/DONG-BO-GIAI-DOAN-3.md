@@ -845,3 +845,39 @@ dòng/lượt ở 2 gian lớn — và có mặt ở MỌI lần SÁT TRẦN sau
 2. Lớp 3 log `[ads-load]` (đã có trong phương án 8.2) để lần sau chỉ đúng gian.
 3. Trần đồng thời cho lượt sku-products cỡ vừa (8.5.1 mục 3) — xếp hàng, không theo RSS.
 ⛔ Không nâng máy / gói; không chỉnh số 400 / 5.000.
+
+### 8.6. Anh hỏi "hôm nay web sập mấy lần" (25/11/2026 ~21:50 — chỉ đọc, KHÔNG sửa)
+
+- **Render Events web `hubsell-backend-sg` ngày 25/11:** 4 lần "Ran out of memory (used over 512MB)": **12:11, 12:56, 13:45, 18:24**.
+  Mỗi lần máy khởi động lại (khách thấy lỗi / quay vòng vài chục giây). Thêm 2 lần deploy 14:21 và 20:49 (đổi máy, không phải sập).
+  Từ 18:24 tới lúc đo chưa OOM thêm. 21:47 `/health` 200 (0,19 s), `app.hubsell.tech` trả 307 về đăng nhập bình thường.
+  Ngoài 4 lần chết, khoảng 12:55→14:23 trang Giá vốn bị rào trả 503 liên tục (8.1) — khách cũng thấy như "sập".
+- **Máy mới sau deploy 20:51 (`g7qdc`), log `[Bộ nhớ]`:** boot 20:50:59 RSS **174** → 20:59:59 **413** (81 %; đang chạy
+  `POST /api/finance/cash-flow/refresh` 16 s + 1 s, `GET /api/orders` 6 s) → 21:09:04 **SÁT TRẦN 476** (93 %, heap 150; `GET /api/orders`
+  11 s, `GET /api/quang-cao/shopee`) → 21:20:59 mốc nền **437 / heap 74**. Tức 30 phút sau boot đã kẹt sát trần như các máy trước → nhiều
+  khả năng OOM lần 5 trong đêm nếu tải lên.
+- **Điểm mới so với 8.5:** trong 1 giờ này **không có `/recommendations`** trong danh sách "đang chạy" (tìm log `recommendations` = 0 dòng)
+  mà RSS vẫn lên 413 sau 9 phút. Vậy lớp 2c (8.5.4 mục 1) có thể đúng cho gian lớn nhưng **không đủ giải thích một mình**. Có mặt ở MỌI
+  lần SÁT TRẦN đã ghi (14:53, 15:13, 19:01, 21:09): `GET /api/orders` chạy 6–19 s — chưa rà.
+- **Ý em (chưa làm, chờ anh):** đo trước rồi mới vá — thêm 1 dòng log cho request có RSS tăng > ~20 MB hoặc chạy > 5 s (route + gian + RSS
+  trước/sau). Cùng dụng cụ này trả lời luôn câu còn treo ở sự cố P2028 19/11 (request nào chiếm bể kết nối). Có 1 ngày số thì chọn sửa
+  `/api/orders`, lớp 2c, hay cash-flow/refresh theo đúng thủ phạm. ⛔ Không nâng máy / gói; không chỉnh số rào.
+
+### 8.7. Dụng cụ đo `[Đo request]` (25/11/2026 ~22:00 — anh "Ừ, thêm log đo")
+
+- **Mã:** `backend/src/lib/request-ledger.ts` — sổ in-flight giờ nhớ RSS lúc vào + đỉnh RSS (memory-watch gọi `sampleInFlightRss` mỗi
+  tick 5 s). Khi request đóng, ghi một dòng nếu RSS tăng ≥ `REQUEST_LOG_RSS_MB` (mặc định 20) **hoặc** chạy ≥ `REQUEST_LOG_SLOW_MS`
+  (mặc định 5.000 ms); `0` = tắt điều kiện đó. Bỏ luồng SSE chuông. Không đổi hành vi request (bọc `try`).
+- **Mẫu dòng:** `[Đo request] RSS+LÂU GET /api/orders 200 11.2s RSS 200→260→230 MB (+60) chủ shop <ownerId> gian <channelId|-> cùng chạy 3`.
+  RSS là của cả tiến trình → một dòng "+60" có thể do request chạy song song; đọc theo cụm, đếm route nào lặp lại ở các bước nhảy.
+- **Kiểm:** 6 ca test mới (`request-ledger.test.ts`, tổng `src/lib` 610 đạt), `tsc` sạch; chạy app thật trong tiến trình: ngưỡng tắt → 0 dòng,
+  ngưỡng 1 ms → ra dòng cho `/health` và `/api/orders?channelId=abc`.
+- **Cách đọc trên Render:** Logs → tìm `Đo request` (hoặc `+` theo từng route), chọn "Last 24 hours" bằng menu. Sau ~1 ngày: gom theo route,
+  tổng phần RSS tăng + số lần LÂU → chọn sửa đúng thủ phạm (8.6). Cũng dùng để đối chiếu giờ P2028 (sự cố 19/11).
+- **Chưa làm:** chưa commit / push (chờ anh); chưa có số prod.
+- **Rà theo quy mô lớn (anh hỏi "đang vá lỗi à? có tuân thủ mô hình lớn không?", 25/11 ~22:00):** đây là dụng cụ đo, không đổi hành vi,
+  chưa sửa route nào. Rà lại thấy một chỗ chưa đạt: số dòng log tăng theo tải (lúc hệ thống chậm, request ≥ 5 s tăng vọt) → đã thêm trần
+  `REQUEST_LOG_MAX_PER_MIN` (mặc định 60 dòng/phút/tiến trình, tự chọn; `0` = không trần). Phần vượt KHÔNG im lặng: hết phút in dòng
+  `[Đo request] bỏ qua N dòng … RSS tăng nhiều nhất trong số bỏ: …`. Đọc RSS đổi sang `process.memoryUsage.rss()` (đo máy: 0,3 µs/lần so
+  với 0,5 µs — không đáng kể cả hai). Sổ nằm trong RAM từng tiến trình là đúng vì RSS là của từng tiến trình; nhiều instance thì mỗi máy
+  tự ghi (Render gắn mã máy đầu dòng); không phải khóa / tiền nên không vướng luật "mutex ở DB". Test `src/lib` 611 đạt, tsc sạch.

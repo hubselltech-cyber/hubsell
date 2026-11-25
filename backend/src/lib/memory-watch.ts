@@ -1,5 +1,5 @@
 import v8 from "v8";
-import { describeInFlight } from "./request-ledger";
+import { describeInFlight, sampleInFlightRss } from "./request-ledger";
 
 /**
  * CANH BỘ NHỚ TIẾN TRÌNH (22/09/2026 — sự cố Render sập 5 lần trong 4 ngày vì
@@ -63,6 +63,7 @@ export function startMemoryWatch(): void {
 
   const tick = () => {
     const m = process.memoryUsage();
+    sampleInFlightRss(m.rss); // đỉnh RSS cho dòng [Đo request] (request-ledger.ts, 25/11/2026)
     const pct = (m.heapUsed / limit) * 100;
     if (pct >= critPct && armedCrit) {
       armedCrit = false;

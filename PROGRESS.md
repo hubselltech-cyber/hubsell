@@ -9,7 +9,8 @@
 
 - Render Events: web hết RAM 512 MB lúc **12:11, 12:56, 13:45, 18:24** (+ trang Giá vốn bị rào 503 12:55→14:23). 21:47 web + app đang chạy bình thường.
 - Máy sau deploy 20:51: RSS 174 → 413 sau 9 phút → 476 lúc 21:09 → kẹt 437; trong giờ này KHÔNG có `/recommendations` → nghi phạm 8.5 chưa đủ; `GET /api/orders` 6–19 s có mặt ở mọi lần sát trần.
-- Chi tiết + đề xuất đo (log request đẩy RSS / chạy lâu) ở docs/DONG-BO-GIAI-DOAN-3.md mục 8.6. ⏳ anh chốt.
+- Chi tiết ở docs/DONG-BO-GIAI-DOAN-3.md mục 8.6.
+- ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. ⏳ commit + push rồi đọc log ~1 ngày.
 
 ---
 ## Phiên 25/11 khuya (7) — Video đóng hàng: LUẬT XÓA bản chốt (hết hạn + 3 ngày, trần 60) + tab LỊCH SỬ XÓA — code LOCAL, chưa commit
