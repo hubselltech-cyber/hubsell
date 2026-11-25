@@ -881,3 +881,94 @@ dòng/lượt ở 2 gian lớn — và có mặt ở MỌI lần SÁT TRẦN sau
   `[Đo request] bỏ qua N dòng … RSS tăng nhiều nhất trong số bỏ: …`. Đọc RSS đổi sang `process.memoryUsage.rss()` (đo máy: 0,3 µs/lần so
   với 0,5 µs — không đáng kể cả hai). Sổ nằm trong RAM từng tiến trình là đúng vì RSS là của từng tiến trình; nhiều instance thì mỗi máy
   tự ghi (Render gắn mã máy đầu dòng); không phải khóa / tiền nên không vướng luật "mutex ở DB". Test `src/lib` 611 đạt, tsc sạch.
+- **✅ LÊN PROD `358bfa5c` 22:06:11 25/11** (`/health`). Đọc Render Logs (tìm `request]` — tìm `Đo request` có chữ Đ thì Render trả rỗng): 33 dòng
+  trong vài phút đầu, toàn loại LÂU, RSS 201→210 MB. Điểm đáng chú ý (CHƯA kết luận): 22:06:28 hơn 30 request xong CÙNG MỘT GIÂY sau
+  ~9,7 s, kể cả `/api/auth/me` vốn nhẹ, "cùng chạy" 34–42 → cả tiến trình đứng ~10 s ngay sau boot (nghi bể kết nối DB 5 bị chiếm hoặc
+  vòng sự kiện bị chặn, khớp kiểu P2028 19/11). Cần thêm số mới nói được.
+
+### 8.8. Anh báo "hiện tại đang rất chậm" (25/11/2026 22:08–22:20 — chỉ đọc, KHÔNG sửa)
+
+- **Không phải RAM lần này — database chờ đĩa.** Supabase hiện bảng "Your project is about to deplete its Disk IO Budget". `pg_stat_activity`
+  22:10: 7 câu active, 6 câu chờ `IO/DataFileRead` 10–114 s; 22:13 về 0; 22:19 lại 3 câu (câu danh sách đơn `SELECT Order.id, channelId,
+  orderCode, customerName…` = `GET /api/orders` chờ 95 s và 35 s). Không có dựng chỉ mục / autovacuum nào đang chạy lúc đo
+  (`pg_stat_progress_*` rỗng). Trang trạng thái Supabase: Postgres + pooler ap-southeast-1 bình thường → không phải sự cố của Supabase.
+- **Đo 45 s `pg_stat_statements` (chênh hai lần):** cả DB chỉ đọc được ~170 MB (~3,8 MB/s) → đang bị bóp về mức nền; đọc nhiều nhất:
+  `WITH selling AS (… OrderItem JOIN Order …)` 92 MB / 5 lượt / 54 s. Tỷ lệ trúng bộ đệm 87,8 %; bảng Order 1.158 MB (kèm chỉ mục) so với
+  `shared_buffers` 512 MB.
+- **Phía web (`[Đo request]`, bản 358bfa5c):** 22:08 có 45 dòng, mọi route chạm DB đều 20–60 s kể cả `/api/auth/me`, `/api/subscription/me`
+  (tối đa 61,9 s; 65 request cùng chạy); RSS chỉ ~220 MB. Bể kết nối web = 5 → P2028 (webhook Shopee / TikTok "Không ghi được vào hàng đợi
+  bền") + P2024 "Timed out fetching a new connection … timeout 30, connection limit 5". 22:17–22:18 vẫn tối đa 25 s, RSS 415–467.
+- **Web TỰ THOÁT 2 lần: 22:07:15 và 22:11:30** (Events "Exited with status 1", không phải OOM). Dấu vết: `P2024` ở
+  `prisma.channel.count()` trong `requireChannel` (`middleware/auth.ts`) — middleware `async` không có `try/catch`, Express 4 không đỡ →
+  unhandled rejection → Node thoát. Lỗi có sẵn, không do 358bfa5c; nhưng lượt deploy 358bfa5c 22:05 (và eade3a6c 21:52) rơi đúng lúc DB
+  nghẽn, mỗi lần khởi động lại là thêm một đợt tải nguội.
+- **Lỗi thứ hai cùng chỗ:** `requireAuth` bắt MỌI lỗi thành 401 "Phiên đăng nhập không hợp lệ" → DB quá tải thì khách bị coi như hết phiên
+  (nghi bị đẩy ra trang đăng nhập — CHƯA kiểm phía frontend).
+- **Vì sao cạn Disk IO (chưa chứng minh, chuỗi hợp lý nhất):** tối nay có 3 lượt `CREATE INDEX CONCURRENTLY` trên Order (mỗi lượt quét
+  bảng 641 MB hai lần; lượt thứ 3 hỏng, `Order_returnTrackingCode_idx` đang `indisvalid = false`) + EXPLAIN ANALYZE lượt 20:30 + 4 lần
+  web khởi động lại từ 20:49 (2 deploy + 2 lần tự thoát) → bộ đệm bị đẩy, hạn mức bùng nổ cạn → mọi câu đọc đĩa xếp hàng. Phiên Video
+  đóng hàng ghi độc lập "21:47–22:10 database prod nghẽn" (PROGRESS khuya 8).
+- **Đề xuất (chờ anh):** (1) sửa `requireChannel` + `requireAuth`: lỗi DB → 503, không làm sập tiến trình / không đá phiên — sửa gốc một
+  lỗi thật, nhỏ, có test; (2) KHÔNG dựng / REINDEX chỉ mục, không deploy thêm ngoài (1) cho tới khi hạn mức IO hồi; lượt REINDEX 03:00
+  của phiên Video nên lùi; (3) sau đó EXPLAIN câu `/api/orders` của đúng chủ shop trong dòng `[Đo request]` — nghi phạm chung của cả RSS
+  lẫn đĩa. ⛔ Không nâng gói / compute.
+
+### 8.9. Vì sao chậm — gốc là ĐỌC ĐĨA vượt mức nền (25/11/2026 22:20–22:45, chỉ đọc; anh: "sửa xong cũng đâu giải quyết được chậm")
+
+Anh đúng: sửa 2 middleware (8.8) chỉ chặn web tự thoát, không làm nhanh lên. Số đo gốc:
+
+- **Máy DB:** Supabase compute 2,21 GB RAM (`shared_buffers` 512 MB), có dùng swap, "Memory commitment" đang WARNING; mức nền đĩa 22 MB/s,
+  trần bùng nổ 3.000 IOPS. Database 7,06 GB: Order 1.159 MB, OrderItem 1.064 MB, webhook_events 702 MB, mỗi mảnh sổ cái ~260–320 MB.
+- **Biểu đồ Read IOPS (Supabase Observability → Database):** 18–23/11 chỉ 200–400. Bướu 1: 24/11 ~18:00 → ~24:00 (~1.400). Bướu 2: 25/11
+  **13:29** nhảy lên ~1.500 (đỉnh 2.500–3.000), tụt 15:54–16:11, lên lại 16:15 và giữ tới tối. **Từ ~21:42 đường phẳng lì ~950–1.000 =
+  hạn mức bùng nổ cạn, bị bóp về mức nền** trong khi nhu cầu ~1.500 → mọi câu xếp hàng (khớp giờ nghẽn 21:47 của phiên Video và 8.8).
+  22:34–22:36 web vẫn 6–25 s mọi route. Sẽ tự hồi khi nhu cầu xuống dưới mức nền (đêm 24/11 xuống lúc ~nửa đêm).
+- **Không phải một câu "tội đồ".** `pg_stat_statements` cộng dồn từ 12/10 10:00, xếp theo đọc đĩa:
+  | Đọc đĩa | Lượt | TB | Câu | Chỗ |
+  |---|---|---|---|---|
+  | 1.529 GB | 63.505 | 219 ms | pg-boss thống kê hàng đợi (quét bảng job 112 nghìn dòng, ~66 MB/lượt lúc đo, mỗi phút) | pg-boss |
+  | 1.327 GB | 12.474 | 1.180 ms | `WITH lines AS MATERIALIZED (… Order ⋈ OrderItem … costPriceAtSale = …)` ≈ 106 MB/lượt | `lib/cost-price.ts` |
+  | 747 GB | 62.801 | 948 ms | `WITH selling AS (… OrderItem ⋈ Order ⋈ Channel …)` mỗi phút | `services/ops-alerts.ts` |
+  | 730 + 727 GB | 63.517 ×2 | ~70 ms | pg-boss dọn job (2 câu DELETE mỗi phút) | pg-boss |
+  | 531 GB | 2.335 | **14.216 ms** | danh sách đơn `SELECT Order.id, channelId, orderCode… WHERE (j0.userId = …)` ≈ 227 MB/lượt | `GET /api/orders` |
+  | 514 GB | 2.417 | **10.537 ms** | `SELECT o.id, NOT (c.status …) AS inactive FROM Order o JOIN Channel c WHERE o.stock…` ≈ 213 MB/lượt | quét bù kho (từ 12/11) |
+  | 406 GB | 2.470 | 1.110 ms | `COUNT(*) … webhook_events GROUP BY source` | HQ Sức khỏe (nghi) |
+- **Diễn giải (CHƯA chứng minh phần "ai bật bướu 13:29"):** dữ liệu nóng đã vượt RAM. 18–23/11 các lượt quét định kỳ còn nằm trong bộ đệm
+  nên chỉ 200–400 IOPS; khi có thêm tải đọc lớn (gian mới 118–122 nghìn dòng quảng cáo về 24–25/11, danh sách đơn 227 MB/lượt…) bộ đệm bị
+  đẩy, mọi lượt quét định kỳ rơi xuống đĩa cùng lúc → vượt mức nền → cạn hạn mức sau ~8 giờ. 3 lượt dựng chỉ mục + 4 lần web khởi động lại
+  tối nay chỉ đẩy nhanh thời điểm cạn, không phải gốc.
+- **Nhiễu đã loại:** lượt đo 22:28 thấy `order_ledger_2026_09` bị đọc 284/285 MB trong 40 s = autovacuum 22:29, trùng hợp. Phiên bản công
+  thức sổ cái không đổi từ 22/11 (không có lượt tính lại sổ).
+- **Mẹo đo:** `pg_statio_*` / `pg_stat_all_tables` bị chụp theo giao dịch → thêm `pg_stat_clear_snapshot()` cạnh `pg_sleep()` mới ra chênh;
+  `pg_stat_statements` thì không cần. Câu chạy dở chưa vào `pg_stat_statements` → đọc `pg_stat_activity` song song. Đổi khung giờ biểu đồ
+  bằng URL `?its=<ISO>&ite=<ISO>`.
+- **Hướng sửa gốc (chờ anh; ⛔ không nâng compute):** giảm số MB mỗi lượt của các câu trên, theo thứ tự lợi / rủi ro: (1) danh sách đơn
+  `/api/orders` — EXPLAIN đúng ca 14 s; (2) quét bù kho 213 MB/lượt — chỉ đọc đơn còn giữ hàng (chỉ mục một phần / con trỏ);
+  (3) `cost-price` 106 MB/lượt; (4) `ops-alerts` mỗi phút. pg-boss (3 câu, ~3.000 GB) thuộc đại tu hàng đợi 5e — chỉ ghi, không đề xuất sửa
+  ở đây. Mỗi câu: EXPLAIN (không ANALYZE lúc đang nghẽn) → sửa → đo lại MB/lượt → mới push; không dựng chỉ mục khi hạn mức IO chưa hồi.
+
+### 8.10. Sửa gốc câu danh sách đơn `GET /api/orders` (25/11/2026 ~23:00 — anh: "Ừ, sửa danh sách đơn"; code LOCAL, chưa commit)
+
+- **Câu nặng (pg_stat_statements từ 12/10):** nhóm "đơn thường" của danh sách — `… FROM "Order" LEFT JOIN "Channel" j0 … WHERE j0."userId" = $1
+  AND "cancelRequestedAt" IS NULL AND ("shippingStatus" NOT IN (…) OR …) ORDER BY "createdAt" DESC LIMIT … OFFSET …`: **2.339 lượt, 531 GB,
+  232 MB / lượt, TB 14,2 s, lâu nhất 110 s**. Các câu đếm tab cùng route nhẹ hơn nhiều (89.748 lượt, ~1 MB / lượt, TB 113 ms).
+- **Gốc (EXPLAIN prod, shop lớn nhất 136.724 đơn):** `Index Scan Backward using "Order_createdAt_idx"` trên CẢ BẢNG (1,15 triệu dòng, mọi
+  shop) rồi `Join Filter (j0.id = o.channelId)`. Lọc gian qua quan hệ nên Postgres ước MỌI shop có 3.133 đơn → tưởng đi lùi theo ngày tạo
+  toàn bảng sẽ sớm gặp đủ 20 dòng. Shop ít đơn mới / trang sâu phải lội qua đơn của shop khác; shop nhỏ gần như quét hết bảng 652 MB.
+- **Sửa (`backend/src/services/order-list.ts`, mới):** lấy id trang bằng MỘT câu — mỗi gian trong phạm vi tự lấy (skip + take) đơn mới nhất
+  qua `Order_channelId_createdAt_idx` (`CROSS JOIN LATERAL`), database trộn + cắt trang, web chỉ nhận `take` id rồi nạp chi tiết bằng
+  `findMany({ id: { in } })` như cũ. Không cần chỉ mục mới. Thêm luật trùng giây `id DESC` (bản cũ không có → hai trang liền nhau có thể
+  lặp / sót đơn trùng giây). Bộ lọc tách thành `parseOrderListFilters` → `orderListWhere` (Prisma, cho các câu đếm + `/stats` + nhóm ghim,
+  giữ nguyên) và `orderListFilterSql` (SQL). Đường lui: env `ORDERS_LIST_LEGACY=1`.
+- **Đo prod dạng mới (EXPLAIN ANALYZE, shop 4 gian 44.342 đơn, lúc đĩa đang bị bóp):** **62 ms, 129 trang đệm (~1 MB)**.
+- **Kiểm:** (1) `order-list-db.test.ts` trên Postgres thật — 23 bộ lọc × 6 phạm vi gian (cả shop, một gian, nhân viên 2 gian, nhân viên
+  chưa phân gian, lọc theo sàn, gian shop khác) × 6 vị trí trang = 828 phép so id + thứ tự với đường Prisma cũ, có ca trùng giây; test bắt
+  được một lệch thật khi viết: Prisma `contains` KHÔNG thoát `%` `_` → bản SQL giữ y vậy. (2) Chạy app thật trong tiến trình trên DB local,
+  2 chủ shop × 9 bộ lọc × 4 trang = 64 trang: tổng / số tab / chuỗi ngày tạo khớp 64/64; id chỉ đổi vị trí ở shop seed có 4.400 đơn cùng
+  một giây tạo (luật trùng giây mới). (3) `src/services` + `src/routes` + `src/lib`: 1.119 test đạt; `tsc` sạch.
+- **Giới hạn còn lại (chưa làm, có số thì mới làm):** trang sâu vẫn tốn theo `skip` (số gian × (skip + take) dòng chỉ mục, nhưng chỉ trong
+  đơn của chính shop); nhóm ghim + các câu đếm tab vẫn quét mọi đơn của shop (bị chặn theo shop, ~1 MB / lượt trung bình) — muốn nhẹ nữa
+  cần chỉ mục một phần cho đơn còn mở, KHÔNG dựng khi hạn mức IO chưa hồi. Cùng kiểu bẫy (lọc `channel: { userId }` + `orderBy createdAt` +
+  `take`) có thể còn ở route khác — chưa rà; `pg_stat_statements` hiện chỉ ra câu này là lớn nhất.
+- **Sau khi lên prod phải đo:** `mb_per_call` + TB của câu cũ không tăng lượt nữa; câu mới (`CROSS JOIN LATERAL … "Order"`) xuất hiện với
+  vài MB / lượt; dòng `[Đo request] … GET /api/orders` hết 14–25 s.

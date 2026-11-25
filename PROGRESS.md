@@ -5,12 +5,39 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 25/11 ~22:30 — Kho chuẩn quốc tế: xem lại theo lịch hẹn (chỉ đọc prod) — chuỗi đối chiếu 7/7
+
+- Lịch `kho-chuan-quoc-te-xem-lai-25-11` tự chạy. Không sửa mã, không ghi prod, không bật shop nào, không commit.
+- `stock-committed-check`: lần cuối 25/11 21:12, lệch cứng 0, **chuỗi 7/7**, chưa lần nào lệch từ 19/11; bộ đếm 371 = từ đơn 371 = "Chờ giao" 371. Quét bù bắt 0 đơn. Bộ đếm âm 0 mã.
+- Shop admin@hubsell.vn vẫn ON_HAND / ON_CANCEL: sổ 1.940, giữ 19, vị trí khớp tổng (0 mã lệch). 12 dòng nhật ký lệch đúng 1 giữa `onHandAfter` và `balanceAfter + heldAfter`: 7 dòng giải thích được bằng giữ tạm, 5 dòng cần xem tay.
+- Tính năng mới: 1 dòng RECEIVED toàn hệ thống, 0 phiên kiểm kê, 1 shop khách tự đổi sang ON_RECEIVE (chưa có sản phẩm kho). Không shop khách nào ON_HAND.
+- ⚠️ `pg_stat_statements` đầy (4.850 / 5.000) nên câu của bản mới không còn trong đó; câu quét bù đo thay bằng EXPLAIN: 48 ms qua chỉ mục. Nhịp quét bù 22:08 chạy 28,7 giây, trùng lúc database cạn Disk IO.
+- Chi tiết: docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 19.3. ⏳ anh quyết bật 2–3 shop tình nguyện + mobile ra bản trước.
+
+---
 ## Phiên 25/11 ~21:50 — Anh hỏi "hôm nay web sập mấy lần": 4 lần OOM web (chỉ đọc, chưa sửa)
 
 - Render Events: web hết RAM 512 MB lúc **12:11, 12:56, 13:45, 18:24** (+ trang Giá vốn bị rào 503 12:55→14:23). 21:47 web + app đang chạy bình thường.
 - Máy sau deploy 20:51: RSS 174 → 413 sau 9 phút → 476 lúc 21:09 → kẹt 437; trong giờ này KHÔNG có `/recommendations` → nghi phạm 8.5 chưa đủ; `GET /api/orders` 6–19 s có mặt ở mọi lần sát trần.
 - Chi tiết ở docs/DONG-BO-GIAI-DOAN-3.md mục 8.6.
 - ~22:00 anh "Ừ, thêm log đo" → ĐÃ CODE dòng `[Đo request]` (request-ledger.ts + memory-watch.ts): request tăng RSS ≥ 20 MB hoặc chạy ≥ 5 s → ghi route, thời gian, RSS vào→đỉnh→ra, chủ shop, gian, số cùng chạy. Test 610 đạt, tsc sạch, chạy app thật ra đúng dòng. Docs mục 8.7. Thêm trần 60 dòng/phút/máy + dòng tổng "bỏ qua N" sau khi anh hỏi có theo mô hình lớn không. ✅ commit `358bfa5c` + PUSH 25/11 ~22:10 (anh "Commit và push"). ⏳ đọc log `[Đo request]` ~1 ngày rồi mới chọn sửa.
+
+---
+## Phiên 25/11 ~23:00 — Sửa gốc câu DANH SÁCH ĐƠN (`GET /api/orders`): 232 MB / lượt → ~1 MB — code LOCAL, chưa commit
+
+- Anh: "Ừ, sửa danh sách đơn". Gốc (EXPLAIN prod): câu lọc gian qua quan hệ + `ORDER BY createdAt LIMIT` bị Postgres đi lùi chỉ mục ngày tạo của CẢ BẢNG mọi shop (2.339 lượt, 232 MB / lượt, TB 14,2 s, max 110 s).
+- Sửa: `services/order-list.ts` — mỗi gian tự lấy đơn mới nhất qua chỉ mục (channelId, createdAt), database trộn + cắt trang (LATERAL); không cần chỉ mục mới; đường lui `ORDERS_LIST_LEGACY=1`. Đo prod dạng mới: 62 ms / ~1 MB.
+- Kiểm: test db 828 phép so id + thứ tự với đường cũ; API thật local 64/64 trang khớp; 1.119 test đạt; tsc sạch. Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 8.10.
+- ⏳ anh cho commit + push → đo lại trên prod. Chưa làm: quét bù kho, cost-price, ops-alerts (thứ tự ở 8.9).
+
+---
+## Phiên 25/11 ~22:20 — Anh báo "hiện tại đang rất chậm": database cạn Disk IO + web tự thoát 2 lần (chỉ đọc, chưa sửa)
+
+- Supabase báo sắp cạn Disk IO Budget; câu lệnh chờ đĩa 10–114 s; web (bể 5 kết nối) nghẽn, mọi request chạm DB 20–60 s; webhook báo P2028.
+- Web TỰ THOÁT 22:07:15 + 22:11:30 (status 1): `requireChannel` (middleware/auth.ts) không bắt lỗi P2024 → sập tiến trình. `requireAuth` biến lỗi DB thành 401.
+- 22:19 vẫn chậm (`GET /api/orders` chờ đĩa 95 s). Chi tiết + đề xuất: docs/DONG-BO-GIAI-DOAN-3.md mục 8.8. ⏳ anh chốt sửa 2 middleware.
+- Log `[Đo request]` (358bfa5c) đã cho số ngay trong sự cố này.
+- 22:45 anh: "sửa xong cũng đâu giải quyết được chậm" → tìm gốc (docs 8.9): Read IOPS 200–400 (18–23/11) nhảy lên ~1.500 từ 24/11 tối và 25/11 13:29; **21:42 cạn hạn mức bùng nổ, bị bóp về mức nền ~1.000** → chậm. Không có một câu tội đồ: danh sách đơn 227 MB/lượt (TB 14 s), quét bù kho 213 MB/lượt, cost-price 106 MB/lượt, ops-alerts + pg-boss mỗi phút; DB 7 GB trên máy 2,2 GB RAM. ⏳ anh chốt sửa theo thứ tự ở 8.9.
 
 ---
 ## Phiên 25/11 khuya (8) — Video đóng hàng: luật xóa bản chốt LÊN PROD `eade3a6c` (chạy bóng) · 1 / 2 chỉ mục mã vận đơn dựng được · ⚠️ prod chậm

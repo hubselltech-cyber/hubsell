@@ -19,6 +19,13 @@ import {
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
+import {
+  orderListWhere,
+  parseOrderListFilters,
+  pinnedOrderWhere,
+  restOrderIdsPage,
+  restOrderWhere,
+} from "../services/order-list";
 import { getLabelArchiveSpool, getLabelStore, loadSavedLabel, LABEL_ARCHIVE_DAYS } from "../services/label-archive";
 import { summarizePickLines } from "../lib/pick-summary";
 import { groupQueue, parseQueueStage } from "../lib/process-queue";
@@ -97,78 +104,13 @@ function isStatus(value: unknown): value is ShippingStatus {
   return (VALID_STATUSES as string[]).includes(value as string);
 }
 
-/** Giá trị query có phải một hãng vận chuyển hợp lệ không (chặn lọc bừa). */
-function isCarrier(value: string): value is Carrier {
-  return (Object.values(Carrier) as string[]).includes(value);
-}
-
 /**
  * Dựng mảnh `where` từ CHUNG một bộ query lọc của màn Đơn hàng — dùng cho cả
  * danh sách (GET /) lẫn thống kê (GET /stats) để hai nơi luôn cùng phạm vi.
+ * Luật lọc nằm ở services/order-list.ts (có bản SQL song song cho câu lấy trang).
  */
 function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
-  const shippingStatus =
-    typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
-  const carrier =
-    typeof req.query.carrier === "string" ? req.query.carrier : "";
-  const search =
-    typeof req.query.search === "string" ? req.query.search.trim() : "";
-  // Bộ lọc con của tab "Đã xử lý": "yes" = đã in phiếu, "no" = chưa in.
-  // Giá trị khác thì bỏ qua, coi như không lọc.
-  const printed = typeof req.query.printed === "string" ? req.query.printed : "";
-  // Loại đơn theo độ khó đóng gói: "single" = 1 dòng hàng (đóng nhanh),
-  // "multi" = từ 2 dòng trở lên (phải soát kỹ hơn).
-  const orderType =
-    typeof req.query.orderType === "string" ? req.query.orderType : "";
-  const returnStatusQ =
-    typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
-  // "1" = chỉ đơn KHÁCH ĐANG XIN HỦY chờ shop quyết (deep-link từ chuông, 23/10/2026).
-  const cancelRequested = req.query.cancelRequested === "1" || req.query.cancelRequested === "true";
-
-  return {
-      channel: channelScope(req),
-      ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
-      ...(cancelRequested ? { cancelRequestedAt: { not: null } } : {}),
-      // "EXPRESS" = nhóm HỎA TỐC mọi sàn (anh Trung 08/09): lọc theo tên hãng
-      // nguyên văn qua expressShippingWhere — cùng luật với badge ⚡ và ghim đầu bảng.
-      ...(carrier === "EXPRESS" ? expressShippingWhere() : isCarrier(carrier) ? { carrier } : {}),
-      // 01/11/2026 thêm nấc "packed" (Đã đóng gói — quét sau in): "yes" nay là
-      // ĐÃ IN NHƯNG CHƯA ĐÓNG GÓI để ba chip con nối nhau thành dây chuyền
-      // Chưa in → Đã in → Đã đóng gói; seller không dùng bước quét thì
-      // packingDoneAt luôn null, chip "Đã in" vẫn như trước.
-      ...(printed === "yes"
-        ? { labelPrintedAt: { not: null }, packingDoneAt: null }
-        : printed === "no"
-          ? { labelPrintedAt: null }
-          : printed === "packed"
-            ? { packingDoneAt: { not: null } }
-            : {}),
-      // Đơn cũ chưa ghi chi tiết dòng hàng có itemCount = 0, cố ý KHÔNG rơi vào
-      // nhóm nào — không biết đơn gồm mấy mặt hàng thì đừng đoán bừa cho kho.
-      ...(orderType === "single"
-        ? { itemCount: 1 }
-        : orderType === "multi"
-          ? { itemCount: { gt: 1 } }
-          : {}),
-      ...((Object.values(ReturnStatus) as string[]).includes(returnStatusQ)
-        ? { returnStatus: returnStatusQ as ReturnStatus }
-        : {}),
-      // Ô tìm kiếm đa năng: gõ gì cũng ra — mã đơn, tên khách, số điện thoại
-      // hoặc mã vận đơn. Bỏ dấu cách và gạch trong SĐT để "0901 234 567" vẫn
-      // khớp với "0901234567" đang lưu.
-      ...(search
-        ? {
-            OR: [
-              { orderCode: { contains: search, mode: "insensitive" as const } },
-              { customerName: { contains: search, mode: "insensitive" as const } },
-              { customerPhone: { contains: search.replace(/[\s.-]/g, "") } },
-              { trackingCode: { contains: search, mode: "insensitive" as const } },
-              // Mã vận đơn chiều HOÀN — kho gõ vài số cuối trên tem hoàn cũng ra (04/10).
-              { returnTrackingCode: { contains: search, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-  };
+  return orderListWhere(channelScope(req), parseOrderListFilters(req.query));
 }
 
 // GET /api/orders?page=1&pageSize=20&shippingStatus=PENDING&channelId=...
@@ -179,7 +121,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // Trần 100: cho phép chủ shop mở rộng 20 → 50 → 100 đơn/trang khi soát
     // đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn truy vấn.
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
-    const where = ordersWhere(req);
+    const scope = channelScope(req);
+    const filters = parseOrderListFilters(req.query);
+    const where = orderListWhere(scope, filters);
 
     // GHIM ĐƠN HỎA TỐC CHƯA BÀN GIAO LÊN ĐẦU (anh Trung 19/08, nới 22/08):
     // đơn hỏa tốc phải đứng trên mọi đơn khác dù ra đơn sớm hơn, để seller
@@ -188,34 +132,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // gian khi nhảy sang Đang giao. Prisma không orderBy theo biểu thức được
     // nên chia 2 nhóm — nhóm ghim lấy trước, nhóm còn lại điền tiếp — và tự
     // cắt trang trên tổng 2 nhóm để phân trang vẫn đúng.
-    const PINNED_STATUSES = [ShippingStatus.PENDING, ShippingStatus.PROCESSED];
     // GHIM THÊM đơn KHÁCH ĐANG XIN HỦY (23/10/2026) ở MỌI tab — đơn giữ nguyên
     // tab theo trạng thái vận chuyển (Đã xử lý vẫn ở Đã xử lý) nhưng phải nổi
     // lên đầu vì sàn đang đếm giờ chờ shop trả lời; xếp đơn xin hủy trước đơn hỏa tốc.
-    const pinnedWhere: Prisma.OrderWhereInput = {
-      AND: [
-        where,
-        {
-          OR: [
-            { cancelRequestedAt: { not: null } },
-            { AND: [{ shippingStatus: { in: PINNED_STATUSES } }, expressShippingWhere()] },
-          ],
-        },
-      ],
-    };
+    const pinnedWhere = pinnedOrderWhere(where);
     // Phần bù: không xin hủy VÀ (đã bàn giao trở đi hoặc không hỏa tốc, kể cả chưa có tên hãng).
-    const restWhere: Prisma.OrderWhereInput = {
-      AND: [
-        where,
-        { cancelRequestedAt: null },
-        {
-          OR: [
-            { shippingStatus: { notIn: PINNED_STATUSES } },
-            notExpressShippingWhere(),
-          ],
-        },
-      ],
-    };
+    const restWhere = restOrderWhere(where);
     const listInclude = {
       // labelArchiveEnabledAt (06/11/2026): để bảng biết đơn nào có bản lưu vận đơn → nút "In lại phiếu".
       channel: { select: { channelName: true, shopName: true, labelArchiveEnabledAt: true } },
@@ -258,16 +180,28 @@ router.get("/", async (req: AuthRequest, res, next) => {
             })
           : [];
       const remain = pageSize - pinned.length;
-      const rest =
-        remain > 0
-          ? await prisma.order.findMany({
-              where: restWhere,
-              orderBy: { createdAt: "desc" },
-              skip: Math.max(0, offset - pinnedTotal),
-              take: remain,
-              include: listInclude,
-            })
-          : [];
+      const restSkip = Math.max(0, offset - pinnedTotal);
+      // ĐƠN THƯỜNG — lấy id theo TỪNG GIAN rồi mới nạp chi tiết (25/11/2026, services/order-list.ts):
+      // câu cũ (lọc gian qua quan hệ + ORDER BY createdAt LIMIT) bị Postgres đi lùi chỉ mục ngày tạo
+      // của CẢ BẢNG — đo prod 232 MB đọc đĩa / lượt, TB 14 giây. Đường lui: ORDERS_LIST_LEGACY=1.
+      let rest: typeof pinned = [];
+      if (remain > 0 && process.env.ORDERS_LIST_LEGACY === "1") {
+        rest = await prisma.order.findMany({
+          where: restWhere,
+          orderBy: { createdAt: "desc" },
+          skip: restSkip,
+          take: remain,
+          include: listInclude,
+        });
+      } else if (remain > 0) {
+        const ids = await restOrderIdsPage(scope, filters, restSkip, remain);
+        if (ids.length > 0) {
+          const rows = await prisma.order.findMany({ where: { id: { in: ids } }, include: listInclude });
+          const byId = new Map(rows.map((r) => [r.id, r]));
+          // Giữ đúng thứ tự database đã xếp; đơn vừa bị xóa giữa hai câu thì bỏ qua.
+          rest = ids.flatMap((id) => byId.get(id) ?? []);
+        }
+      }
       return [...pinned, ...rest];
     };
 
