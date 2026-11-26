@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 26/11 ~09:20–09:45 — Kho chuẩn quốc tế: dọn sau khi bật + đặt lịch dựng lại chỉ mục 03:30 27/11
+## Phiên 26/11 ~09:10–09:30 — Kho chuẩn quốc tế: dọn sau khi bật + đặt lịch dựng lại chỉ mục 03:30 27/11
 
 Anh: "Được đêm nay dựng lại. Em dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree, commit rồi push". Bảng trước / sau: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 21.6.
 

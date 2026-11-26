@@ -1212,7 +1212,7 @@ Tổng kho có dải giải thích một lần ("Tồn kho từ nay là hàng th
 - **Bảy tệp chưa commit trong `hubsell-marketing/`** (3 kịch bản TikTok 10–17/11, 2 tệp kết quả + 2 tệp SQL 17/11) là của các phiên khác, em không đụng.
 - Lúc mở local để nhìn màn em chạy nhầm cấu hình backend có kèm worker trong khoảng 1 phút rồi dừng; database local, `.env` local không có cấu hình gửi thư, nhật ký không có dòng gửi nào.
 
-### 21.6. Dọn sau khi bật (26/11 ~09:20–09:45, anh: "dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree")
+### 21.6. Dọn sau khi bật (26/11 ~09:10–09:30, anh: "dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree")
 
 Rà theo luật đặt tệp ở `README.md` mục "Cấu trúc dự án". Không đổi hành vi nào; test kho 144 ca qua, kiểm kiểu backend + frontend qua, đã mở lại Tổng kho trên local.
 
