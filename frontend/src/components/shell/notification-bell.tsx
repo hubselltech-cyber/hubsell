@@ -162,7 +162,16 @@ export function NotificationBell() {
                     {n.title}
                   </span>
                   {n.body && (
-                    <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500">
+                    <span
+                      className={cn(
+                        "mt-0.5 block text-xs text-slate-500",
+                        // Thông báo HỆ THỐNG (thay đổi quan trọng do Hubsell gửi, hiếm) hiện đủ
+                        // chữ — cắt 2 dòng thì mất đúng phần khách cần đọc (26/11/2026, chuông
+                        // "Thuế GTGT quảng cáo"). Các loại khác lặp nhiều nên vẫn cắt 2 dòng.
+                        n.type !== "system" && "line-clamp-2"
+                      )}
+                      title={n.body}
+                    >
                       {n.body}
                     </span>
                   )}
