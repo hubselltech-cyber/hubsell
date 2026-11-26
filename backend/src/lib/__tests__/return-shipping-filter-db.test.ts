@@ -39,6 +39,7 @@ interface Case {
   returnDeliveredAt?: Date | null;
   returnedAt?: Date | null;
   returnTrackingCode?: string | null;
+  returnCarrierReturnedAt?: Date | null;
 }
 
 const A = ReturnStatus.AWAITING;
@@ -55,6 +56,12 @@ const CASES: Case[] = [
   // Giao thất bại quay đầu, chưa có mốc về (có hay không có mã vận đơn hoàn đều thế).
   { code: "giao-that-bai", expected: "FAILED_DELIVERY", returnStatus: A, platformReturnStatus: CANCELLED_AFTER_SHIP },
   { code: "giao-that-bai-co-ma", expected: "FAILED_DELIVERY", returnStatus: A, platformReturnStatus: CANCELLED_AFTER_SHIP, returnTrackingCode: "SPX2" },
+  // Giao thất bại, HÃNG báo đã trả kiện (mốc đã lưu 26/11/2026) → sang "hoàn thành công".
+  { code: "giao-that-bai-hang-da-tra", expected: "RETURNED", returnStatus: A, platformReturnStatus: CANCELLED_AFTER_SHIP, returnCarrierReturnedAt: T1 },
+  { code: "giao-that-bai-hang-da-tra-co-ma", expected: "RETURNED", returnStatus: A, platformReturnStatus: CANCELLED_AFTER_SHIP, returnCarrierReturnedAt: T1, returnTrackingCode: "SPX5" },
+  // Mốc hãng còn sót trên đơn KHÔNG còn là kiện giao thất bại → không được kéo đơn sang "hoàn thành công".
+  { code: "moc-hang-sot-khach-chua-gui", expected: "WAITING_BUYER", returnStatus: A, platformReturnStatus: "REQUESTED", returnCarrierReturnedAt: T1 },
+  { code: "moc-hang-sot-khong-trang-thai", expected: "NO_SIGNAL", returnStatus: A, platformReturnStatus: null, returnCarrierReturnedAt: T1 },
   // Không có trạng thái sàn: null lẫn chuỗi rỗng, kể cả khi có mã vận đơn hoàn.
   { code: "khong-trang-thai", expected: "NO_SIGNAL", returnStatus: A, platformReturnStatus: null },
   { code: "trang-thai-rong", expected: "NO_SIGNAL", returnStatus: A, platformReturnStatus: "" },
@@ -94,6 +101,7 @@ describe.skipIf(!dbReady)("Bộ lọc Trạng thái vận chuyển — điều k
         returnDeliveredAt: c.returnDeliveredAt ?? null,
         returnedAt: c.returnedAt ?? null,
         returnTrackingCode: c.returnTrackingCode ?? null,
+        returnCarrierReturnedAt: c.returnCarrierReturnedAt ?? null,
       })),
     });
   });
@@ -113,6 +121,7 @@ describe.skipIf(!dbReady)("Bộ lọc Trạng thái vận chuyển — điều k
           returnDeliveredAt: c.returnDeliveredAt ?? null,
           platformReturnStatus: c.platformReturnStatus ?? null,
           returnTrackingCode: c.returnTrackingCode ?? null,
+          returnCarrierReturnedAt: c.returnCarrierReturnedAt ?? null,
         }),
         c.code
       ).toBe(c.expected);

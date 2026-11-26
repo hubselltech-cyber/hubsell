@@ -392,10 +392,55 @@ export interface AnalyticsResponse {
   };
 }
 
+/**
+ * Trạng thái vận chuyển CHIỀU HOÀN của một đơn — backend tính sẵn từ số của sàn
+ * (backend/src/lib/return-shipping.ts), không tốn lệnh gọi sàn.
+ */
+export type ReturnShippingState = "RETURNED" | "RETURNING" | "WAITING_BUYER" | "NO_SIGNAL";
+
+export interface ReturnShippingDto {
+  state: ReturnShippingState;
+  /** Mốc kiện về tới shop — null khi chưa về hoặc nguồn không ghi giờ. */
+  at: string | null;
+  /** Ai nói kiện đã về: sàn (API hoàn), hãng vận chuyển (mốc hành trình backend đã lưu) hay kho quét nhận. */
+  source: "platform" | "carrier" | "warehouse" | null;
+  /** Kiện giao thất bại quay đầu (không phải khách trả hàng). */
+  failedDelivery: boolean;
+}
+
+/**
+ * Nhóm lọc theo Trạng thái vận chuyển — khớp ReturnShippingFilter ở backend (tham số `ship`).
+ * FAILED_DELIVERY = kiện giao thất bại quay đầu, kho chưa nhận, chưa có mốc hãng trả kiện.
+ * Hãng báo đã trả (backend lưu mốc lúc dòng được hỏi hãng) thì đơn sang RETURNED.
+ */
+export type ReturnShippingFilter =
+  | "RETURNED"
+  | "RETURNING"
+  | "WAITING_BUYER"
+  | "FAILED_DELIVERY"
+  | "NO_SIGNAL";
+
+/** Kết quả hỏi hãng vận chuyển của một kiện giao thất bại — POST /api/warehouse/returns/carrier-status. */
+export type ReturnCarrierStatus =
+  | {
+      status: "ok";
+      /** RETURNED = hãng báo đã trả kiện về shop; NO_SIGNAL = hành trình chưa có mốc hoàn. */
+      state: "RETURNED" | "RETURNING" | "NO_SIGNAL";
+      /** Mốc hãng trả kiện (chỉ khi RETURNED). */
+      at: string | null;
+      /** Mốc mới nhất của hành trình, nguyên văn hãng. */
+      latest: { at: string | null; description: string } | null;
+      fetchedAt: string | null;
+    }
+  | { status: "unsupported" }
+  | { status: "error" };
+
 /** Đơn hoàn trong danh sách kho — kèm số ngày chờ backend đã tính sẵn. */
 export interface ReturnOrderDto extends OrderDto {
   daysWaiting: number | null;
   agingLevel: "unknown" | "ok" | "warning" | "overdue";
+  /** Vắng khi backend bản cũ — dòng khi đó chỉ hiện tình trạng kho như trước. */
+  returnShipping?: ReturnShippingDto;
 }
 
 /** GET /api/warehouse/returns — summary + danh sách phân trang. */
@@ -419,6 +464,11 @@ export interface ReturnsSummaryResponse {
     overdue: number;
     unknown: number;
   };
+  /**
+   * Số đơn theo Trạng thái vận chuyển, đếm trong tình trạng kho đang lọc (`status`),
+   * chưa áp chính bộ lọc `ship`. Vắng khi backend bản cũ.
+   */
+  shippingCounts?: Partial<Record<ReturnShippingFilter, number>>;
   totalCompensated: number;
 }
 

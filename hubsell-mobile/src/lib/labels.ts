@@ -106,6 +106,17 @@ export const RETURN_STATUS: Record<
   },
 };
 
+/**
+ * Nhãn đè lên "Chờ hàng về" khi sàn / hãng báo kiện ĐÃ VỀ shop mà kho chưa quét nhận
+ * (26/11/2026, chữ anh Trung chọn). Không phải một ReturnStatus — tình trạng kho của đơn
+ * vẫn là AWAITING; luật ở lib/return-shipping.ts.
+ */
+export const RETURN_SHIP_RETURNED = {
+  label: "Ship báo đã hoàn",
+  bg: "bg-emerald-100 dark:bg-emerald-500/15",
+  text: "text-emerald-700 dark:text-emerald-300",
+};
+
 export const CHANNEL_LABEL: Record<ChannelName, string> = {
   SHOPEE: "Shopee",
   LAZADA: "Lazada",

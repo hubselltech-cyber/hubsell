@@ -332,6 +332,41 @@ export type ReturnLegResult =
   | { status: "error" };
 
 /**
+ * Mốc hãng trả kiện sẽ lưu: giờ hãng ghi trên hành trình; hãng không ghi giờ (hoặc giờ hỏng /
+ * nằm ở tương lai do lệch múi giờ của sàn) thì lấy lúc Hubsell thấy mốc đó — mốc lưu không bao
+ * giờ đi trước hiện tại.
+ */
+export function carrierReturnedAtToStore(at: string | null, now: number): Date {
+  const t = at ? new Date(at).getTime() : NaN;
+  return new Date(Number.isFinite(t) && t <= now ? t : now);
+}
+
+/**
+ * Ghi mốc hãng trả kiện — MỘT LẦN (chỉ khi cột còn trống) và chỉ khi đơn vẫn là kiện giao thất
+ * bại đang chờ về (kho vừa quét nhận / sàn vừa đổi trạng thái thì thôi). Trigger sổ cái không
+ * theo dõi cột này nên không đánh bẩn sổ. Ghi hỏng không được làm hỏng câu trả lời cho người
+ * đang xem: nuốt lỗi, lượt xem sau ghi lại.
+ */
+async function saveCarrierReturnedAt(orderId: string, at: Date): Promise<void> {
+  try {
+    await prisma.order.updateMany({
+      where: {
+        id: orderId,
+        returnStatus: ReturnStatus.AWAITING,
+        platformReturnStatus: CANCELLED_AFTER_SHIP,
+        returnCarrierReturnedAt: null,
+      },
+      data: { returnCarrierReturnedAt: at },
+    });
+  } catch (err) {
+    console.warn(
+      `[order-tracking] Không lưu được mốc hãng trả kiện của đơn ${orderId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
  * Chặng hoàn của các kiện GIAO THẤT BẠI quay đầu đang chờ về (13/11/2026, anh Trung:
  * "API mình có trong đơn hàng rồi chỉ cần gọi ra thôi") — đúng đường gọi của
  * GET /api/orders/:id/tracking, cùng đệm 10 phút.
@@ -339,12 +374,19 @@ export type ReturnLegResult =
  * TIẾT CHẾ: chỉ hỏi đơn Chờ hàng về + sàn hủy sau khi bàn giao (đơn khách trả hàng đã
  * có mốc từ API hoàn; đơn kho đã nhận thì không còn gì để hỏi) — id khác bị bỏ qua,
  * không có trong kết quả. Mỗi đơn hỏi được = 1 call sàn, tối đa RETURN_LEG_BATCH_MAX / lần.
+ *
+ * LƯU MỐC (26/11/2026): hành trình có mốc "hãng đã trả kiện" → ghi Order.returnCarrierReturnedAt
+ * MỘT LẦN, để bộ lọc / số đếm "Ship báo đã hoàn" thấy đơn (lib/return-shipping.ts). Đơn đã có
+ * mốc thì trả thẳng từ cột, KHÔNG hỏi sàn nữa (trước đó cứ 10 phút hết đệm lại hỏi lại kiện đã
+ * về). Không thêm lệnh gọi sàn nào so với trước: vẫn chỉ hỏi khi người dùng xem danh sách.
  */
 export async function getReturnLegForOrders(params: {
   ownerId: string;
   allowedChannelIds?: string[] | null;
   orderIds: string[];
+  now?: number;
 }): Promise<Record<string, ReturnLegResult>> {
+  const now = params.now ?? Date.now();
   const eligible = await prisma.order.findMany({
     where: {
       id: { in: params.orderIds.slice(0, RETURN_LEG_BATCH_MAX) },
@@ -353,11 +395,24 @@ export async function getReturnLegForOrders(params: {
       returnStatus: ReturnStatus.AWAITING,
       platformReturnStatus: CANCELLED_AFTER_SHIP,
     },
-    select: { id: true },
+    select: { id: true, returnCarrierReturnedAt: true },
   });
 
   const out: Record<string, ReturnLegResult> = {};
-  const queue = eligible.map((o) => o.id);
+  const queue: string[] = [];
+  for (const o of eligible) {
+    if (o.returnCarrierReturnedAt) {
+      out[o.id] = {
+        status: "ok",
+        state: "RETURNED",
+        at: o.returnCarrierReturnedAt.toISOString(),
+        latest: null,
+        fetchedAt: null,
+      };
+    } else {
+      queue.push(o.id);
+    }
+  }
   const worker = async () => {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
       try {
@@ -365,11 +420,15 @@ export async function getReturnLegForOrders(params: {
           ownerId: params.ownerId,
           allowedChannelIds: params.allowedChannelIds,
           orderId: id,
+          now,
         });
-        out[id] =
-          t.state === "ok"
-            ? { status: "ok", fetchedAt: t.fetchedAt, ...summarizeReturnLeg(t.events) }
-            : { status: "unsupported" };
+        if (t.state !== "ok") {
+          out[id] = { status: "unsupported" };
+          continue;
+        }
+        const leg = summarizeReturnLeg(t.events);
+        out[id] = { status: "ok", fetchedAt: t.fetchedAt, ...leg };
+        if (leg.state === "RETURNED") await saveCarrierReturnedAt(id, carrierReturnedAtToStore(leg.at, now));
       } catch (err) {
         if (!(err instanceof OrderTrackingError)) throw err;
         out[id] = { status: "error" };

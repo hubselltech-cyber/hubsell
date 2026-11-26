@@ -59,6 +59,47 @@ describe("returnShippingOf — trạng thái vận chuyển chiều hoàn (anh T
     expect(r).toEqual({ state: "NO_SIGNAL", at: null, source: null, failedDelivery: true });
   });
 
+  it("kiện giao thất bại có mốc HÃNG trả kiện đã lưu → RETURNED nguồn hãng, mốc = giờ hãng báo (26/11/2026)", () => {
+    const r = returnShippingOf({
+      ...BASE,
+      platformReturnStatus: CANCELLED_AFTER_SHIP,
+      returnCarrierReturnedAt: T1,
+    });
+    expect(r).toEqual({ state: "RETURNED", at: T1, source: "carrier", failedDelivery: true });
+  });
+
+  it("mốc hãng chỉ áp cho kiện giao thất bại: đơn đã thành yêu cầu trả hàng của khách thì bỏ qua mốc cũ", () => {
+    const r = returnShippingOf({
+      ...BASE,
+      platformReturnStatus: "REQUESTED",
+      returnCarrierReturnedAt: T1,
+    });
+    expect(r.state).toBe("WAITING_BUYER");
+    expect(returnShippingOf({ ...BASE, returnCarrierReturnedAt: T1 }).state).toBe("NO_SIGNAL");
+  });
+
+  it("có cả mốc sàn lẫn mốc hãng → mốc sàn thắng; kho đã nhận → nguồn kho, mốc hãng không đè", () => {
+    const platform = returnShippingOf({
+      ...BASE,
+      platformReturnStatus: CANCELLED_AFTER_SHIP,
+      returnDeliveredAt: T1,
+      returnCarrierReturnedAt: T2,
+    });
+    expect(platform).toEqual({ state: "RETURNED", at: T1, source: "platform", failedDelivery: true });
+    const warehouse = returnShippingOf({
+      ...BASE,
+      returnStatus: ReturnStatus.RECEIVED,
+      returnedAt: T2,
+      platformReturnStatus: CANCELLED_AFTER_SHIP,
+      returnCarrierReturnedAt: T1,
+    });
+    expect(warehouse).toEqual({ state: "RETURNED", at: T2, source: "warehouse", failedDelivery: true });
+  });
+
+  it("không truyền mốc hãng (hạn khiếu nại) → kết quả y như trước: kiện giao thất bại vẫn NO_SIGNAL", () => {
+    expect(returnShippingOf({ ...BASE, platformReturnStatus: CANCELLED_AFTER_SHIP }).state).toBe("NO_SIGNAL");
+  });
+
   it("đơn chờ về không có trạng thái sàn → NO_SIGNAL", () => {
     expect(returnShippingOf(BASE).state).toBe("NO_SIGNAL");
   });

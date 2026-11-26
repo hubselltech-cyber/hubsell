@@ -16,8 +16,20 @@ import { useRouter, type Href } from "expo-router";
 import { Image } from "expo-image";
 import { fetchReturns } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
-import type { ChannelName, ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
-import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
+import type {
+  ChannelName,
+  ReturnOrderDto,
+  ReturnShippingFilter,
+  ReturnsSummaryResponse,
+} from "@/types/api";
+import { RETURN_STATUS, RETURN_SHIP_RETURNED, CHANNEL_LABEL } from "@/lib/labels";
+import {
+  RETURN_SHIP_FILTERS,
+  RETURN_SHIP_LABEL,
+  returnShipView,
+  type ReturnShipTone,
+} from "@/lib/return-shipping";
+import { useReturnCarrierStatus } from "@/lib/useReturnCarrierStatus";
 import { Badge } from "@/components/Badge";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
@@ -51,6 +63,18 @@ const SCANNED_DETAIL_KEYS = [
 ] as const;
 type ScannedDetail = "" | (typeof SCANNED_DETAIL_KEYS)[number];
 
+/** Lọc theo Trạng thái vận chuyển chiều hoàn — chỉ có nghĩa ở tab "Chờ nhận hoàn". */
+type ShipFilter = "" | ReturnShippingFilter;
+type ShipCounts = NonNullable<ReturnsSummaryResponse["shippingCounts"]>;
+
+/** Màu chấm + chữ của dòng "chặng hoàn" dưới mã vận đơn. */
+const SHIP_TONE: Record<ReturnShipTone, { dot: string; text: string }> = {
+  red: { dot: "bg-red-500", text: "text-red-600 dark:text-red-400" },
+  blue: { dot: "bg-sky-500", text: "text-sky-700 dark:text-sky-300" },
+  amber: { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" },
+  muted: { dot: "bg-slate-400 dark:bg-slate-500", text: "text-slate-500 dark:text-slate-400" },
+};
+
 /**
  * ĐƠN HOÀN — tab con phụ của màn Kho (trước 04/10 là trang 3 của Trang chủ).
  * Số liệu đơn hoàn + nút mở camera + Ô TÌM KIẾM + DANH SÁCH đơn hoàn
@@ -71,12 +95,42 @@ export function WarehouseHubPage() {
   const [channel, setChannel] = useState<ChannelFilter>("");
   const [tab, setTab] = useState<ReturnTab>("AWAITING");
   const [statusDetail, setStatusDetail] = useState<ScannedDetail>("");
+  const [ship, setShip] = useState<ShipFilter>("");
+  // Thẻ "Quá 14 ngày chưa về" đang bật — lọc tab Chờ nhận hoàn về các đơn quá hạn.
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [shipCounts, setShipCounts] = useState<ShipCounts>({});
   const [sheetOpen, setSheetOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef("");
   const channelRef = useRef<ChannelFilter>("");
   const tabRef = useRef<ReturnTab>("AWAITING");
   const statusDetailRef = useRef<ScannedDetail>("");
+  const shipRef = useRef<ShipFilter>("");
+  const overdueRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  /** Vị trí hàng tab + danh sách trong vùng cuộn — bấm thẻ số thì cuộn tới đây. */
+  const listY = useRef(0);
+  // Hãng vừa báo một kiện giao thất bại đã trả → backend đã lưu mốc, số đếm nhóm lọc đổi.
+  // Chỉ tải lại SỐ ĐẾM (1 dòng), không đụng danh sách đang cuộn / các trang đã "Xem thêm".
+  const refreshCounts = useCallback(async () => {
+    try {
+      const res = await fetchReturns({
+        page: 1,
+        pageSize: 1,
+        search: searchRef.current || undefined,
+        channelName: channelRef.current || undefined,
+        status:
+          statusDetailRef.current ||
+          (overdueRef.current && tabRef.current === "AWAITING" ? "OVERDUE" : tabRef.current),
+      });
+      setSummary(res.summary);
+      setShipCounts(res.shippingCounts ?? {});
+    } catch {
+      // Số đếm cũ vẫn dùng được; lượt tải danh sách kế sẽ cập nhật.
+    }
+  }, []);
+  // Kiện giao thất bại: hãng đã trả kiện chưa — hỏi cho các dòng đang hiện (đệm 10 phút).
+  const carrierById = useReturnCarrierStatus(items, refreshCounts);
 
   const load = useCallback(
     async (nextPage: number, append: boolean, asRefresh = false) => {
@@ -91,10 +145,15 @@ export function WarehouseHubPage() {
           search: searchRef.current || undefined,
           channelName: channelRef.current || undefined,
           // Chọn trạng thái chi tiết trong sheet thì lọc đúng trạng thái đó,
-          // không thì lấy cả nhóm của tab (AWAITING / SCANNED)
-          status: statusDetailRef.current || tabRef.current,
+          // không thì lấy cả nhóm của tab (AWAITING / SCANNED); thẻ "Quá 14 ngày"
+          // thu tab Chờ nhận hoàn về các đơn quá hạn (backend: status=OVERDUE).
+          status:
+            statusDetailRef.current ||
+            (overdueRef.current && tabRef.current === "AWAITING" ? "OVERDUE" : tabRef.current),
+          ship: shipRef.current || undefined,
         });
         setSummary(res.summary);
+        setShipCounts(res.shippingCounts ?? {});
         setItems((prev) => (append ? [...prev, ...res.items] : res.items));
         setPage(res.page);
         setPageCount(res.pageCount);
@@ -116,8 +175,10 @@ export function WarehouseHubPage() {
     channelRef.current = channel;
     tabRef.current = tab;
     statusDetailRef.current = statusDetail;
+    shipRef.current = ship;
+    overdueRef.current = overdueOnly;
     void load(1, false);
-  }, [channel, tab, statusDetail, load]);
+  }, [channel, tab, statusDetail, ship, overdueOnly, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -128,23 +189,53 @@ export function WarehouseHubPage() {
     }, 450);
   };
 
+  // BỐN THẺ SỐ = BỘ LỌC BẤM ĐƯỢC (26/11/2026, anh Trung: "khối này click vào chưa ra đơn
+  // cụ thể, khách hàng đang khá khó chịu") — cùng nết thẻ lọc của web Đối soát đơn hoàn.
+  // Mỗi thẻ là một tổ hợp (tab, trạng thái chi tiết, quá hạn); thẻ khớp danh sách đang
+  // hiện thì có viền. Bấm lại thẻ đang chọn = về mặc định (Chờ nhận hoàn, không lọc).
+  type TileKey = "AWAITING" | "RECEIVED" | "OVERDUE" | "DAMAGED";
   const tiles: {
+    key: TileKey;
     label: string;
     value: number;
     color: string;
     icon: "time-outline" | "archive-outline" | "alert-circle-outline" | "bandage-outline";
     tint: IconTint;
   }[] = [
-    { label: "Chờ hàng về", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline", tint: "amber" },
-    { label: "Đã nhận · chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline", tint: "sky" },
-    { label: "Quá 14 ngày chưa về", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline", tint: "red" },
-    { label: "Hàng hỏng · chờ khiếu nại sàn", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline", tint: "red" },
+    { key: "AWAITING", label: "Chờ hàng về", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline", tint: "amber" },
+    { key: "RECEIVED", label: "Đã nhận · chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline", tint: "sky" },
+    { key: "OVERDUE", label: "Quá 14 ngày chưa về", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline", tint: "red" },
+    { key: "DAMAGED", label: "Hàng hỏng · chờ khiếu nại sàn", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline", tint: "red" },
   ];
+  const activeTile: TileKey | null =
+    tab === "AWAITING"
+      ? overdueOnly
+        ? "OVERDUE"
+        : "AWAITING"
+      : statusDetail === "RECEIVED" || statusDetail === "DAMAGED"
+        ? statusDetail
+        : null;
+  const pickTile = (key: TileKey) => {
+    hapticSelect();
+    // Bấm lại thẻ đang chọn → về mặc định; thẻ "Chờ hàng về" chính là mặc định.
+    const next: TileKey = key === activeTile ? "AWAITING" : key;
+    const scanned = next === "RECEIVED" || next === "DAMAGED";
+    setTab(scanned ? "SCANNED" : "AWAITING");
+    setStatusDetail(scanned ? next : "");
+    setOverdueOnly(next === "OVERDUE");
+    // Trạng thái vận chuyển chỉ có nghĩa với đơn chờ về — sang thẻ đã nhận thì gỡ.
+    if (scanned) setShip("");
+    // Đưa danh sách lên tầm mắt: người bấm thẻ muốn thấy NGAY các đơn của con số đó.
+    scrollRef.current?.scrollTo({ y: Math.max(0, listY.current - 8), animated: true });
+  };
   const { colorScheme } = useColorScheme();
   const dark = colorScheme === "dark";
+  const filterCount =
+    (channel ? 1 : 0) + (statusDetail ? 1 : 0) + (ship ? 1 : 0) + (overdueOnly ? 1 : 0);
 
   return (
     <ScrollView
+      ref={scrollRef}
       className="flex-1 bg-slate-50 dark:bg-slate-950"
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
       keyboardShouldPersistTaps="handled"
@@ -172,11 +263,9 @@ export function WarehouseHubPage() {
               <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Bộ lọc
               </Text>
-              {(channel ? 1 : 0) + (statusDetail ? 1 : 0) > 0 ? (
+              {filterCount > 0 ? (
                 <View className="min-w-[16px] items-center rounded-full bg-slate-900 px-1 dark:bg-slate-600">
-                  <Text className="text-[10px] font-bold text-white">
-                    {(channel ? 1 : 0) + (statusDetail ? 1 : 0)}
-                  </Text>
+                  <Text className="text-[10px] font-bold text-white">{filterCount}</Text>
                 </View>
               ) : null}
             </Pressable>
@@ -197,15 +286,30 @@ export function WarehouseHubPage() {
                   onClear={() => setStatusDetail("")}
                 />
               ) : null}
+              {overdueOnly ? (
+                <ActiveChip label="Quá 14 ngày chưa về" onClear={() => setOverdueOnly(false)} />
+              ) : null}
+              {ship ? (
+                <ActiveChip label={RETURN_SHIP_LABEL[ship]} onClear={() => setShip("")} />
+              ) : null}
             </ScrollView>
           </View>
 
           <View className="mb-3 flex-row flex-wrap gap-2">
             {tiles.map((t) => {
               const tint = ICON_TINT[t.tint];
+              const active = activeTile === t.key;
               return (
-                <Card key={t.label} className="w-[48%] flex-grow p-4">
-                  <View className="mb-1.5 flex-row items-center gap-2">
+                <Card
+                  key={t.key}
+                  className="w-[48%] flex-grow p-4"
+                  // Thẻ đang lọc: viền đậm màu của chính thẻ (viền 1.5 đè viền hairline của Card).
+                  style={active ? { borderColor: tint.icon, borderWidth: 1.5 } : { borderWidth: 1.5 }}
+                  onPress={() => pickTile(t.key)}
+                >
+                  {/* min-h 2 dòng: nhãn dài ("Hàng hỏng · chờ khiếu nại sàn") hiện đủ chữ,
+                      bốn thẻ vẫn cao bằng nhau. */}
+                  <View className="mb-1.5 min-h-[32px] flex-row items-center gap-2">
                     <View
                       className="h-6 w-6 items-center justify-center rounded-md"
                       style={{ backgroundColor: dark ? tint.dark : tint.light }}
@@ -213,8 +317,8 @@ export function WarehouseHubPage() {
                       <Ionicons name={t.icon} size={13} color={tint.icon} />
                     </View>
                     <Text
-                      className="flex-1 text-[11px] text-slate-500 dark:text-slate-400"
-                      numberOfLines={1}
+                      className="flex-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400"
+                      numberOfLines={2}
                     >
                       {t.label}
                     </Text>
@@ -251,6 +355,11 @@ export function WarehouseHubPage() {
           {/* 2 tab: hàng đã về tay (đã quét) hay chưa — đơn xong việc không còn
               chen giữa đơn cần đi đòi. Số đếm SCANNED backend tính sẵn, cùng
               một định nghĩa với bộ lọc nên không sợ lệch. */}
+          <View
+            onLayout={(e) => {
+              listY.current = e.nativeEvent.layout.y;
+            }}
+          />
           <SegmentedTabs
             className="mb-2.5"
             options={RETURN_TABS.map((t) => ({
@@ -264,8 +373,10 @@ export function WarehouseHubPage() {
             value={tab}
             onChange={(k) => {
               setTab(k);
-              // Trạng thái chi tiết thuộc về tab đang mở — đổi tab thì gỡ
+              // Trạng thái chi tiết + trạng thái vận chuyển thuộc về tab đang mở — đổi tab thì gỡ
               setStatusDetail("");
+              setShip("");
+              setOverdueOnly(false);
             }}
           />
 
@@ -303,15 +414,26 @@ export function WarehouseHubPage() {
             <Text className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
               {searchRef.current
                 ? "Không tìm thấy đơn hoàn nào khớp từ khóa"
-                : channel
-                  ? `Không có đơn hoàn nào trên ${CHANNEL_LABEL[channel]}`
-                  : tab === "AWAITING"
-                    ? "Không có đơn nào chờ hàng về"
-                    : "Chưa nhận đơn hoàn nào"}
+                : ship
+                  ? `Không có đơn nào ở nhóm “${RETURN_SHIP_LABEL[ship]}”`
+                  : overdueOnly
+                    ? "Không có đơn nào quá 14 ngày chưa về"
+                    : statusDetail
+                      ? `Không có đơn nào ở trạng thái “${RETURN_STATUS[statusDetail].label}”`
+                      : channel
+                    ? `Không có đơn hoàn nào trên ${CHANNEL_LABEL[channel]}`
+                    : tab === "AWAITING"
+                      ? "Không có đơn nào chờ hàng về"
+                      : "Chưa nhận đơn hoàn nào"}
             </Text>
           ) : (
             items.map((o, idx) => {
-              const ret = RETURN_STATUS[o.returnStatus];
+              // Đơn chờ về mà sàn / hãng báo kiện ĐÃ VỀ shop → nhãn "Ship báo đã hoàn"
+              // thay cho "Chờ hàng về"; dòng phụ nói ai báo, lúc nào.
+              const shipView = returnShipView(o, carrierById[o.id]);
+              const ret = shipView?.shipReturned
+                ? RETURN_SHIP_RETURNED
+                : RETURN_STATUS[o.returnStatus];
               const thumb =
                 o.items
                   .map((i) => i.imageUrl ?? i.product?.imageUrl)
@@ -355,6 +477,21 @@ export function WarehouseHubPage() {
                           ? `VĐ đi: ${o.trackingCode} · chưa có mã hoàn`
                           : "Chưa có mã vận đơn hoàn"}
                     </Text>
+                    {shipView?.line ? (
+                      <View className="mt-0.5 flex-row items-start gap-1.5">
+                        <View
+                          className={`mt-[5px] h-1.5 w-1.5 rounded-full ${SHIP_TONE[shipView.tone].dot}`}
+                        />
+                        <Text
+                          className={`flex-1 text-[11px] ${
+                            shipView.shipReturned ? "font-semibold" : ""
+                          } ${SHIP_TONE[shipView.tone].text}`}
+                          numberOfLines={2}
+                        >
+                          {shipView.line}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View className="mt-0.5 flex-row items-center justify-between">
                       <Text className="text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
                         {CHANNEL_LABEL[o.channel.channelName] ?? o.channel.channelName}
@@ -420,11 +557,14 @@ export function WarehouseHubPage() {
         summary={summary}
         channel={channel}
         statusDetail={statusDetail}
+        ship={ship}
+        shipCounts={shipCounts}
         onClose={() => setSheetOpen(false)}
-        onApply={(ch, st) => {
+        onApply={(ch, st, sh) => {
           hapticSelect();
           setChannel(ch);
           setStatusDetail(st);
+          setShip(sh);
           setSheetOpen(false);
         }}
       />
@@ -433,7 +573,8 @@ export function WarehouseHubPage() {
 }
 
 // ============================================================
-// Panel BỘ LỌC trang Kho — sàn + trạng thái chi tiết (tab Đã nhận hoàn).
+// Panel BỘ LỌC trang Kho — sàn + trạng thái vận chuyển (tab Chờ nhận hoàn) hoặc
+// trạng thái chi tiết (tab Đã nhận hoàn).
 // Nháp trong panel, bấm Áp dụng mới đổ ra ngoài — cùng nết với màn Đơn hàng.
 // ============================================================
 function ReturnsFilterSheet({
@@ -442,6 +583,8 @@ function ReturnsFilterSheet({
   summary,
   channel,
   statusDetail,
+  ship,
+  shipCounts,
   onClose,
   onApply,
 }: {
@@ -450,16 +593,21 @@ function ReturnsFilterSheet({
   summary: ReturnsSummaryResponse["summary"] | null;
   channel: ChannelFilter;
   statusDetail: ScannedDetail;
+  ship: ShipFilter;
+  /** Số đơn từng nhóm vận chuyển trong tab đang mở (chưa áp chính bộ lọc này). */
+  shipCounts: ShipCounts;
   onClose: () => void;
-  onApply: (channel: ChannelFilter, statusDetail: ScannedDetail) => void;
+  onApply: (channel: ChannelFilter, statusDetail: ScannedDetail, ship: ShipFilter) => void;
 }) {
   const [draftChannel, setDraftChannel] = useState<ChannelFilter>(channel);
   const [draftStatus, setDraftStatus] = useState<ScannedDetail>(statusDetail);
+  const [draftShip, setDraftShip] = useState<ShipFilter>(ship);
   const insets = useSafeAreaInsets();
   useEffect(() => {
     if (visible) {
       setDraftChannel(channel);
       setDraftStatus(statusDetail);
+      setDraftShip(ship);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -498,6 +646,35 @@ function ReturnsFilterSheet({
             ))}
           </View>
 
+          {tab === "AWAITING" ? (
+            <>
+              <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Trạng thái vận chuyển
+              </Text>
+              <View className="mb-1.5 flex-row flex-wrap gap-1.5">
+                <PickChip
+                  label="Tất cả"
+                  active={draftShip === ""}
+                  onPress={() => setDraftShip("")}
+                />
+                {RETURN_SHIP_FILTERS.map((f) => (
+                  <PickChip
+                    key={f.key}
+                    label={f.label}
+                    count={shipCounts[f.key] ?? 0}
+                    active={draftShip === f.key}
+                    onPress={() => setDraftShip(f.key)}
+                  />
+                ))}
+              </View>
+              <Text className="mb-3 text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+                “Ship báo đã hoàn” = sàn hoặc hãng vận chuyển báo kiện đã về shop mà kho chưa
+                quét nhận. Kiện giao thất bại được hỏi hãng khi dòng hiện ra; hãng báo đã trả
+                thì kiện chuyển từ “Giao thất bại” sang nhóm này.
+              </Text>
+            </>
+          ) : null}
+
           {tab === "SCANNED" ? (
             <>
               <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -524,7 +701,7 @@ function ReturnsFilterSheet({
 
           <Pressable
             className="mt-1 items-center rounded-xl bg-slate-900 py-3 active:opacity-80 dark:bg-slate-700"
-            onPress={() => onApply(draftChannel, draftStatus)}
+            onPress={() => onApply(draftChannel, draftStatus, draftShip)}
           >
             <Text className="text-sm font-semibold text-white">Áp dụng</Text>
           </Pressable>

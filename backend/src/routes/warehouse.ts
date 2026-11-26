@@ -201,6 +201,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       platformReturnStatus: true,
       returnDeliveredAt: true,
       returnTrackingCode: true,
+      returnCarrierReturnedAt: true,
     } as const;
     const statusAllowsAwaiting = !statuses || statuses.includes(ReturnStatus.AWAITING);
 

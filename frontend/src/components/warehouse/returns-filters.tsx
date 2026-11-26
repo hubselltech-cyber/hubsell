@@ -156,7 +156,8 @@ export function ReturnStatusCards({
 
 /**
  * Chữ trùng với cột Trạng thái vận chuyển; riêng "Giao thất bại" là nhóm kiện quay đầu
- * kho chưa nhận — trong nhóm này từng dòng mới hỏi hãng nên bộ lọc không tách tiếp được.
+ * kho chưa nhận, hãng chưa báo trả — dòng nào được hỏi hãng mà hãng báo đã trả thì backend
+ * lưu mốc và đơn sang "Hoàn thành công" (26/11/2026).
  */
 const SHIP_CHIPS: { key: ReturnShippingFilter; label: string; title?: string }[] = [
   { key: "RETURNED", label: "Hoàn thành công" },
@@ -166,7 +167,7 @@ const SHIP_CHIPS: { key: ReturnShippingFilter; label: string; title?: string }[]
     key: "FAILED_DELIVERY",
     label: "Giao thất bại",
     title:
-      "Kiện giao thất bại đang quay về, kho chưa nhận. Hãng đã trả kiện hay chưa được hỏi từ hãng vận chuyển cho từng dòng khi mở trang.",
+      "Kiện giao thất bại đang quay về, kho chưa nhận. Mỗi dòng được hỏi hãng vận chuyển khi hiện ra; hãng báo đã trả kiện thì đơn chuyển sang nhóm Hoàn thành công.",
   },
   { key: "NO_SIGNAL", label: "Chưa có tin từ hãng" },
 ];

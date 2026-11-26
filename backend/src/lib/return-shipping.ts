@@ -11,14 +11,17 @@
 //     Trước 23/11 TikTok chỉ có căn cứ sau, tức muộn ~2 ngày so với lúc kiện về);
 //   · platformReturnStatus — trạng thái yêu cầu hoàn nguyên văn của sàn;
 //   · returnTrackingCode — có mã vận đơn chiều hoàn = khách đã gửi kiện;
-//   · returnStatus / returnedAt — kho đã cầm kiện trên tay chưa.
+//   · returnStatus / returnedAt — kho đã cầm kiện trên tay chưa;
+//   · returnCarrierReturnedAt — HÃNG báo đã trả kiện GIAO THẤT BẠI về shop (26/11/2026).
 //
-// GIỚI HẠN ĐÃ BIẾT: kiện GIAO THẤT BẠI quay đầu (platformReturnStatus =
-// CANCELLED_AFTER_SHIP) không có yêu cầu trả hàng nên API hoàn của cả ba sàn
-// không nói gì về chặng về — muốn biết hãng đã trả kiện chưa phải đọc hành trình
-// vận chuyển từng đơn (1 call / đơn). Chưa làm → trả NO_SIGNAL, không đoán
-// "đang hoàn về" (đoán thì đúng ca hãng đã báo trả xong mà kho chưa nhận lại bị
-// che mất).
+// KIỆN GIAO THẤT BẠI quay đầu (platformReturnStatus = CANCELLED_AFTER_SHIP) không có
+// yêu cầu trả hàng nên API hoàn của cả ba sàn không nói gì về chặng về — muốn biết hãng
+// đã trả kiện chưa phải đọc hành trình vận chuyển từng đơn (1 call / đơn). Việc hỏi đó
+// chỉ chạy lúc người dùng xem danh sách (services/order-tracking.ts
+// getReturnLegForOrders); thấy mốc "đã trả" thì LƯU vào returnCarrierReturnedAt, từ đó
+// hàm này trả RETURNED (nguồn "carrier") và bộ lọc / số đếm thấy được đơn. Chưa có mốc
+// → NO_SIGNAL, không đoán "đang hoàn về" (đoán thì đúng ca hãng đã báo trả xong mà kho
+// chưa nhận lại bị che mất).
 // ============================================================
 
 import { ReturnStatus, type Prisma } from "@prisma/client";
@@ -38,8 +41,8 @@ export interface ReturnShipping {
   state: ReturnShippingState;
   /** Mốc kiện về tới shop — chỉ có khi RETURNED và nguồn có ghi thời điểm. */
   at: Date | null;
-  /** Ai nói kiện đã về: sàn / hãng, hay kho quét nhận. Null khi chưa về. */
-  source: "platform" | "warehouse" | null;
+  /** Ai nói kiện đã về: sàn (API hoàn), hãng vận chuyển (hành trình đã lưu), hay kho quét nhận. Null khi chưa về. */
+  source: "platform" | "carrier" | "warehouse" | null;
   /** Kiện giao thất bại quay đầu (không phải khách trả hàng). */
   failedDelivery: boolean;
 }
@@ -62,6 +65,11 @@ export function returnShippingOf(order: {
   returnDeliveredAt: Date | null;
   platformReturnStatus: string | null;
   returnTrackingCode: string | null;
+  /**
+   * Mốc hãng trả kiện giao thất bại. Để tùy chọn: nơi không quan tâm chặng hãng (hạn khiếu
+   * nại — lib/return-complaint-due.ts) không truyền thì kết quả y như trước 26/11/2026.
+   */
+  returnCarrierReturnedAt?: Date | null;
 }): ReturnShipping {
   const status = (order.platformReturnStatus ?? "").toUpperCase();
   const failedDelivery = status === CANCELLED_AFTER_SHIP;
@@ -82,6 +90,11 @@ export function returnShippingOf(order: {
   if (status === LAZADA_RETURNED) {
     return { state: "RETURNED", at: null, source: "platform", failedDelivery: false };
   }
+  // Chỉ tin mốc hãng khi đơn CÒN là kiện giao thất bại: đơn đổi sang yêu cầu trả hàng của
+  // khách thì mốc cũ thuộc về chặng khác.
+  if (failedDelivery && order.returnCarrierReturnedAt) {
+    return { state: "RETURNED", at: order.returnCarrierReturnedAt, source: "carrier", failedDelivery };
+  }
 
   if (failedDelivery || !status) return { state: "NO_SIGNAL", at: null, source: null, failedDelivery };
   if (order.returnTrackingCode || buyerHasShipped(status)) {
@@ -94,15 +107,16 @@ export function returnShippingOf(order: {
 // Anh Trung: "Thay thế bộ lọc nhỏ bằng bộ lọc cho Trạng thái vận chuyển".
 //
 // Lọc theo đúng những gì ĐÃ LƯU trong Order (cùng luật với returnShippingOf).
-// Kiện giao thất bại đang chờ về là một nhóm riêng (FAILED_DELIVERY): hãng đã trả
-// kiện hay chưa chỉ biết khi hỏi hành trình lúc xem trang và KHÔNG lưu lại, nên
-// nhóm này không tách tiếp được thành "đang hoàn về" / "hoàn thành công" ở tầng DB.
+// Kiện giao thất bại đang chờ về là một nhóm riêng (FAILED_DELIVERY) cho tới khi có mốc
+// hãng trả kiện (returnCarrierReturnedAt, lưu lúc dòng được hỏi hãng — 26/11/2026): có
+// mốc thì đơn sang RETURNED. Kiện chưa được hỏi lần nào vẫn nằm ở FAILED_DELIVERY; "đang
+// hoàn về" của kiện giao thất bại không lưu nên không tách thành nhóm riêng.
 
 export type ReturnShippingFilter =
   | "RETURNED"
   | "RETURNING"
   | "WAITING_BUYER"
-  /** Kiện giao thất bại quay đầu, kho chưa nhận, sàn chưa báo về. */
+  /** Kiện giao thất bại quay đầu, kho chưa nhận, sàn chưa báo về, chưa có mốc hãng trả kiện. */
   | "FAILED_DELIVERY"
   /** Chờ hàng về mà đơn không có trạng thái sàn nào. */
   | "NO_SIGNAL";
@@ -157,10 +171,11 @@ export function returnShippingWhere(filter: ReturnShippingFilter): Prisma.OrderW
           { returnStatus: { in: IN_HAND_STATUSES } },
           { returnStatus: ReturnStatus.AWAITING, returnDeliveredAt: { not: null } },
           { ...waiting, platformReturnStatus: LAZADA_RETURNED },
+          { ...waiting, platformReturnStatus: CANCELLED_AFTER_SHIP, returnCarrierReturnedAt: { not: null } },
         ],
       };
     case "FAILED_DELIVERY":
-      return { ...waiting, platformReturnStatus: CANCELLED_AFTER_SHIP };
+      return { ...waiting, platformReturnStatus: CANCELLED_AFTER_SHIP, returnCarrierReturnedAt: null };
     case "NO_SIGNAL":
       return { ...waiting, OR: [{ platformReturnStatus: null }, { platformReturnStatus: "" }] };
     case "RETURNING":

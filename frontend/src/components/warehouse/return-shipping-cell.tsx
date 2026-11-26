@@ -125,6 +125,7 @@ export function ReturnShippingCell({
   let sub: string | null = null;
   if (state === "RETURNED") {
     if (live) sub = live.at ? `Hãng báo ${formatDateTime(live.at)}` : "Hãng báo đã trả kiện";
+    else if (s.source === "carrier") sub = s.at ? `Hãng báo ${formatDateTime(s.at)}` : "Hãng báo đã trả kiện";
     else if (s.source === "platform") sub = s.at ? `Sàn báo ${formatDateTime(s.at)}` : "Sàn báo kiện đã về shop";
     else sub = s.at ? `Kho nhận ${formatDateTime(s.at)}` : "Kho đã nhận";
   } else if (!live) {

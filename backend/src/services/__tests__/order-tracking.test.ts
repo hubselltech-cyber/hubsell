@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
 import {
+  carrierReturnedAtToStore,
   hasLeftForCarrier,
   normalizeShopeeTracking,
   normalizeTikTokTracking,
@@ -119,5 +120,22 @@ describe("chặng hoàn của kiện giao thất bại — hãng đã trả ki�
     const out = normalizeTikTokTracking([{ update_time_millis: 1, description: "Giao hàng thành công" }]);
     expect(out[0].returned).toBeUndefined();
     expect(summarizeReturnLeg(out).state).toBe("NO_SIGNAL");
+  });
+});
+
+describe("mốc hãng trả kiện sẽ lưu vào Order.returnCarrierReturnedAt (26/11/2026)", () => {
+  const NOW = Date.parse("2026-11-26T10:00:00Z");
+
+  it("hãng có ghi giờ → lưu đúng giờ hãng", () => {
+    expect(carrierReturnedAtToStore("2026-11-25T08:30:00.000Z", NOW).toISOString()).toBe("2026-11-25T08:30:00.000Z");
+  });
+
+  it("hãng không ghi giờ / giờ hỏng → lấy lúc Hubsell thấy mốc", () => {
+    expect(carrierReturnedAtToStore(null, NOW).getTime()).toBe(NOW);
+    expect(carrierReturnedAtToStore("khong-phai-ngay", NOW).getTime()).toBe(NOW);
+  });
+
+  it("giờ hãng nằm ở tương lai (lệch múi giờ) → không lưu mốc đi trước hiện tại", () => {
+    expect(carrierReturnedAtToStore("2026-11-26T17:00:00.000Z", NOW).getTime()).toBe(NOW);
   });
 });

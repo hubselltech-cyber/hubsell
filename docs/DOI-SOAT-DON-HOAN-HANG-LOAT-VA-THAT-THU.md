@@ -595,3 +595,41 @@ Anh: "Commit…" rồi "Push đi" → commit `64563bc2`, push `3c223147..64563bc
 - Mốc của đơn anh báo đúng bằng `update_time` trong payload (18.7).
 - 56 mốc của gian: 27 cái ngày 22/11, 29 cái ngày 23/11, cũ nhất 22/11 09:07, **không cái nào quá 49 giờ** — khớp mô hình (quá 48 giờ thì sàn đã đóng yêu cầu). Tức gian này đang có 56 kiện hãng đã giao về mà kho chưa quét nhận; trước bản này cả 56 hiện "Đang hoàn về".
 - **CHƯA kiểm:** chưa mở màn Đối soát đơn hoàn của khách để nhìn cột (tài khoản điều hành không có gian) — mới kiểm qua database + test `returnShippingOf`; chưa theo một đơn từ lúc có mốc tới lúc sàn sang `_COMPLETE` để chắc mốc không bị ghi lại; chưa mô phỏng quảng cáo.
+
+## 19. Lưu mốc HÃNG trả kiện giao thất bại (26/11/2026, anh Trung: "Làm lát lưu mốc") — CODE LOCAL, chưa commit / chưa push
+
+**Vì sao.** Mục 12 + 14 để lại giới hạn: kiện giao thất bại mà hãng đã trả chỉ biết lúc hỏi hành trình khi xem trang và KHÔNG lưu, nên chip "Hoàn thành công" (web) / "Ship báo đã hoàn" (app, `docs/MOBILE-NANG-CAP-DOT-3.md` mục 1) không lọc, không đếm được các kiện đó — dòng thì ghi "đã hoàn", bộ lọc lại không ra.
+
+### 19.1 Thiết kế
+
+- **Cột mới `Order.returnCarrierReturnedAt`** (migration `20261126200000_order_return_carrier_returned_at`: thêm cột nullable, lấy khóa có thử lại như mục 17; không chỉ mục, không điền đơn cũ).
+- **CỘT RIÊNG, không ghi vào `returnDeliveredAt`:** `returnDeliveredAt` là cột Lãi/Lỗ thực hiện + trigger sổ cái đang đọc (ghi vào đó = đổi lúc thu hồi giá vốn, phải mô phỏng quảng cáo). Cột mới không nằm trong danh sách cột của trigger `order_ledger_on_order_update` → ghi mốc không đánh bẩn sổ; Sổ cái, Lãi/Lỗ, quảng cáo, hạn khiếu nại KHÔNG đọc.
+- **Ai ghi:** `getReturnLegForOrders` (services/order-tracking.ts) — đường hỏi hãng có sẵn của `POST /api/warehouse/returns/carrier-status`. Hành trình có mốc "hãng đã trả" → ghi MỘT LẦN (chỉ khi cột trống và đơn còn là kiện giao thất bại đang chờ về). Mốc = giờ hãng ghi; hãng không ghi giờ / giờ hỏng / giờ ở tương lai → lúc Hubsell thấy (`carrierReturnedAtToStore`). Ghi hỏng thì nuốt lỗi, người xem vẫn nhận câu trả lời.
+- **Ai đọc:** `returnShippingOf` trả `RETURNED` nguồn mới `"carrier"` khi đơn là kiện giao thất bại có mốc; `returnShippingWhere`: nhóm RETURNED thêm nhánh "giao thất bại + có mốc", nhóm FAILED_DELIVERY thêm điều kiện "chưa có mốc". Mốc sàn (`returnDeliveredAt`) và kho đã nhận vẫn thắng mốc hãng. Mốc còn sót trên đơn đã thành yêu cầu trả hàng của khách thì bị bỏ qua (test có ca này).
+- **Hạn khiếu nại KHÔNG đổi:** `complaintDueOf` không truyền mốc hãng (tham số để tùy chọn) → kiện giao thất bại hãng đã trả vẫn "chưa bắt đầu" như trước. Có lấy mốc hãng làm mốc bắt đầu 7 ngày (Shopee) / 40 ngày (TikTok) hay không là việc của `docs/HAN-KHIEU-NAI-DON-HOAN.md`, chưa làm.
+
+### 19.2 Số lệnh gọi sàn — GIẢM, không tăng
+
+- Không có đường gọi mới: vẫn chỉ hỏi khi người dùng xem danh sách (web lô 10 / trang, app ≤ 20 / lượt mở).
+- Đơn đã có mốc → trả thẳng từ cột, **thôi hỏi sàn vĩnh viễn**. Trước đây kiện hãng đã trả mà kho chưa quét cứ hết đệm 10 phút là bị hỏi lại mỗi lượt xem.
+
+### 19.3 Giới hạn còn lại
+
+- **Kiện chưa ai mở xem thì chưa có mốc** → vẫn nằm ở nhóm "Giao thất bại". Bộ lọc đủ dần theo các dòng đã hiện (web 100 đơn / trang, app 20 đơn / lượt + "Xem thêm"). Shop vài chục kiện chờ về: xem một lượt là đủ. Shop hàng nghìn kiện (prod 13/11: 7 shop > 500 đơn chờ về): số ở chip "Ship báo đã hoàn" là SỐ ĐÃ BIẾT, không phải số đủ.
+- Muốn đủ mà không cần ai xem = phải **quét nền hỏi hành trình** (lát 2, CHƯA làm): mỗi kiện giao thất bại chờ về tốn 1 lệnh gọi / lượt quét. Prod 13/11 có ~2.490 đơn sàn hủy sau bàn giao đang chờ về (con số ở lượt 2 mục 7, chưa đo lại) → quét 4 lượt / ngày ≈ 10.000 lệnh gọi / ngày vào API hành trình, trong lúc Shopee đang trả 429 không báo trần. **⏳ Anh quyết; trước khi làm phải đo lại số đơn + chạy bóng theo cờ.**
+- "Đang hoàn về" của kiện giao thất bại không lưu (đổi liên tục, không ai lọc theo).
+- Lazada giao thất bại vẫn chưa có API hành trình.
+
+### 19.4 Tệp + kiểm
+
+- Backend: `prisma/schema.prisma`, migration trên, `src/lib/return-shipping.ts`, `src/services/order-tracking.ts`, `src/routes/warehouse.ts` (đọc thêm cột khi đếm chip).
+- Web: `frontend/src/lib/api.ts` (nguồn `"carrier"`), `return-shipping-cell.tsx` ("Hãng báo …" từ mốc đã lưu), `returns-filters.tsx` (chú thích chip).
+- App: `hubsell-mobile/src/lib/return-shipping.ts`, `useReturnCarrierStatus.ts` (hãng vừa báo đã trả → tải lại số đếm nhóm lọc), `types/api.ts`.
+- Test: `return-shipping.test.ts` (+4 ca), `return-shipping-filter-db.test.ts` (+4 ca trên Postgres), `order-tracking.test.ts` (+3 ca chọn mốc), **mới** `services/__tests__/order-tracking-return-leg-db.test.ts` (4 ca: ghi một lần, không ghi đè, đơn có mốc không hỏi lại, ngoài diện không hỏi không ghi) — 32 / 32. Kiểm kiểu backend + web + app sạch. App: 10 / 10.
+- Bộ rộng backend: 21 ca đỏ ở 10 tệp → dọn 32 dòng sổ cái mồ côi của các lượt seed 19/11 (`DEMOPL-*`) và 23/11 (`HKN-*`) trên DB LOCAL (bẫy đã ghi) → còn 7 ca ở 5 tệp, đều thuộc nhóm đỏ nền của DB local (`channel-delete-db`, `realized-pnl-ledger-db`, `order-ledger-db`, `ads-rows-ledger-db`) + `reviewer-demo-topup` (chạy riêng thì đạt — ca ngẫu nhiên). Không ca nào thuộc lát này.
+- Local (app bản web, hành trình giả): mở tab Đơn hoàn → 3 kiện hãng báo đã trả được ghi mốc → chip "Ship báo đã hoàn" 3 → **6**, "Giao thất bại" 6 → **3**, lọc ra đủ 6 dòng, ba dòng ghi "Hãng báo …" đọc từ cột.
+- **CHƯA:** nhìn màn web · dữ liệu sàn thật (mẫu chữ "đã trả kiện" của TikTok vẫn chưa đối chiếu — mục 12) · commit / push. DB local thêm cột bằng `prisma db execute` (lịch sử migration local kẹt P3009 từ 17/09).
+
+### 19.5 Khi lên prod
+
+Migration chỉ thêm một cột nullable (khóa ACCESS EXCLUSIVE chớp mắt trên `Order`, có thử lại 40 lần × 3 giây). Thứ tự an toàn: web bản mới lên trước hay sau backend đều được — web cũ gặp nguồn `"carrier"` chỉ ghi nhầm chữ "Kho nhận" trong vài phút lệch bản; app bản cũ không đọc trường này.

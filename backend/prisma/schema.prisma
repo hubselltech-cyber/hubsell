@@ -1685,6 +1685,14 @@ model Order {
   /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
   returnDeliveredAt    DateTime?
+  /// HÃNG VẬN CHUYỂN báo đã TRẢ KIỆN GIAO THẤT BẠI về shop (26/11/2026,
+  /// docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 19). Kiện quay đầu không có yêu cầu
+  /// trả hàng nên API hoàn của sàn không nói gì; mốc này lấy từ HÀNH TRÌNH hãng lúc người dùng
+  /// xem danh sách đơn hoàn (services/order-tracking.ts getReturnLegForOrders) và ghi MỘT LẦN —
+  /// có mốc rồi thì không hỏi sàn nữa. Dùng để lọc / đếm "Ship báo đã hoàn, kho chưa quét"
+  /// (lib/return-shipping.ts). CỘT RIÊNG, không ghi vào returnDeliveredAt: Sổ cái đơn, Lãi/Lỗ,
+  /// quảng cáo, hạn khiếu nại KHÔNG đọc cột này.
+  returnCarrierReturnedAt DateTime?
   /// HẠN KHIẾU NẠI do SÀN TRẢ cho yêu cầu trả hàng (23/11/2026, docs/HAN-KHIEU-NAI-DON-HOAN.md):
   /// hạn người bán kiểm kiện trả + khiếu nại. Shopee `return_seller_due_date` (get_return_list);
   /// TikTok hạn SELLER_RESPOND_RECEIVE_PACKAGE khi kiện đã về shop. Cả hai = giờ kiện về + 48 giờ

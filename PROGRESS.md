@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 tối muộn — Mobile nâng cấp đợt 3: Kho › Đơn hoàn — CODE LOCAL (chưa commit / chưa OTA)
+
+Anh: "buổi hôm nay sẽ nâng cấp rất nhiều". Chi tiết: `docs/MOBILE-NANG-CAP-DOT-3.md`.
+
+- **Ý 1 — "Ship báo đã hoàn" + bộ lọc** (anh: "trạng thái chỉ có 'Chờ hàng về' chứ chưa có 'Ship báo đã hoàn' — cần cập nhật vào trạng thái và cả bộ lọc"): viên nhãn đổi khi sàn / hãng báo kiện đã về mà kho chưa quét, thêm dòng chặng hoàn dưới mã vận đơn, sheet Bộ lọc có nhóm Trạng thái vận chuyển (5 nhóm + số đơn). **Chỉ sửa app** — dùng lại `returnShipping`, `shippingCounts`, `ship=`, `POST /warehouse/returns/carrier-status` của web. Lệnh gọi sàn: nhiều nhất 20 / lượt mở tab (kiện giao thất bại, đệm 10 phút).
+- **Ý 2 — bốn khối số bấm được** (anh: "khối này click vào chưa ra đơn cụ thể. khách hàng đang khá khó chịu"): bấm khối → lọc đúng đơn + viền khối + tự cuộn tới danh sách; bấm lại = bỏ. Nhãn khối xuống 2 dòng (hết cắt chữ).
+- **Lát lưu mốc hãng trả kiện (anh: "Làm lát lưu mốc") — CODE LOCAL, docs Đối soát mục 19:** cột riêng `Order.returnCarrierReturnedAt` (migration `20261126200000`, chỉ thêm cột) ghi một lần lúc dòng được hỏi hãng → bộ lọc "Ship báo đã hoàn" (app) / "Hoàn thành công" (web) gồm cả kiện giao thất bại hãng đã trả; đơn có mốc thôi bị hỏi sàn (lệnh gọi GIẢM). Không ghi vào `returnDeliveredAt` → Sổ cái / Lãi-Lỗ / quảng cáo / hạn khiếu nại không đổi. **Giới hạn còn lại:** kiện chưa ai mở xem chưa có mốc; quét nền (≈ 10.000 lệnh gọi / ngày) ⏳ anh quyết.
+- **Kiểm:** kiểm kiểu backend + web + app sạch; test lát lưu mốc 32 / 32 (có chạy Postgres local), app 10 / 10; soi local bản web của app 375 px sáng + tối với 16 đơn thử: chip "Ship báo đã hoàn" 3 → 6 sau khi mốc được ghi. Bộ rộng backend còn 7 ca đỏ ở 5 tệp = nhóm đỏ nền của DB local (đã dọn 32 dòng sổ cái mồ côi `DEMOPL-*` / `HKN-*` của các lượt seed cũ). **CHƯA:** nhìn màn web, máy thật, cỡ chữ lớn, 320 px, dữ liệu sàn thật, commit, push, OTA.
+- Tài khoản thử local `thu-don-hoan@hubsell.local` (script seed ở thư mục tạm của phiên, không nằm trong repo).
+
 ## Phiên 26/11 ~20:00–20:30 — Video đóng hàng: HQ theo dõi R2 + M2.1–M2.3 ĐÃ CODE LOCAL (chưa commit / push) · tách bucket chờ anh chọn A / B
 
 Anh: "Làm HQ, xong thì tách bucket prod, tiếp đến làm M2". Chi tiết: `docs/VIDEO-DONG-HANG-THIET-KE.md` **mục 36** (HQ), **37** (bucket), **38** (M2).
@@ -25,6 +35,7 @@ Anh: "Làm HQ, xong thì tách bucket prod, tiếp đến làm M2". Chi tiết: 
   - **M2.5 phần mã:** màn quay hỏi "tem này của đơn nào" từ 5 câu nối nhau còn 1 câu + 2 lượt song song (`order-match.ts` `matchOrderForTem`); kết quả trả về không đổi. Phần đo EXPLAIN trên prod chờ dựng lại chỉ mục 03:30 27/11.
   - **M2.6 chặn gọi dồn:** bốn đường nóng, đếm theo tài khoản, 5 lượt / giây dồn 50 (số tự chọn) — **mặc định CHẠY BÓNG** (chỉ ghi nhật ký `[PackVideo] gọi dồn`), bật chặn thật `PACK_RATE_LIMIT=on` → 429 + `Retry-After`; web đọc `Retry-After` để chờ đúng số giây.
   - Kiểm: backend 1.388 đạt / 0 đỏ; bộ quay web 54 / 54; kiểm kiểu sạch. ⏳ anh bảo commit + push. Còn M2.4 (đi cùng bản app kế).
+  - **★ LÊN PROD `bc46a551` 26/11 tối (anh: "Commit và push"):** `/health` backend đúng commit; phản hồi prod đã lộ tiêu đề `Retry-After` trong CORS và nhận `x-pack-session` ở lượt hỏi trước (OPTIONS 204). Chặn gọi dồn đang CHẠY BÓNG (chưa đặt `PACK_RATE_LIMIT`). ❌ Chưa xem bản web mới, worker, thẻ R2 trên HQ; chưa ai quay thật. Dòng này chỉ ở máy, đi cùng lần commit sau.
 
 ## Phiên 26/11 tối — Xóa cả Tổng kho khách hoaphamsoc2025@gmail.com trên PROD LẦN 2 (anh: "reset hết sản phẩm trong Tổng kho") — chỉ dữ liệu
 

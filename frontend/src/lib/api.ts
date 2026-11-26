@@ -2388,8 +2388,8 @@ export interface ReturnShipping {
   state: ReturnShippingState;
   /** Mốc kiện về tới shop — null khi chưa về hoặc nguồn không ghi giờ */
   at: string | null;
-  /** Ai nói kiện đã về: sàn / hãng hay kho quét nhận */
-  source: "platform" | "warehouse" | null;
+  /** Ai nói kiện đã về: sàn (API hoàn), hãng vận chuyển (mốc hành trình backend đã lưu) hay kho quét nhận */
+  source: "platform" | "carrier" | "warehouse" | null;
   /** Kiện giao thất bại quay đầu (không phải khách trả hàng) */
   failedDelivery: boolean;
 }
@@ -2397,7 +2397,8 @@ export interface ReturnShipping {
 /**
  * Nhóm lọc theo Trạng thái vận chuyển (hàng chip của Đối soát đơn hoàn) — khớp
  * ReturnShippingFilter ở backend. FAILED_DELIVERY = kiện giao thất bại quay đầu, kho chưa
- * nhận: hãng đã trả hay chưa chỉ biết khi hỏi hành trình lúc xem, không lọc tiếp được.
+ * nhận, chưa có mốc hãng trả kiện. Hãng báo đã trả (backend lưu mốc lúc dòng được hỏi hãng,
+ * 26/11/2026) thì đơn sang RETURNED.
  */
 export type ReturnShippingFilter =
   | "RETURNED"
