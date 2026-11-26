@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~11:00–11:20 — VAT quảng cáo: chuông báo khách ĐÃ GỬI (157 chủ shop)
+
+Anh duyệt câu chữ rồi "Gửi chuông". Chi tiết + nguyên văn câu đã gửi: `docs/TAI-CHINH-VAT-QUANG-CAO.md` **mục 9**.
+
+- Gửi 11:13 qua một việc chạy một lần trên worker (commit `1cda64e4`): 157 chuông / 157 chủ shop có quảng cáo TikTok / Shopee trong 30 ngày và chưa tắt tính thuế; chỉ chuông, không đẩy về điện thoại. Kiểm bằng SQL chỉ đọc: `maintenance_jobs` có `doneAt`, `processed = 157`.
+- Chuông web: thông báo loại `system` hiện đủ nội dung (trước cắt 2 dòng). App mobile vẫn cắt 3 dòng.
+- Việc một lần đã xong → gỡ worker + dịch vụ + test khỏi repo ở commit kế.
+- Bản trả lời dài qua Zalo / thư (ký Hiếu) đã soạn trong phiên, chưa gửi ai.
+
 ## Phiên 26/11 ~10:33–11:00 — VAT quảng cáo: lát báo cáo + công tắc LÊN PROD `67995ff1`
 
 Anh bấm "Làm theo đề xuất", xem bảng trước / sau rồi "Push luôn". Chi tiết: `docs/TAI-CHINH-VAT-QUANG-CAO.md` **mục 8**.
@@ -14,7 +23,7 @@ Anh bấm "Làm theo đề xuất", xem bảng trước / sau rồi "Push luôn"
 - **Làm gì:** `config/ads-vat.ts` (thuế suất theo sàn + ngày, đường lui `ADS_VAT_OFF=1`); `summarizeAdsSpend` trả thêm `vat` (phần quảng cáo ngoài đơn × thuế suất, Shopee bóc thuế khỏi khoản trích từ đơn); cột `ShopTaxSetting.adsVatAsCost` (migration `20261126160000`, mặc định bật) + công tắc ở trang Thuế bổ sung; dòng "Thuế GTGT quảng cáo" ở Báo cáo dòng tiền, số gồm thuế ở Lãi/Lỗ, Tổng quan, Trợ lý. App mobile không sửa (vẽ theo danh sách API).
 - **Trước / sau prod 30 ngày (chỉ đọc):** 158 chủ shop đổi số; quảng cáo ngoài đơn 4.678 → 5.131 triệu (+453 triệu); 10 chủ shop giảm lợi nhuận báo cáo ≥ 10 triệu, lớn nhất 50 triệu; trung vị ≈ 737 nghìn. ROI / ROAS hòa vốn không đổi.
 - **Test:** 12 ca mới, 9 ca cũ của hàm gộp không sửa vẫn xanh; cả bộ 3.086 qua, 21 đỏ có sẵn (cùng tệp, cùng số như trước khi sửa); kiểm kiểu + lint sạch; màn local đã nhìn (ba trang cùng lợi nhuận, công tắc tắt / bật đúng), dữ liệu thử đã xóa.
-- **⏳ Anh:** duyệt câu thông báo cho khách (báo cáo của ~158 chủ shop vừa có thêm dòng thuế, lợi nhuận hiển thị giảm tương ứng); 3 ảnh K1–K3; quyết lát hòa vốn có thuế.
+- **⏳ Anh:** 3 ảnh K1–K3; quyết lát hòa vốn có thuế. (Thông báo cho khách: đã gửi — mục trên.)
 - **Chưa làm:** thông báo trong app, chữ "chưa gồm thuế" ở màn quảng cáo, mô phỏng hòa vốn, thử app trên máy thật.
 
 ## Phiên 26/11 ~10:20–10:35 — VAT quảng cáo: khảo sát + phương án (đã code ở mục trên) · Chi phí định kỳ đã lên prod

@@ -152,9 +152,21 @@ Dòng "Chi phí quảng cáo sàn (Ads)" GIỮ số sàn báo (chưa thuế) đ�
 
 - **Đã push 10:54, lên prod 10:56 26/11:** `/health` đúng commit `67995ff1`; SQL chỉ đọc: migration `20261126160000` xong, 3 dòng cấu hình thuế đều đang bật (shop chưa có dòng cấu hình cũng coi như bật); tệp JS của trang Thuế bổ sung trên `app.hubsell.vn` đã có trường mới. CHƯA đăng nhập tài khoản thật để nhìn màn prod và CHƯA so số một shop thật trước / sau trên màn.
 - Lùi gấp nếu cần: đặt `ADS_VAT_OFF=1` trên dịch vụ web Render (không cần deploy lại mã, không đụng dữ liệu).
-- **Thông báo cho khách** (một dòng trong app / bài hướng dẫn) về việc báo cáo có thêm dòng thuế: chưa viết — câu chữ gửi khách để anh duyệt.
+- ~~Thông báo cho khách~~ → ĐÃ GỬI chuông 11:13 26/11 (mục 9).
 - Chữ "chưa gồm thuế GTGT" ở màn Trợ lý quảng cáo / chi tiết chiến dịch: chưa thêm.
 - K1–K3 (mục 5) chưa có ảnh: TikTok trừ trong đơn đang coi là chưa gồm thuế; Lazada 0 %.
 - Lát 3 (ROI / ROAS hòa vốn có thuế): chưa mô phỏng.
 - App mobile: chưa nhìn trên máy thật; dòng con riêng trên donut app nếu cần chỉnh thì OTA sau.
 - Số trên local chỉ có gian Shopee; ca TikTok mới qua test, chưa nhìn màn với dữ liệu thật.
+
+## 9. Chuông báo khách — ĐÃ GỬI 11:13 26/11/2026 (anh duyệt câu chữ → "Gửi chuông")
+
+- **Ai nhận:** chủ shop có tiền quảng cáo TikTok / Shopee trong 30 ngày (28/10–26/11) và đang để tính thuế vào chi phí. Shop không chạy quảng cáo, shop chỉ có Lazada, shop đã tắt công tắc: không nhận.
+- **Kết quả trên prod (SQL chỉ đọc 11:16):** 157 chuông cho 157 chủ shop, gửi lúc 11:13:55; việc `ads-vat-notice-2026-11-26` trong `maintenance_jobs` đã có `doneAt`, `processed = 157`. Chỉ chuông (web + danh sách thông báo trong app), KHÔNG đẩy về điện thoại.
+- **Câu đã gửi** — loại `system` (mục "Thông báo hệ thống", khách không tắt được), bấm vào mở Báo cáo dòng tiền:
+  - Tiêu đề: Báo cáo có thêm dòng "Thuế GTGT quảng cáo"
+  - Nội dung: Khi bạn nạp tiền quảng cáo, sàn cộng thêm thuế GTGT (TikTok 10%, Shopee 8%) ngoài số tiền quảng cáo. Từ hôm nay, Báo cáo dòng tiền, Tổng quan và Lãi/Lỗ tính thêm khoản thuế này vào chi phí, nên lợi nhuận hiển thị sẽ thấp hơn trước đúng bằng tiền thuế, kể cả khi bạn xem lại các kỳ cũ. Shop là công ty được khấu trừ thuế GTGT có thể tắt ở Hóa đơn & Thuế › Thuế bổ sung.
+- **Bản dài để trả lời qua Zalo / thư** (ký "Hiếu — Hubsell"): đã soạn trong phiên 26/11, chưa gửi ai, KHÔNG lưu vào repo (bài một lần).
+- **Sửa kèm:** chuông web trước cắt nội dung còn 2 dòng → thông báo loại `system` nay hiện đủ chữ (`frontend/src/components/shell/notification-bell.tsx`); các loại khác vẫn 2 dòng. App mobile vẫn cắt 3 dòng với loại này (chưa OTA).
+- **Mã gửi:** việc một lần, đã chạy xong nên ĐÃ GỠ khỏi repo (worker + dịch vụ + test nằm ở commit `1cda64e4`, gỡ ở commit kế). Dòng `maintenance_jobs` giữ lại làm dấu đã gửi. Muốn gửi một đợt thông báo khác: lấy lại khuôn ở `1cda64e4` (giữ việc bằng UPDATE có điều kiện + bỏ qua người đã có chuông).
+- **Chưa làm:** shop bắt đầu chạy quảng cáo SAU hôm nay sẽ không có chuông này (chỉ thấy tooltip ở dòng thuế).
