@@ -15,8 +15,11 @@ import {
   canOpenNewVideo,
   computeBalance,
   ensureWelcomeHours,
+  forgetHoursBalance,
   forgetWelcomeAsked,
   getHoursBalance,
+  getHoursBalanceCached,
+  noteUsedSeconds,
   getHoursOverview,
   grantHours,
   grantPurchasedHours,
@@ -216,7 +219,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
       expect(await getHoursBalance(ownerW)).toEqual({ purchasedSeconds: 0, usedSeconds: 0, remainingSeconds: 0 });
       expect(await ensureWelcomeHours(ownerW)).toBe(true);
       expect(await getHoursBalance(ownerW)).toEqual({ purchasedSeconds: 2 * HOUR, usedSeconds: 0, remainingSeconds: 2 * HOUR });
-      expect(await canOpenNewVideo(ownerW, new Date())).toEqual({ ok: true });
+      expect(await canOpenNewVideo(ownerW, new Date())).toMatchObject({ ok: true });
       const rows = await prisma.packHourGrant.findMany({ where: { ownerId: ownerW } });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ kind: "GRANT", seconds: 2 * HOUR, amountVnd: null, paymentRef: welcomeRefOf(ownerW) });
@@ -247,9 +250,63 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
     });
   });
 
+  describe("đệm số dư theo chủ shop (M2.3)", () => {
+    it("trong hạn đệm KHÔNG đọc lại database; quên đệm thì thấy số mới", async () => {
+      const owner = (
+        await prisma.user.create({ data: { email: `${TAG}-k@test.local`, passwordHash: "x", fullName: `${TAG}-k` }, select: { id: true } })
+      ).id;
+      try {
+        await grantHours({ ownerId: owner, seconds: 600, kind: "GRANT" });
+        expect((await getHoursBalanceCached(owner)).remainingSeconds).toBe(600);
+        // Một video lên kho bằng đường KHÁC (máy web khác): đệm của máy này chưa biết.
+        await addVideo(owner, 100, "STORED", new Date());
+        expect((await getHoursBalanceCached(owner)).remainingSeconds).toBe(600);
+        // Đọc tươi thì đúng, và làm mới luôn đệm.
+        expect((await getHoursBalance(owner)).remainingSeconds).toBe(500);
+        expect((await getHoursBalanceCached(owner)).remainingSeconds).toBe(500);
+        // Video lên kho ở CHÍNH máy này: cộng thẳng vào số đã nhớ, không đọc database.
+        noteUsedSeconds(owner, 50);
+        expect(await getHoursBalanceCached(owner)).toEqual({ purchasedSeconds: 600, usedSeconds: 150, remainingSeconds: 450 });
+        // Sổ giờ đổi (tặng thêm) → quên đệm → lượt sau đọc tươi (video 50 giây ở trên chưa có trong sổ nên không tính).
+        await grantHours({ ownerId: owner, seconds: 400, kind: "GRANT" });
+        expect((await getHoursBalanceCached(owner)).remainingSeconds).toBe(900);
+      } finally {
+        forgetHoursBalance(owner);
+        await prisma.packVideo.deleteMany({ where: { ownerId: owner } });
+        await prisma.packHourGrant.deleteMany({ where: { ownerId: owner } });
+        await prisma.user.delete({ where: { id: owner } });
+      }
+    });
+
+    it("đệm báo CÒN giờ → cho mở clip mới dù sổ thật vừa hết (lệch tối đa một hạn đệm); đệm báo HẾT → đọc tươi, không chặn oan người vừa mua", async () => {
+      const owner = (
+        await prisma.user.create({ data: { email: `${TAG}-m@test.local`, passwordHash: "x", fullName: `${TAG}-m` }, select: { id: true } })
+      ).id;
+      try {
+        const g = await grantHours({ ownerId: owner, seconds: 60, kind: "GRANT" });
+        await prisma.packHourGrant.update({ where: { id: g.id }, data: { createdAt: new Date(Date.now() - 3 * 24 * 3600_000) } });
+        expect((await getHoursBalanceCached(owner)).remainingSeconds).toBe(60);
+        // Máy khác vừa ghi một video 100 giây → sổ thật âm 40, đệm máy này còn nhớ +60.
+        await addVideo(owner, 100, "STORED", new Date(Date.now() - 2 * 24 * 3600_000));
+        expect((await canOpenNewVideo(owner, new Date())).ok).toBe(true);
+        // Hết hạn đệm (ở đây: quên tay) → chặn đúng.
+        forgetHoursBalance(owner);
+        expect(await canOpenNewVideo(owner, new Date())).toEqual({ ok: false, remainingSeconds: -40 });
+        // Đệm đang nhớ số ÂM; máy khác vừa cộng giờ mua thẳng vào sổ (không qua máy này) → vẫn mở được ngay.
+        await prisma.packHourGrant.create({ data: { id: `${TAG}-m-buy`, ownerId: owner, seconds: 3600, kind: "GRANT" } });
+        expect(await canOpenNewVideo(owner, new Date())).toMatchObject({ ok: true, balance: { remainingSeconds: 3560 } });
+      } finally {
+        forgetHoursBalance(owner);
+        await prisma.packVideo.deleteMany({ where: { ownerId: owner } });
+        await prisma.packHourGrant.deleteMany({ where: { ownerId: owner } });
+        await prisma.user.delete({ where: { id: owner } });
+      }
+    });
+  });
+
   describe("hết giờ thì dừng — canOpenNewVideo", () => {
     it("còn giờ → được mở video mới", async () => {
-      expect(await canOpenNewVideo(ownerA, new Date())).toEqual({ ok: true });
+      expect(await canOpenNewVideo(ownerA, new Date())).toMatchObject({ ok: true });
     });
 
     it("số dư ≤ 0 → không mở được video mới (B đang âm 90 giây)", async () => {
@@ -272,7 +329,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — số giờ quay", () => {
         const clipStart = new Date(Date.now() - 5 * 60_000);
         await addVideo(ownerC, 100, "STORED", new Date()); // tải lên SAU lúc clip kia bắt đầu
         expect((await getHoursBalance(ownerC)).remainingSeconds).toBe(-40);
-        expect(await canOpenNewVideo(ownerC, clipStart)).toEqual({ ok: true });
+        expect(await canOpenNewVideo(ownerC, clipStart)).toMatchObject({ ok: true, balance: { remainingSeconds: -40 } });
         // Clip bắt đầu SAU lúc hết giờ → chặn.
         expect((await canOpenNewVideo(ownerC, new Date())).ok).toBe(false);
         // Giờ bắt đầu lùi quá xa (khai man) → không được coi là đang quay dở.

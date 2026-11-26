@@ -23,6 +23,8 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
+  PACK_HOURS_CACHE_MAX,
+  PACK_HOURS_CACHE_TTL_MS,
   PACK_VIDEO_HOUR_MAX_PURCHASE,
   PACK_VIDEO_HOUR_MIN_PURCHASE,
   PACK_VIDEO_HOUR_PRESETS,
@@ -72,12 +74,53 @@ export function computeBalance(purchasedSeconds: number, usedSeconds: number): H
   return { purchasedSeconds, usedSeconds, remainingSeconds: purchasedSeconds - usedSeconds };
 }
 
+/** Số dư ĐỌC TƯƠI từ database (4 câu) — và làm mới đệm của tiến trình này. */
 export async function getHoursBalance(ownerId: string): Promise<HoursBalance> {
   const [granted, used] = await Promise.all([
     prisma.packHourGrant.aggregate({ where: { ownerId }, _sum: { seconds: true } }),
     usedSecondsOf(ownerId),
   ]);
-  return computeBalance(granted._sum.seconds ?? 0, used);
+  const balance = computeBalance(granted._sum.seconds ?? 0, used);
+  rememberBalance(ownerId, balance);
+  return balance;
+}
+
+// ---------- ĐỆM SỐ DƯ theo chủ shop (M2.3, 26/11/2026 — thiết kế mục 29.4 + 38) ----------
+//
+// Mỗi clip trước đây tốn 4 câu chỉ để hỏi "còn giờ không" lúc xin vé tải, và thêm một lượt gọi /hours để vẽ lại số.
+// Nay tiến trình web nhớ số dư của từng chủ shop PACK_HOURS_CACHE_TTL_MS (15 giây). Đây KHÔNG phải nguồn sự thật:
+// số thật luôn là sổ trong database; đệm chỉ là lối tắt đọc. Nhiều máy web mỗi máy một đệm — lệch nhau tối đa bằng
+// hạn đệm, tức vài giây quay, và luật 14/11 cho phép quay lố. Đệm báo HẾT giờ thì người gọi phải đọc tươi trước
+// khi chặn (khách vừa mua giờ ở máy khác không bị chặn oan).
+
+const balanceCache = new Map<string, { balance: HoursBalance; at: number }>();
+
+function rememberBalance(ownerId: string, balance: HoursBalance): void {
+  if (balanceCache.size >= PACK_HOURS_CACHE_MAX && !balanceCache.has(ownerId)) balanceCache.clear();
+  balanceCache.set(ownerId, { balance, at: Date.now() });
+}
+
+/** Quên số dư đã nhớ: gọi khi sổ giờ vừa đổi (mua / tặng / điều chỉnh). Không truyền gì = quên hết (test). */
+export function forgetHoursBalance(ownerId?: string): void {
+  if (ownerId) balanceCache.delete(ownerId);
+  else balanceCache.clear();
+}
+
+/** Số dư từ đệm nếu còn hạn, không thì đọc tươi. Dùng cho đường nóng; trang số giờ / sổ giờ vẫn đọc tươi. */
+export async function getHoursBalanceCached(ownerId: string): Promise<HoursBalance> {
+  const hit = balanceCache.get(ownerId);
+  if (hit && Date.now() - hit.at < PACK_HOURS_CACHE_TTL_MS) return hit.balance;
+  return getHoursBalance(ownerId);
+}
+
+/**
+ * Một video vừa lên kho ở CHÍNH tiến trình này → cộng thời lượng vào số đã nhớ (không đọc database), để câu trả lời
+ * "báo tải xong" mang số giờ mới và lượt xin vé kế tiếp thấy đúng số. Chưa nhớ gì thì thôi — lượt sau tự đọc tươi.
+ */
+export function noteUsedSeconds(ownerId: string, seconds: number): void {
+  const hit = balanceCache.get(ownerId);
+  if (!hit || !(seconds > 0)) return;
+  hit.balance = computeBalance(hit.balance.purchasedSeconds, hit.balance.usedSeconds + seconds);
 }
 
 const LEDGER_LIMIT = 50;
@@ -160,6 +203,7 @@ export async function ensureWelcomeHours(ownerId: string): Promise<boolean> {
     RETURNING "id"`);
   if (welcomeAsked.size >= WELCOME_ASKED_MAX) welcomeAsked.clear();
   welcomeAsked.add(ownerId);
+  if (inserted.length === 1) forgetHoursBalance(ownerId);
   return inserted.length === 1;
 }
 
@@ -179,6 +223,7 @@ export async function grantHours(input: GrantHoursInput): Promise<{ id: string }
     throw new Error("Số giây phải là số nguyên khác 0");
   }
   if (input.kind !== "GRANT" && input.kind !== "ADJUST") throw new Error(`Loại không hợp lệ: ${input.kind}`);
+  forgetHoursBalance(input.ownerId);
   return prisma.packHourGrant.create({
     data: {
       id: randomUUID(),
@@ -230,6 +275,9 @@ export async function grantPurchasedHoursTx(
             ${input.note?.trim() || null}, ${input.createdById ?? null}, ${ref}, ${input.amountVnd})
     ON CONFLICT ("paymentRef") WHERE "paymentRef" IS NOT NULL DO NOTHING
     RETURNING "id"`);
+  // Quên số dư đã nhớ ở tiến trình này. Giao dịch của người gọi chưa xong thì lượt đọc kế có thể nhớ lại số cũ thêm
+  // tối đa một hạn đệm — khi đó đường "đệm báo hết giờ thì đọc tươi" vẫn không chặn oan người vừa mua.
+  forgetHoursBalance(input.ownerId);
   if (inserted.length === 1) return { id: inserted[0].id, created: true };
   const existing = await tx.packHourGrant.findFirst({
     where: { paymentRef: ref },
@@ -259,9 +307,12 @@ export async function canOpenNewVideo(
   ownerId: string,
   recordedAt: Date,
   now: Date = new Date()
-): Promise<{ ok: true } | { ok: false; remainingSeconds: number }> {
+): Promise<{ ok: true; balance: HoursBalance } | { ok: false; remainingSeconds: number }> {
+  // Đệm báo CÒN giờ → cho mở, không đọc database (M2.3). Đệm báo hết (hoặc chưa nhớ) → đọc tươi rồi mới xét.
+  const cached = await getHoursBalanceCached(ownerId);
+  if (cached.remainingSeconds > 0) return { ok: true, balance: cached };
   const balance = await getHoursBalance(ownerId);
-  if (balance.remainingSeconds > 0) return { ok: true };
+  if (balance.remainingSeconds > 0) return { ok: true, balance };
 
   const earliest = new Date(now.getTime() - PACK_VIDEO_OVERRUN_LOOKBACK_SEC * 1000);
   if (recordedAt.getTime() >= earliest.getTime() && recordedAt.getTime() <= now.getTime()) {
@@ -278,7 +329,7 @@ export async function canOpenNewVideo(
       }),
     ]);
     const atStart = balance.remainingSeconds + Number(usedSince[0]?.s ?? 0) - (grantedSince._sum.seconds ?? 0);
-    if (atStart > 0) return { ok: true };
+    if (atStart > 0) return { ok: true, balance };
   }
   return { ok: false, remainingSeconds: balance.remainingSeconds };
 }

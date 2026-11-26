@@ -5,6 +5,32 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~20:00–20:30 — Video đóng hàng: HQ theo dõi R2 + M2.1–M2.3 ĐÃ CODE LOCAL (chưa commit / push) · tách bucket chờ anh chọn A / B
+
+Anh: "Làm HQ, xong thì tách bucket prod, tiếp đến làm M2". Chi tiết: `docs/VIDEO-DONG-HANG-THIET-KE.md` **mục 36** (HQ), **37** (bucket), **38** (M2).
+
+- **HQ theo dõi R2 (mục 36):** worker dọn video (mỗi 6 giờ) đếm kho từ sổ `pack_videos` trong 100 ngày gần nhất + tiền bán giờ 30 ngày, ghi vào `maintenance_jobs` khóa `pack-storage-health`; HQ Sức khỏe đọc một dòng → dấu hiệu "Kho video đóng hàng (R2)" + thẻ chi tiết (đang lưu, chủ shop, đang giữ, tải lên / xóa 7 ngày, ước tiền Cloudflare, tiền bán giờ, lượt dọn gần nhất). Đỏ: worker dọn ngừng quá 13 giờ · cổng mở mà chạy bóng · có video quá hạn chưa xóa · quá trần 60 ngày. Không gọi Cloudflare, không migration, không biến môi trường mới. **R2 không có trần / không có gia hạn; HQ không đọc được thẻ thanh toán Cloudflare** (ghi rõ trên thẻ).
+- **Tách bucket (mục 37) — CHƯA làm gì, ⏳ anh chọn:** B (em đề nghị) = dời DEV sang bucket mới `hubsell-video-dev` + khóa riêng cho dev, prod không đụng; A = dời PROD sang bucket mới (phải chép tệp + đổi biến Render + deploy, có rủi ro với khách). Cả hai cách đều cần anh tạo khóa R2 mới (em không tạo / không gõ khóa).
+- **M2.1 vé phiên quay:** `POST /api/pack-videos/session` → JWT 10 phút; bốn đường nóng (`/match`, `POST /`, `/:id/parts`, `/:id/complete`) có tiêu đề `X-Pack-Session` thì không đọc `User` / `StaffChannel`. Vé hỏng / hết hạn → rơi về xác thực thường (không lỗi mới, app bản cũ chạy nguyên). `PACK_VIDEO_GATE=off` vẫn tức thì; tắt riêng vé: `PACK_SESSION_OFF=1`. Cái giá: rút quyền nhân viên / xóa tài khoản chậm tối đa 10 phút trên đúng bốn đường đó.
+- **M2.2:** `POST /` + `/complete` trả kèm `hours`; web bỏ lượt gọi `/hours` sau mỗi clip. **M2.3:** đệm số dư 15 giây theo chủ shop trong từng tiến trình; đệm báo hết giờ thì đọc tươi trước khi chặn.
+- **Ước từ mã (CHƯA đo prod):** ≈ 25–30 câu database + 4 lượt gọi / clip → ≈ 10–12 câu + 3 lượt gọi.
+- **Em tự hiểu** "làm M2" = duyệt mục 29.8 theo đề nghị (thứ tự M2.1 → 2.3, vé 10 phút); anh chưa trả lời riêng Q-1…Q-6.
+- **Kiểm:** test mới 14 + 3 (HQ) và 6 + 9 + 2 (M2); bộ rộng backend 1.381 đạt / 0 đỏ; bộ quay phía web 54 / 54; kiểm kiểu + lint hai phía sạch. Màn HQ local đã nhìn với số rất rộng ở 1024 / 1280 / 1700, sáng + tối. Đường vé đã gọi thử qua trình duyệt local (khác nguồn, có CORS).
+- **CHƯA:** commit / push · quay thật bằng webcam với bản M2 (trình duyệt của Claude bị chặn camera) · số R2 thật của prod · so với số trang R2 của Cloudflare · app điện thoại chưa dùng vé (vẫn chạy đường cũ).
+- **⏳ Anh:** (1) bảo commit + push; (2) chọn A / B cho bucket; (3) thử webcam thật: số giờ giảm sau mỗi clip không cần tải lại, để màn quay quá 10 phút rồi quay tiếp.
+- Còn lại của M2: M2.5 (đo câu tra mã vận đơn sau khi dựng lại chỉ mục 03:30 27/11) · M2.4 (migration + đổi hợp đồng, đi cùng bản app) · M2.6.
+
+## Phiên 26/11 tối — Xóa cả Tổng kho khách hoaphamsoc2025@gmail.com trên PROD LẦN 2 (anh: "reset hết sản phẩm trong Tổng kho") — chỉ dữ liệu
+
+- **Email lệch lần nữa:** anh gửi `hoaphamsoc2502@gmail.com` — prod vẫn không có; chỉ có `hoaphamsoc2025@gmail.com`
+  (user `cmwvlivyv1mbolr3wf8t3n21y`, gian Shopee Socshop-NHABE, đã xóa lần 1 hôm 25/11). Em báo lệch + số, **anh chọn "Đúng, xóa 65 sản phẩm"**.
+- **Đếm trước:** 65 sản phẩm khách tạo lại 11:45–11:54 ngày 26/11 (tổng tồn 6.050, giữ 0, đã chốt 0), 65 nhật ký kho, 0 tồn vị trí;
+  698 dòng sàn, 0 dòng đang nối; đồng bộ tồn TẮT; 0 dòng đơn / sổ lãi / việc đẩy tồn / phiếu nhập / kiểm kê / mẫu KOC / nhật ký nối mã trỏ mã kho.
+- **Đã làm (Supabase SQL Editor, một lượt, có chốt chặn "đúng 65 mới chạy"):** sao lưu 2 bảng `_bak_20261126_hps2_{product,inventory_log}`
+  (bật RLS) → `order_line_ledger.productId` NULL (0 dòng) → `DELETE FROM "Product"`. Đếm lại: 0 sản phẩm, 0 nhật ký; 698 dòng sàn còn nguyên.
+- **Còn chờ:** DROP 2 bảng sao lưu sau ~26/12/2026 nếu khách không đòi lại (hỏi anh) — gộp cùng đợt `_bak_20261125_hps_*`.
+
+---
 ## Phiên 26/11 ~17:00 — HQ đỏ "Dung lượng DB 90 %": tìm gốc (CHỈ ĐO, chưa sửa gì)
 
 Anh gửi ảnh HQ Sức khỏe, hỏi "sao lại 90 % DB rồi". Chi tiết + bảng số: `docs/HQ-SUC-KHOE.md` mục 26/11.

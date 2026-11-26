@@ -15,7 +15,7 @@
 // Đường gửi (xin vé → PUT thẳng lên kho → chốt): upload-transport.ts.
 // ============================================================
 
-import { getStoredUser, matchPackVideoTem, type PackVideoTemMatch } from "@/lib/api";
+import { getStoredUser, matchPackVideoTem, type PackVideoHoursBalance, type PackVideoTemMatch } from "@/lib/api";
 
 import {
   RECOVERY_HEAD_NAME,
@@ -88,7 +88,9 @@ const returnPromptDismissed = new Set<string>();
 const jobs = new Map<string, Job>();
 let deviceName: string | null = null;
 const listeners = new Set<() => void>();
-const storedListeners = new Set<() => void>();
+const storedListeners = new Set<(hours: PackVideoHoursBalance | null) => void>();
+/** Số giờ máy chủ trả kèm lượt "báo tải xong" của từng clip (M2.2) — phát cho người nghe rồi bỏ. */
+const hoursOfClip = new Map<string, PackVideoHoursBalance>();
 
 function newId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -115,8 +117,11 @@ export function getServerSessionClips(): SessionClip[] {
   return EMPTY;
 }
 
-/** Gọi mỗi khi một video vừa lên kho xong (để màn hình làm mới danh sách video và số giờ). */
-export function onClipStored(fn: () => void): () => void {
+/**
+ * Gọi mỗi khi một video vừa lên kho xong (để màn hình làm mới danh sách video và số giờ). `hours` = số giờ máy chủ
+ * gửi kèm câu trả lời; null khi không có (máy chủ bản cũ, clip do tab khác gửi) → người nghe tự hỏi máy chủ.
+ */
+export function onClipStored(fn: (hours: PackVideoHoursBalance | null) => void): () => void {
   storedListeners.add(fn);
   return () => storedListeners.delete(fn);
 }
@@ -647,7 +652,7 @@ async function uploadJob(localId: string): Promise<void> {
     if (job.persisted && !(await opened.store.hasMeta(localId))) return;
     const { meta } = job;
     sentSoFar.set(localId, 0);
-    await uploadClip({
+    const hours = await uploadClip({
       clientId: meta.clientId,
       code: meta.code,
       kind: kindOf(localId),
@@ -660,6 +665,7 @@ async function uploadJob(localId: string): Promise<void> {
       blob: () => opened.store.blobOf(meta.file),
       onProgress: (sent) => onUploadProgress(localId, sent, meta.file.sizeBytes),
     });
+    if (hours) hoursOfClip.set(localId, hours);
     // Xóa SỔ trước, TỆP sau: đứt giữa chừng thì còn lại một thư mục không có sổ = rác, lần sau tự dọn.
     await opened.store.deleteMeta(localId);
     await opened.store.remove(meta.file);
@@ -693,7 +699,11 @@ function onJobEvent(localId: string, event: UploadJobEvent): void {
       sentSoFar.delete(localId);
       update(localId, { status: "stored", progress: 1, error: null });
       addJournal("info", `Tải lên xong clip ${kindTag(kindOf(localId))}${code}`);
-      for (const fn of storedListeners) fn();
+      {
+        const hours = hoursOfClip.get(localId) ?? null;
+        hoursOfClip.delete(localId);
+        for (const fn of storedListeners) fn(hours);
+      }
       // Ổ vừa trống thêm → nếu đang báo đầy / sắp đầy thì đo lại ngay.
       if (disk === "full" || disk === "low") void checkDisk(true);
       break;

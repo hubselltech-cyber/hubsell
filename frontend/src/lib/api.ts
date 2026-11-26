@@ -8172,6 +8172,32 @@ export interface HealthTimelineItem {
   progress: { metric: string; label: string; current: number; target: number }[];
 }
 
+/** Số kho video đóng hàng (backend services/pack-video/storage-health.ts). MB / GB theo 10^6 / 10^9 byte. */
+export interface PackStorageHealth {
+  record: {
+    at: string;
+    ms: number;
+    windowDays: number;
+    stored: { count: number; mb: number; owners: number };
+    held: { count: number; mb: number };
+    overdue: { count: number; mb: number };
+    pastCap: { count: number; mb: number };
+    pending: number;
+    uploaded7d: { count: number; mb: number };
+    uploaded30d: number;
+    deleted7d: { count: number; mb: number };
+    revenue30dVnd: number;
+    purchases30d: number;
+    janitor: { shadow: boolean; deleted: number; wouldDelete: number; errors: number; staleFound: number; staleCleared: number } | null;
+  } | null;
+  ageHours: number | null;
+  gate: "all" | "pilot" | "off";
+  storedGb: number | null;
+  estUsdPerMonth: number | null;
+  estVndPerMonth: number | null;
+  freeStorageGb: number;
+}
+
 export interface PlatformHealthResponse {
   metrics: {
     takenAt: string;
@@ -8230,6 +8256,8 @@ export interface PlatformHealthResponse {
       dbTopTables: { table: string; mb: number }[];
       /** Kho ảnh sản phẩm "Tạo mới" (lát C) — thiếu/null ở backend cũ. */
       productImages?: { count: number; mb: number; owners: number; orphans: number } | null;
+      /** Kho video đóng hàng trên R2 — worker dọn ghi mỗi 6 giờ (26/11/2026); thiếu ở backend / ảnh chụp cũ. */
+      packStorage?: PackStorageHealth | null;
       dbConnections: number | null;
       dbMaxConnections: number | null;
       ramMb: number;
@@ -10720,25 +10748,71 @@ export type PackVideoUploadPlan =
       expiresAt: string;
     };
 
+/** Số giờ đi kèm câu trả lời của bước xin vé tải / báo tải xong (M2.2) — vắng mặt ở máy chủ bản cũ. */
+export type PackVideoHoursBalance = Pick<PackVideoHours, "purchasedSeconds" | "usedSeconds" | "remainingSeconds">;
+
 export interface PackVideoBeginResponse {
   video: { id: string; status: PackVideoStatus };
   /** null = video này đã lên kho từ lượt trước. */
   upload: PackVideoUploadPlan | null;
+  hours?: PackVideoHoursBalance;
+}
+
+// ---------- VÉ PHIÊN QUAY (M2.1, 26/11/2026 — docs/VIDEO-DONG-HANG-THIET-KE.md mục 38) ----------
+// Màn quay xin MỘT vé 10 phút rồi gửi kèm ở bốn đường nóng (hỏi tem, xin vé tải, ký mảnh, báo tải xong); trong hạn vé
+// máy chủ không đọc database để xác thực. Vé chỉ là LỐI TẮT: không xin được vé (máy chủ bản cũ, mất mạng, đang tắt)
+// thì các đường đó vẫn chạy bằng token đăng nhập như trước — không có cách hỏng mới.
+
+/** Xin vé mới trước khi vé cũ hết hạn ngần này (đồng hồ máy khách; vé hết hạn thật thì máy chủ tự rơi về xác thực thường). */
+const PACK_TICKET_RENEW_BEFORE_MS = 60_000;
+/** Xin vé hỏng / máy chủ không cấp → thôi hỏi trong ngần này. */
+const PACK_TICKET_RETRY_MS = 60_000;
+
+let packTicket: { forToken: string; value: string | null; untilMs: number } | null = null;
+let packTicketInflight: Promise<void> | null = null;
+
+async function packSessionHeaders(): Promise<Record<string, string>> {
+  const token = getToken();
+  if (!token) return {};
+  // Vé gắn với ĐÚNG phiên đăng nhập đã xin nó: đăng xuất / đổi tài khoản thì bỏ vé cũ.
+  if (!packTicket || packTicket.forToken !== token || Date.now() >= packTicket.untilMs) {
+    packTicketInflight ??= (async () => {
+      let value: string | null = null;
+      let untilMs = Date.now() + PACK_TICKET_RETRY_MS;
+      try {
+        const r = await apiFetch<{ ticket: string | null; ttlSec: number }>("/api/pack-videos/session", {
+          method: "POST",
+          body: "{}",
+        });
+        if (r.ticket && r.ttlSec > 0) {
+          value = r.ticket;
+          untilMs = Date.now() + Math.max(PACK_TICKET_RETRY_MS, r.ttlSec * 1000 - PACK_TICKET_RENEW_BEFORE_MS);
+        }
+      } catch {
+        // không có vé — gọi bằng token đăng nhập
+      }
+      packTicket = { forToken: token, value, untilMs };
+      packTicketInflight = null;
+    })();
+    await packTicketInflight;
+  }
+  return packTicket && packTicket.forToken === token && packTicket.value ? { "X-Pack-Session": packTicket.value } : {};
 }
 
 /** Bước 1: báo đã quay xong → dòng sổ PENDING + đường dẫn tải ký sẵn (ký cả cỡ và kiểu tệp). */
-export function beginPackVideoUpload(payload: PackVideoBeginPayload) {
+export async function beginPackVideoUpload(payload: PackVideoBeginPayload) {
   return apiFetch<PackVideoBeginResponse>("/api/pack-videos", {
     method: "POST",
     body: JSON.stringify(payload),
+    headers: await packSessionHeaders(),
   });
 }
 
 /** Xin ký lại mảnh khi đường dẫn hết hạn. */
-export function signPackVideoParts(id: string, partNumbers: number[]) {
+export async function signPackVideoParts(id: string, partNumbers: number[]) {
   return apiFetch<{ parts: PackVideoSignedPart[]; uploadedParts: number[]; expiresAt: string }>(
     `/api/pack-videos/${encodeURIComponent(id)}/parts`,
-    { method: "POST", body: JSON.stringify({ partNumbers }) }
+    { method: "POST", body: JSON.stringify({ partNumbers }), headers: await packSessionHeaders() }
   );
 }
 
@@ -10746,10 +10820,10 @@ export function signPackVideoParts(id: string, partNumbers: number[]) {
  * Bước cuối: báo tải xong. Máy chủ tự hỏi kho cỡ thật (và tự liệt kê mảnh khi tải theo mảnh) rồi mới
  * ghi STORED — trình duyệt không phải gửi ETag của từng mảnh.
  */
-export function completePackVideoUpload(id: string) {
-  return apiFetch<{ video: { id: string; status: PackVideoStatus } }>(
+export async function completePackVideoUpload(id: string) {
+  return apiFetch<{ video: { id: string; status: PackVideoStatus }; hours?: PackVideoHoursBalance }>(
     `/api/pack-videos/${encodeURIComponent(id)}/complete`,
-    { method: "POST", body: JSON.stringify({}) }
+    { method: "POST", body: JSON.stringify({}), headers: await packSessionHeaders() }
   );
 }
 
@@ -10769,8 +10843,9 @@ export interface PackVideoTemMatch {
 }
 
 /** `kind` = chế độ đang quay; khui hàng hoàn thì máy chủ thử thêm mã vận đơn chiều hoàn. */
-export function matchPackVideoTem(code: string, kind: PackVideoKind = "PACK") {
+export async function matchPackVideoTem(code: string, kind: PackVideoKind = "PACK") {
   return apiFetch<{ order: PackVideoTemMatch | null }>(
-    `/api/pack-videos/match?code=${encodeURIComponent(code)}&kind=${kind}`
+    `/api/pack-videos/match?code=${encodeURIComponent(code)}&kind=${kind}`,
+    { headers: await packSessionHeaders() }
   );
 }

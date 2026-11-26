@@ -159,8 +159,75 @@ export function packVideoAccountPurgeEnabled(): boolean {
  */
 export const PACK_VIDEO_PENDING_STALE_DAYS = 7;
 
+// ---------- HQ THEO DÕI KHO R2 (26/11/2026, docs/VIDEO-DONG-HANG-THIET-KE.md mục 36) ----------
+
+/**
+ * Giá R2 Standard — trang giá Cloudflare, đọc 24/11/2026 (mục 29.6). R2 KHÔNG có trần dung lượng: quá phần miễn phí
+ * thì Cloudflare tự trừ thẻ theo tháng. Băng thông ra và lệnh xóa không tính tiền. Cloudflare đổi giá thì sửa ở đây.
+ * GB tính theo 10^9 byte — em CHƯA thấy trang giá nói rõ 10^9 hay 2^30; chọn 10^9 vì ra tiền cao hơn (lệch ≈ 7 %).
+ */
+export const R2_PRICING = {
+  freeStorageGb: 10,
+  storageUsdPerGbMonth: 0.015,
+  /** Lượt ghi (PutObject, mỗi mảnh của tải theo mảnh) — 1 triệu lượt đầu mỗi tháng miễn phí. */
+  freeClassAOps: 1_000_000,
+  classAUsdPerMillion: 4.5,
+} as const;
+
+/** Tỷ giá quy đổi để so tiền kho (USD) với tiền bán giờ (đồng). SỐ TỰ CHỌN, cùng số mục 29.6 — chỉ để ước. */
+export const PACK_STORAGE_USD_VND = 26_000;
+
+/**
+ * Câu đếm kho chỉ đọc các mảnh tháng trong ngần này ngày gần nhất (trần giữ 60 ngày + 40 ngày dư). Video còn lưu
+ * cũ hơn mức này không được đếm — khi đó đèn "quá trần" đã đỏ từ trước.
+ */
+export const PACK_STORAGE_WINDOW_DAYS = 100;
+
+/** Video có hạn xóa đã qua quá ngần này ngày mà vẫn còn = luật xóa không chạy. 1 ngày = 4 nhịp dọn 6 giờ. */
+export const PACK_STORAGE_OVERDUE_GRACE_DAYS = 1;
+
+/** Số của lượt dọn cũ hơn ngần này giờ = worker dọn không chạy. 13 = hai nhịp 6 giờ + 1 giờ dư. */
+export const PACK_STORAGE_STALE_HOURS = 13;
+
+/**
+ * Câu đếm kho chạy lâu hơn mức này thì HQ báo vàng: tới lúc đổi sang cộng dồn theo ngày thay vì đếm lại cả cửa sổ.
+ * 5 giây là SỐ TỰ CHỌN (câu chạy trên worker mỗi 6 giờ, không nằm trên đường khách bấm).
+ */
+export const PACK_STORAGE_SLOW_MS = 5_000;
+
+/**
+ * Tiền kho ước một tháng vượt ngần này % tiền bán giờ 30 ngày thì HQ báo vàng. Mục 29.6 tính kho ≈ 7 % doanh thu
+ * giờ quay; 20 % (gấp ≈ 3 lần) là SỐ TỰ CHỌN. Chỉ xét khi tiền kho đã ≥ PACK_STORAGE_COST_FLOOR_USD (số nhỏ không báo).
+ */
+export const PACK_STORAGE_COST_WARN_PCT = 20;
+export const PACK_STORAGE_COST_FLOOR_USD = 5;
+
 /** Mỗi lượt worker dọn đọc tối đa ngần này video (đọc theo khóa, không quét bảng). SỐ TỰ CHỌN. */
 export const PACK_VIDEO_JANITOR_BATCH = 500;
 
 /** Một lượt dọn đi tối đa ngần này lô rồi nghỉ tới nhịp sau — không chiếm database cả giờ. SỐ TỰ CHỌN. */
 export const PACK_VIDEO_JANITOR_MAX_BATCHES = 20;
+
+// ---------- M2: ĐƯỜNG NÓNG NHẸ DATABASE (26/11/2026, docs/VIDEO-DONG-HANG-THIET-KE.md mục 29 + 38) ----------
+
+/**
+ * Hạn của VÉ PHIÊN QUAY (M2.1): 10 phút — SỐ TỰ CHỌN (mục 29.8 Q-2). Trong hạn vé, các đường nóng của màn quay
+ * (hỏi tem, xin vé tải, ký mảnh, báo tải xong) không đọc bảng User / StaffChannel. Giá phải trả: rút quyền một
+ * nhân viên / xóa tài khoản có hiệu lực chậm tối đa ngần này trên ĐÚNG các đường đó (đường khác vẫn tức thì).
+ * Công tắc tắt gấp PACK_VIDEO_GATE=off vẫn có hiệu lực ngay (kiểm mỗi lượt, không tốn database).
+ */
+export const PACK_SESSION_TTL_SEC = 10 * 60;
+
+/** Tắt nhận vé phiên quay (mọi lượt quay về xác thực thường) mà không cần ra bản: env PACK_SESSION_OFF=1. */
+export function packSessionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PACK_SESSION_OFF !== "1";
+}
+
+/**
+ * ĐỆM SỐ DƯ GIỜ theo chủ shop (M2.3): 15 giây — SỐ TỰ CHỌN (mục 29.5). Đệm nằm trong từng tiến trình web; chỉ dùng
+ * để trả lời "còn giờ không" lúc mở clip mới và để gửi số giờ kèm câu trả lời. Sai lệch tối đa = vài giây quay —
+ * luật 14/11 cho phép quay lố ("phần lố trừ lần mua sau"). Đệm báo HẾT giờ thì luôn đọc lại database trước khi chặn.
+ */
+export const PACK_HOURS_CACHE_TTL_MS = 15_000;
+/** Trần số chủ shop nằm trong đệm của một tiến trình (đầy thì xóa sạch, đọc lại dần). SỐ TỰ CHỌN. */
+export const PACK_HOURS_CACHE_MAX = 50_000;

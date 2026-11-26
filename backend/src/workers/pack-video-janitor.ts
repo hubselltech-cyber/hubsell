@@ -7,6 +7,7 @@
 //   3. video tới hạn: CHẠY BÓNG mặc định — chỉ đếm "sẽ xóa", KHÔNG xóa tệp nào trên R2.
 //      Xóa thật chỉ khi env PACK_VIDEO_DELETE_ENABLED=1 (sau một tuần chạy bóng + anh duyệt).
 //   4. lượt tải lên dở dang quá 7 ngày: cùng công tắc — chạy bóng chỉ đếm, bật thì hủy lượt tải + xóa mảnh.
+//   5. đếm kho (số video / dung lượng đang lưu, quá hạn chưa xóa) + kết quả lượt dọn → maintenance_jobs cho HQ Sức khỏe.
 // Nhịp 6 giờ là SỐ TỰ CHỌN: luật tính bằng ngày. Lượt đầu 10 phút sau khi bật (không chen lúc khởi động).
 // Tắt cả worker bằng PACK_VIDEO_JANITOR_OFF=1. Mọi trạng thái nghiệp vụ (mốc gộp, con trỏ gán hạn) nằm ở
 // database (maintenance_jobs); biến cấp tệp chỉ là cờ chống chạy chồng (test no-module-state).
@@ -14,6 +15,7 @@
 
 import { isR2Configured, getR2Storage } from "../integrations/r2/client";
 import { assignRetention, processDueVideos, sweepStalePending } from "../services/pack-video/retention";
+import { recordPackStorage } from "../services/pack-video/storage-health";
 import { rollUpUsageDaily } from "../services/pack-video/usage-daily";
 import { packVideoDeleteEnabled } from "../config/pack-video";
 
@@ -70,6 +72,19 @@ export async function runPackVideoJanitor(now: Date = new Date()): Promise<void>
           : `[pack-video-janitor] Lượt tải dở quá hạn: đã dọn ${stale.cleared}/${stale.found} · lỗi ${stale.errors}`
       );
     }
+
+    // 5. Số kho cho HQ Sức khỏe — ghi SAU CÙNG: lượt dọn hỏng giữa chừng thì số cũ đứng yên và HQ báo đỏ theo tuổi.
+    const storage = await recordPackStorage(now, {
+      shadow: due.shadow,
+      deleted: due.deleted,
+      wouldDelete: due.wouldDelete,
+      errors: due.errors + stale.errors,
+      staleFound: stale.found,
+      staleCleared: stale.cleared,
+    });
+    console.log(
+      `[pack-video-janitor] Kho: đang lưu ${storage.stored.count} video · ${storage.stored.mb} MB · ${storage.stored.owners} chủ shop · quá hạn chưa xóa ${storage.overdue.count} (đếm ${storage.ms} ms)`
+    );
   } catch (err) {
     console.error("[pack-video-janitor] Lỗi lượt dọn:", (err as Error).message);
   } finally {

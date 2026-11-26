@@ -1574,7 +1574,7 @@ biết R2 mình full hay không còn kịp gia hạn nữa."
 | 1 | **Quay cho nhân viên** (app + web) | **24/11 ĐÃ DỰNG — mục 28** (theo quyền có sẵn; web + máy chủ local, app TestFlight 1.5.1 (44)) | anh bảo push + thử |
 | 2 | **Hàng đợi** (hàng chờ bền M1) | M1 lên prod 19/11 (22.10); **M1b cứu clip dở + K-6 gửi tiếp ở mọi trang đã dựng LOCAL 19/11 (mục 24)** | anh bảo push; anh thử webcam thật + rút mạng thật (24.5); trả lời K-1, K-3; lát kế M2 (máy chủ gộp lô) — **24/11 viết lại theo mốc 1 triệu bàn: mục 29** |
 | 3 | **Nhiều camera trên một máy** (màn Nhiều bàn, M3) | đo M0 xong (18.7–18.9), chưa dựng | xem ghi chú dưới |
-| 4 | **HQ theo dõi R2** | chưa có gì | xem ghi chú dưới |
+| 4 | **HQ theo dõi R2** | **26/11 ĐÃ CODE local — mục 36** (thẻ + đèn ở HQ Sức khỏe, số do worker dọn ghi mỗi 6 giờ) | anh bảo commit + push |
 
 **Ghi chú việc 3 — ổ chia USB [C = đã đo 18/11, S = suy đoán]:** hai webcam chung MỘT ổ chia rời của anh (067B:2586) thì chỉ một con
 chạy, ở mọi cỡ hình, cả ngoài Chrome [C]; cắm thẳng máy thì 3 nguồn hình chạy cùng lúc 30 phút không rớt [C]. → Cách "mỗi ổ chia một cam
@@ -2208,7 +2208,7 @@ Dữ liệu giả có mã dài nhất em nghĩ ra (17, 23 và 24 ký tự, kèm 
 - ❌ Chưa đăng nhập prod bằng tài khoản nhân viên (admin@hubsell.vn hiện có nhân viên nào / quyền gì em chưa xem); chưa nhìn
   bản 44 trong app TestFlight.
 
-## 29. M2 theo mô hình lớn: 1 TRIỆU bàn cùng đẩy video (24/11/2026 — KHẢO SÁT + PHƯƠNG ÁN, anh CHƯA duyệt, chưa code)
+## 29. M2 theo mô hình lớn: 1 TRIỆU bàn cùng đẩy video (24/11/2026 — KHẢO SÁT + PHƯƠNG ÁN; 26/11 anh bảo "làm M2" → M2.1–M2.3 đã code local, xem mục 38)
 
 > Anh Trung 24/11: "mình cứ làm tiếp M2 đi. Phần này quan trọng, em cần khảo sát và tư duy chuẩn để khớp với mô hình lớn. giả sử có
 > 1 triệu gian hàng đẩy video cùng lúc". Nền không tra lại: 18.2–18.4, 18.10, 21, 24. **[C]** = đọc mã / trang gốc / đo · **[S]** = suy
@@ -2778,3 +2778,157 @@ cần một lát riêng. Các test còn lại của pack-video + luật + thông
 - ⚠️ Rủi ro đã biết khi mở: máy chủ tin giờ bắt đầu / thời lượng do trình duyệt báo (mục 30.4) — khách sửa mã trình duyệt có thể quay
   không trừ giờ trong tối đa ~25 giờ sau khi hết giờ. Giá giờ quay chưa có ở Điều khoản / trang Bảng giá (31.6). Bucket prod vẫn chung với dev.
 - Tắt gấp: đặt `PACK_VIDEO_GATE=pilot` (hoặc `off`) trên web `hubsell-backend-sg` rồi deploy.
+
+## 36. HQ theo dõi kho R2 (26/11/2026 tối, anh: "Làm HQ, xong thì tách bucket prod, tiếp đến làm M2") — ĐÃ CODE LOCAL, chưa commit / push
+
+Việc 4 của mục 23. Anh lo "nếu vượt còn phải mua thêm dung lượng". Trả lời bằng thẻ: **R2 không có trần và không có gia hạn** — quá
+10 GB miễn phí thì Cloudflare tự trừ thẻ. Thứ HQ canh được: đang lưu bao nhiêu → ước tiền tháng; luật xóa có xóa thật không; worker dọn
+còn chạy không. **Thẻ thanh toán Cloudflare còn trừ được hay không thì mã KHÔNG đọc được** — vẫn phải mở trang Billing của Cloudflare.
+
+### 36.1 Cách làm
+
+- `backend/src/services/pack-video/storage-health.ts`:
+  - `measurePackStorage` — MỘT câu đếm trên `pack_videos`, chỉ trong 100 ngày gần nhất (`recordedDate >= hôm nay − 100` → Postgres bỏ
+    qua mảnh tháng cũ hơn) + một câu trên `pack_hour_grants` (tiền bán giờ 30 ngày).
+  - `recordPackStorage` — worker dọn gọi ở CUỐI mỗi lượt (bước 5, mỗi 6 giờ), ghi kết quả + kết quả lượt dọn (xóa thật / chạy bóng, đã
+    xóa, lỗi) vào `maintenance_jobs` khóa `pack-storage-health`. Lượt dọn hỏng giữa chừng → số cũ đứng yên → HQ đỏ theo tuổi.
+  - `collectPackStorageHealth` — HQ đọc đúng MỘT dòng theo khóa chính. Mở trang HQ không đụng sổ video.
+  - `packStorageSignal` — hàm thuần xếp mức.
+- Không gọi Cloudflare, không thêm bảng, không migration, không biến môi trường mới.
+- HQ Sức khỏe: dòng **"Kho video đóng hàng (R2)"** trong Dấu hiệu vận hành + thẻ chi tiết cùng tên ở cột phải
+  (`frontend/src/app/admin/health/pack-storage-card.tsx`). Ảnh chụp sức khỏe 2 lần / ngày tự mang theo số này.
+
+### 36.2 Luật xếp mức (số ở `config/pack-video.ts`, mỗi số ghi căn cứ)
+
+| Mức | Khi nào | Căn cứ |
+|---|---|---|
+| ĐỎ | số của lượt dọn cũ quá 13 giờ | hai nhịp dọn 6 giờ + 1 giờ dư |
+| ĐỎ | cổng đang mở (`all` / `pilot`), còn video, mà lượt dọn CHẠY BÓNG | Chính sách bảo mật mục 8 hứa tự xóa |
+| ĐỎ | có video qua hạn xóa hơn 1 ngày vẫn còn | 1 ngày = 4 nhịp dọn đã bỏ lỡ |
+| ĐỎ | có dòng sổ còn "đã lưu" quá trần 60 + 3 ngày | luật vòng đời R2 đã xóa tệp ở ngày 60 → sổ lệch kho |
+| VÀNG | chưa có số (worker vừa khởi động, chờ 10 phút) | — |
+| VÀNG | lượt dọn có lỗi xóa tệp | lượt sau tự thử lại |
+| VÀNG | câu đếm kho chạy quá 5 giây | SỐ TỰ CHỌN — tới lúc đổi sang cộng dồn theo ngày |
+| VÀNG | tiền kho ước ≥ 5 USD / tháng VÀ vượt 20 % tiền bán giờ 30 ngày | mục 29.6 tính kho ≈ 7 % doanh thu; 20 % và 5 USD là SỐ TỰ CHỌN |
+
+Vượt 10 GB miễn phí KHÔNG tự làm vàng (sẽ vàng mãi) — chỉ hiện số tiền.
+
+### 36.3 Ước tiền
+
+`(GB đang lưu − 10) × 0,015 USD + (lượt tải lên 30 ngày − 1 triệu) / 1 triệu × 4,50 USD`; quy đổi 26.000 đ / USD (số tự chọn). Là số
+"nếu giữ mức hôm nay cả tháng" — Cloudflare tính theo GB-tháng trung bình. GB = 10^9 byte: em CHƯA thấy trang giá nói rõ 10^9 hay 2^30,
+chọn 10^9 vì ra tiền cao hơn (lệch ≈ 7 %). Lượt đọc (Class B) chưa tính: 10 triệu lượt đầu miễn phí.
+
+### 36.4 Giới hạn đã biết
+
+1. Nguồn là SỔ của mình. Tệp mồ côi trên R2 (có tệp, không có dòng sổ — ví dụ script seed local ghi vào bucket chung) không được đếm →
+   thỉnh thoảng so tay với số ở trang R2 của Cloudflare. Tách bucket prod (mục 37) bỏ được nguồn lệch lớn nhất.
+2. Câu đếm tốn theo số video trong 100 ngày. Local 28 video: 61 ms. Ở quy mô lớn nó sẽ chậm — thẻ tự ghi thời gian chạy và báo vàng
+   quá 5 giây; lúc đó đổi sang cộng dồn theo ngày (hoặc hỏi API phân tích của Cloudflare, cần khóa API riêng). Chưa đo trên prod.
+3. Video còn lưu cũ hơn 100 ngày không được đếm (khi đó đèn "quá trần" đã đỏ từ ngày 63).
+4. Số trễ tối đa 6 giờ.
+
+### 36.5 Đã kiểm / chưa kiểm
+
+- ✅ Test: `storage-health.test.ts` 14 ca (ước tiền, từng luật xếp mức, đỏ thắng vàng) + `storage-health-db.test.ts` 3 ca trên Postgres
+  thật (so chênh lệch trước / sau khi chèn video thử). Bộ video + HQ + worker: 291 / 291. Kiểm kiểu backend + web sạch.
+- ✅ Màn local `/admin/health` với số rất rộng (12 triệu video, 48.765 GB, đủ các dòng đỏ): 1024 / 1280 / 1700, sáng + tối, không tràn.
+- ❌ Chưa lên prod → chưa có số thật của prod; chưa so với số trang R2 của Cloudflare. Lượt dọn đầu sau khi worker lên bản mới 10 phút
+  mới ghi số.
+
+## 37. Tách bucket prod khỏi dev (26/11/2026 tối) — PHƯƠNG ÁN, ⏳ chờ anh chọn A / B; chưa đụng Cloudflare, chưa đổi biến nào
+
+Hiện trạng [C, đọc 26/11]: một bucket `hubsell-video-thu`, MỘT khóa R2 (quyền đọc / ghi tệp trên đúng bucket đó) nằm ở cả Render
+(web + nhóm biến `hubsell-r2-video` của worker) lẫn `backend/.env` trên máy dev. Mục tiêu thật của việc tách: **máy dev không còn cầm
+khóa chạm được video của khách**, và thao tác thử (seed, Empty, luật vòng đời thử) không thể làm mất video prod.
+
+| | **B — dời DEV sang bucket mới (em đề nghị)** | A — dời PROD sang bucket mới |
+|---|---|---|
+| Bucket mới | `hubsell-video-dev` | `hubsell-video` |
+| Prod | không đổi gì: bucket, khóa, biến Render, tệp đang có | đổi 4 biến `R2_*` ở web + nhóm biến worker → deploy lại cả hai |
+| Tệp prod đang có | nằm yên | phải CHÉP sang bucket mới trước khi đổi biến (script chạy với hai bộ khóa); video khách tải lên giữa lúc chép và lúc đổi biến nằm lại bucket cũ → phải chép lượt hai hoặc tắt cổng `PACK_VIDEO_GATE=off` trong lúc chuyển; đường dẫn ký sẵn đang dở hỏng |
+| Khóa mới | 1 khóa chỉ cho bucket dev → dán vào `backend/.env` | 1 khóa cho bucket prod → gõ vào Render |
+| Rủi ro với khách | không có | có (tính năng đã mở cho khách từ 26/11) |
+| Điểm trừ | bucket prod vẫn mang tên `-thu` (R2 không đổi tên bucket được); tên chỉ mình thấy | tên đẹp |
+
+**Các bước của B:**
+1. (em, trang Cloudflare) tạo bucket `hubsell-video-dev` cùng vùng APAC; CORS chỉ `http://localhost:3010` + `http://localhost:3000`;
+   luật vòng đời xóa tệp sau 60 ngày (giống prod để hành vi local khớp prod).
+2. (ANH — khóa bí mật, em không tạo / không gõ) R2 › Manage API Tokens › tạo khóa "hubsell-video-dev", quyền Object Read & Write, chỉ
+   bucket `hubsell-video-dev` → trong `backend/.env` sửa 3 dòng `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (`R2_ENDPOINT`
+   giữ nguyên). Từ lúc này máy dev không còn khóa prod.
+3. (em) đổi rào của `scripts/pack-video-seed-clips.ts` từ "tên kết thúc `-thu`" sang "`-dev`" (để script không bao giờ chạy vào bucket
+   prod); thử trên local: quay / xem / xóa đi vào bucket mới.
+4. (em, trang Cloudflare) CORS bucket prod bỏ hai nguồn `localhost`; `scripts/pack-video-r2-cors.ts` tách danh sách nguồn theo bucket.
+5. Tệp cũ của database local còn trong bucket prod (một thư mục chủ shop): để luật 60 ngày tự xóa. Video cũ trên local sẽ không phát
+   được nữa (sổ local trỏ bucket mới) — dọn sổ local bằng một lệnh xóa.
+
+**Em không tự làm bước nào khi anh chưa chọn**, vì A / B khác nhau ngay từ tên bucket, và bước 2 là việc của anh ở cả hai cách.
+
+## 38. M2.1 + M2.2 + M2.3 — ĐÃ CODE LOCAL (26/11/2026 tối, anh: "tiếp đến làm M2") — chưa commit / push, chưa có số đo trên prod
+
+Em hiểu "làm M2" = duyệt mục 29.8 theo đề nghị: Q-1 làm M2.1 → M2.2 → M2.3 trước (không migration, không đổi hợp đồng), Q-2 vé 10 phút.
+**Anh chưa nói riêng từng câu** — nếu anh muốn số khác thì đổi ở `config/pack-video.ts`. M2.4 – M2.6 CHƯA làm.
+
+### 38.1 M2.1 — vé phiên quay
+
+- `POST /api/pack-videos/session` (qua xác thực thường + cổng như mọi đường) → vé JWT 10 phút mang: chủ shop, người quay, là nhân
+  viên hay không, quyền đóng / khui, có phải tài khoản thí điểm, danh sách gian được giao. `lib/pack-session-ticket.ts`.
+- Cửa của nhóm `/api/pack-videos` nay là `middleware/pack-session.ts` (`packVideoGateway`), hai lối:
+  - **đường nóng** (`GET /match`, `POST /`, `POST /:id/parts`, `POST /:id/complete`) có tiêu đề `X-Pack-Session` mang vé còn hạn →
+    KHÔNG đọc `User` / `StaffChannel`, không chạy cổng (đã chạy lúc cấp vé);
+  - mọi trường hợp khác → `requireAuth` → `requirePackVideo` y như trước.
+- **Vé hỏng / hết hạn không sinh lỗi mới:** rơi về lối xác thực thường (màn quay luôn gửi kèm token đăng nhập). App TestFlight và mọi
+  máy khách bản cũ không biết vé vẫn chạy nguyên — hợp đồng API không đổi.
+- Vé ≠ token đăng nhập: vé có `aud` riêng và không có `sub` → `requireAuth` từ chối vé; kiểm vé đòi `aud` → token đăng nhập không giả
+  làm vé. Cùng khóa ký `JWT_SECRET`, không thêm biến bí mật.
+- Kiểm MỖI lượt, không tốn database: `PACK_VIDEO_GATE=off` (tắt gấp vẫn tức thì), cổng `pilot` (vé ghi sẵn cờ thí điểm), kho R2 đã cấu
+  hình. Tắt riêng vé: env `PACK_SESSION_OFF=1` trên web (không cấp vé mới, không nhận vé cũ).
+- **Cái giá (đúng điều 29.7 mục 4):** trong tối đa 10 phút, trên ĐÚNG bốn đường nóng, các thay đổi sau chưa có hiệu lực: rút quyền
+  nhân viên, đổi gian được giao, xóa tài khoản, gói hết hạn, đổi quyền. Các đường khác (xem, tải về, xóa, mua giờ) vẫn tức thì.
+- Nhân viên được giao hơn 200 gian thì không cấp vé (vé quá to) → đi xác thực thường.
+
+### 38.2 M2.2 — số giờ đi kèm câu trả lời
+
+- `POST /` và `POST /:id/complete` trả thêm `hours: { purchasedSeconds, usedSeconds, remainingSeconds }`.
+- Web: màn quay lấy số giờ từ câu trả lời "báo tải xong" (`setQueryData`), KHÔNG gọi `/hours` sau mỗi clip nữa; danh sách / số chip
+  vẫn làm mới gộp 30 giây. Máy chủ không gửi kèm (bản cũ) hoặc clip do tab khác gửi → tự hỏi `/hours` như trước.
+
+### 38.3 M2.3 — đệm số dư theo chủ shop
+
+- `services/pack-video/hours.ts`: mỗi tiến trình web nhớ số dư của từng chủ shop **15 giây** (số tự chọn), tối đa 50.000 chủ shop.
+- Lúc xin vé tải: đệm báo CÒN giờ → cho mở, không đọc database. Đệm báo HẾT (hoặc chưa nhớ) → đọc tươi rồi mới xét, nên người vừa mua
+  giờ ở máy khác không bị chặn oan. Video vừa lên kho ở chính máy này → cộng thẳng vào số đã nhớ. Mua / tặng / điều chỉnh giờ → quên đệm.
+- **Hệ quả:** nhiều máy web thì mỗi máy một đệm → sau khi hết giờ, clip mới còn mở được thêm tối đa ≈ 15 giây ở máy chưa biết. Luật
+  14/11 cho phép quay lố (phần lố trừ lần mua sau). Trang số giờ / sổ giờ (`GET /hours`) vẫn đọc tươi.
+
+### 38.4 Số câu database cho một clip (đọc mã, CHƯA đo trên prod)
+
+| Lượt | Trước | Sau (có vé, đệm còn hạn) |
+|---|---|---|
+| `GET /match` | xác thực 1–2 + tra đơn ≈ 4–5 | tra đơn ≈ 4–5 (M2.5 chưa làm) |
+| `POST /` | xác thực 1–2 + tìm clientId 1 + số dư 4 + tra đơn 1–2 + chèn 1 | tìm clientId 1 + tra đơn 1–2 + chèn 1 |
+| `POST /:id/complete` | xác thực 1–2 + tìm 1 + cập nhật 1 | tìm 1 + cập nhật 1 |
+| làm mới `/hours` | xác thực 1–2 + ≈ 6 | không còn |
+| **Cộng** | **≈ 25–30 câu, 4 lượt gọi** | **≈ 10–12 câu, 3 lượt gọi** (+ 1 lượt xin vé / 9 phút) |
+
+Số "sau" là em ĐẾM TỪ MÃ; chưa bật log đếm câu, chưa đo trên prod.
+
+### 38.5 Đã kiểm / chưa kiểm
+
+- ✅ Test mới: `lib/__tests__/pack-session-ticket.test.ts` 6 ca (ký / kiểm, hết hạn, sửa vé, không lẫn với token đăng nhập, danh sách
+  đường nóng) · `routes/__tests__/pack-video-session-http-db.test.ts` 9 ca trên app Express thật (chỉ có vé: đường nóng 200, đường khác
+  401; vé hỏng rơi về xác thực thường; quyền trong vé; `PACK_VIDEO_GATE=off` / `pilot` / `PACK_SESSION_OFF=1`; tài khoản vừa xóa vẫn đi
+  tới khi vé hết hạn; câu trả lời có số giờ) · `hours-db.test.ts` thêm 2 ca đệm. Bộ rộng backend `services routes lib workers
+  middleware config`: **1.381 đạt / 0 đỏ**. Bộ quay phía web (`tsx --test`): 54 / 54. Kiểm kiểu + lint hai phía sạch.
+- ✅ Local qua trình duyệt (khác nguồn 3010 → 4010, tức có CORS): xin vé 200, `/match` chỉ với vé 200, `/summary` chỉ với vé 401;
+  trang quay mở bình thường, số giờ hiện đúng.
+- ❌ CHƯA quay thật bằng webcam với bản này (trình duyệt trong app Claude bị chặn camera) → ⏳ anh thử trên Chrome local hoặc sau khi
+  lên prod: quay 2–3 tem, xem số giờ giảm sau mỗi clip mà không tải lại trang; để màn quay mở quá 10 phút rồi quay tiếp (vé tự xin lại).
+- ❌ Chưa lên prod. ❌ App điện thoại (nhánh thử) chưa dùng vé / chưa đọc `hours` — vẫn chạy đường cũ, không hỏng.
+
+### 38.6 Còn lại của M2
+
+M2.5 (EXPLAIN câu tra mã vận đơn trên prod — chỉ mục `Order(trackingCode)` đã dựng 25/11, chỉ mục chiều hoàn chờ dựng lại 03:30 27/11
+→ đo sau mốc đó; gộp 4 câu của `matchTem`) · M2.4 (vé không ghi + ghi gộp — có migration, đổi hợp đồng, đi cùng bản app kế) · M2.6
+(chặn gọi dồn + `Retry-After`) · M4 đo · M2.7 khi số đo đòi.

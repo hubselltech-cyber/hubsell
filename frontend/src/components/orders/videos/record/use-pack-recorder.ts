@@ -31,6 +31,8 @@ import {
 } from "@/lib/pack-video-recorder/session";
 import type { ClipKind } from "@/lib/pack-video-recorder/types";
 import { createThrottle } from "@/lib/pack-video-recorder/upload-speed";
+import type { PackVideoHours } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
 
 import { usePackVideoHours } from "../hours-balance";
 
@@ -189,13 +191,37 @@ export function usePackRecorder(initialKind: ClipKind = "PACK") {
     void resumeUploadQueue();
   }, []);
 
-  // Video lên kho → làm mới danh sách video, số trên chip, số giờ đã quay — GỘP, tối đa một lần / 30 giây.
+  // Video lên kho → làm mới danh sách video, số trên chip — GỘP, tối đa một lần / 30 giây.
+  // SỐ GIỜ (M2.2): lấy thẳng từ câu trả lời "báo tải xong", KHÔNG gọi /hours sau mỗi clip. Chỉ khi máy chủ không gửi
+  // kèm (bản cũ / clip do tab khác gửi) mới hỏi lại, cũng gộp 30 giây.
   React.useEffect(() => {
-    const refresh = createThrottle(() => void queryClient.invalidateQueries({ queryKey: ["pack-videos"] }), REFRESH_EVERY_MS);
-    const off = onClipStored(refresh.call);
+    const refreshLists = createThrottle(
+      () =>
+        void queryClient.invalidateQueries({
+          queryKey: ["pack-videos"],
+          predicate: (query) => query.queryKey[1] !== "hours",
+        }),
+      REFRESH_EVERY_MS
+    );
+    const refreshHours = createThrottle(
+      () => void queryClient.invalidateQueries({ queryKey: qk.packVideoHours() }),
+      REFRESH_EVERY_MS
+    );
+    const off = onClipStored((hours) => {
+      refreshLists.call();
+      if (!hours) {
+        refreshHours.call();
+        return;
+      }
+      // Hai clip xong sát nhau có thể về lệch thứ tự: câu trả lời có "đã quay" nhỏ hơn số đang hiện là câu cũ → bỏ.
+      queryClient.setQueryData<PackVideoHours>(qk.packVideoHours(), (old) =>
+        old && hours.usedSeconds >= old.usedSeconds ? { ...old, ...hours } : old
+      );
+    });
     return () => {
       off();
-      refresh.cancel();
+      refreshLists.cancel();
+      refreshHours.cancel();
     };
   }, [queryClient]);
 

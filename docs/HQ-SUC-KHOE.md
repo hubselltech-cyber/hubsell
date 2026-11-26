@@ -61,6 +61,10 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
 - **Gói đang dùng** khai trong `capacity-plan.ts` (anh sửa khi nâng): Render web
   Free 512MB / Supabase Free 500MB DB, 60 kết nối… → tính **% gói** cho DB, RAM,
   kết nối. Không đoán gói qua API (Render không lộ), khai tay là nguồn sự thật.
+- **Kho video đóng hàng (R2)** (26/11/2026): dấu hiệu `infra.r2` + thẻ chi tiết. Số do worker dọn video ghi mỗi 6 giờ vào
+  `maintenance_jobs` (khóa `pack-storage-health`); HQ chỉ đọc một dòng. Đỏ khi worker dọn ngừng / chạy bóng lúc cổng mở / có video
+  quá hạn chưa xóa. R2 không có trần dung lượng — thẻ hiện tiền ước, không đọc được thẻ thanh toán Cloudflare. Luật xếp mức + giới
+  hạn: `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 36; mã `services/pack-video/storage-health.ts`.
 
 Lưu `platform_health_snapshots` mỗi giờ (JSON metrics + vài cột số để vẽ nhanh),
 giữ 90 ngày (log-cleanup dọn).

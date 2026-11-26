@@ -37,7 +37,7 @@ import {
   type PackVideoStatus,
 } from "../../lib/pack-video-rules";
 import { prisma } from "../../lib/prisma";
-import { canOpenNewVideo } from "./hours";
+import { canOpenNewVideo, getHoursBalanceCached, noteUsedSeconds, type HoursBalance } from "./hours";
 import { matchOrderByTrackingCode } from "./order-match";
 
 /** Lỗi nghiệp vụ có mã — route đổi thẳng thành phản hồi HTTP. */
@@ -98,6 +98,7 @@ const ROW_SELECT = {
   trackingCode: true,
   kind: true,
   sizeBytes: true,
+  durationSec: true,
   objectKey: true,
   uploadId: true,
   status: true,
@@ -225,14 +226,17 @@ export async function beginUpload(
   actor: PackVideoActor,
   input: BeginInput,
   deps: PackVideoDeps = {}
-): Promise<{ video: VideoRef; upload: UploadPlan | null }> {
+): Promise<{ video: VideoRef; upload: UploadPlan | null; hours: HoursBalance }> {
   const now = (deps.now ?? (() => new Date()))();
 
   let row = await findByClientId(actor, input.clientId);
   let resumed = row !== null;
+  // Số giờ đi kèm câu trả lời (M2.2) — màn quay không phải gọi /hours riêng sau mỗi clip.
+  let hours: HoursBalance | null = null;
 
   if (!row) {
     const allowed = await canOpenNewVideo(actor.ownerId, input.recordedAt, now);
+    if (allowed.ok) hours = allowed.balance;
     if (!allowed.ok) {
       throw new PackVideoError(
         402,
@@ -290,11 +294,12 @@ export async function beginUpload(
     }
   }
 
-  if (row.status === "STORED") return { video: refOf(row), upload: null };
+  hours ??= await getHoursBalanceCached(actor.ownerId);
+  if (row.status === "STORED") return { video: refOf(row), upload: null, hours };
   if (row.status !== "PENDING") {
     throw new PackVideoError(409, "UPLOAD_STATE", "Video này đã bị xóa, không tải lên lại được");
   }
-  return { video: refOf(row), upload: await planFor(row, deps, resumed) };
+  return { video: refOf(row), upload: await planFor(row, deps, resumed), hours };
 }
 
 /** Xin ký lại / ký thêm mảnh cho một lượt tải theo mảnh còn dang dở. */
@@ -345,10 +350,10 @@ export async function completeUpload(
   id: string,
   parts: unknown,
   deps: PackVideoDeps = {}
-): Promise<{ video: VideoRef }> {
+): Promise<{ video: VideoRef; hours: HoursBalance }> {
   const row = await findOwned(actor.ownerId, id, actor);
   if (!row) throw new PackVideoError(404, "NOT_FOUND", "Không tìm thấy video");
-  if (row.status === "STORED") return { video: refOf(row) };
+  if (row.status === "STORED") return { video: refOf(row), hours: await getHoursBalanceCached(actor.ownerId) };
   if (row.status !== "PENDING") {
     throw new PackVideoError(409, "UPLOAD_STATE", "Video này đã bị xóa");
   }
@@ -397,11 +402,13 @@ export async function completeUpload(
   }
 
   // Chỉ dòng còn PENDING mới chuyển; lượt gọi lặp chạy trước đã chuyển rồi thì count = 0, vẫn là STORED.
-  await prisma.packVideo.updateMany({
+  const moved = await prisma.packVideo.updateMany({
     where: { ownerId: actor.ownerId, id, status: "PENDING" },
     data: { status: "STORED", uploadedAt: now, uploadId: null },
   });
-  return { video: { id, status: "STORED" } };
+  // Giờ chỉ tính khi video đã nằm trên kho: CHÍNH lượt này chuyển dòng thì cộng thời lượng vào số dư đã nhớ (M2.3).
+  if (moved.count === 1) noteUsedSeconds(actor.ownerId, row.durationSec);
+  return { video: { id, status: "STORED" }, hours: await getHoursBalanceCached(actor.ownerId) };
 }
 
 /** Lượt tải theo mảnh đã bị kho hủy — app gọi lại bước bắt đầu (cùng clientId) để mở lượt mới. */

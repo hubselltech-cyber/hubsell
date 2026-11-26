@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AdminError, AdminPageHeader, StatCard, formatCount, useAdminPage } from "@/components/admin/shared";
+import { PackStorageCard } from "./pack-storage-card";
 
 /**
  * HQ → SỨC KHỎE (docs/HQ-SUC-KHOE.md, 12/09/2026)
@@ -355,6 +356,7 @@ export default function AdminHealthPage() {
                   </CardContent>
                 </Card>
 
+                {m.infra.packStorage && <PackStorageCard data={m.infra.packStorage} />}
                 {m.infra.productImages && (
                   <Card>
                     <CardHeader className="pb-2">

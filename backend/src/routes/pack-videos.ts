@@ -21,6 +21,9 @@
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
 //   DELETE /:id            chủ shop tự xóa một video đã lưu (không khôi phục được)
 //   POST /consent          chủ shop đồng ý lần đầu (ghi sổ đồng ý) — đường DUY NHẤT qua cổng khi chưa đồng ý
+//   POST /session          cấp VÉ PHIÊN QUAY 10 phút (M2.1) — đường nóng có vé thì không đọc database để xác thực
+// ĐƯỜNG NÓNG nhận vé: GET /match · POST / · POST /:id/parts · POST /:id/complete (middleware/pack-session.ts).
+// POST / và POST /:id/complete trả kèm hours (đã mua / đã quay / còn lại) — màn quay không gọi /hours riêng (M2.2).
 // Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
 //
 // QUYỀN TỪNG ĐƯỜNG (24/11/2026 — nhân viên của chủ đã mở được vào, docs VIDEO-DONG-HANG-THIET-KE mục 28;
@@ -36,7 +39,10 @@
 import { Router, type NextFunction, type Response } from "express";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import type { PackVideoRequest } from "../middleware/require-pack-video";
-import { NO_PACK_VIDEO_CAPS, type PackVideoCaps } from "../services/pack-video/access";
+import { packSessionEnabled } from "../config/pack-video";
+import { PACK_SESSION_MAX_CHANNELS, signPackSessionTicket } from "../lib/pack-session-ticket";
+import { NO_PACK_VIDEO_CAPS, isPackVideoPilot, type PackVideoCaps } from "../services/pack-video/access";
+import { ownerEmailOf } from "../services/pack-video/subject";
 import { R2Error } from "../integrations/r2/client";
 import { prisma } from "../lib/prisma";
 import { CheckoutError, createPackHoursCheckout } from "../services/gateway-checkout";
@@ -176,6 +182,36 @@ router.post(
       userAgent: String(req.headers["user-agent"] ?? "") || null,
     });
     res.json({ ok: true });
+  })
+);
+
+// ───────── Vé phiên quay (M2.1) ─────────
+
+// Màn quay xin vé MỘT lần rồi gửi kèm ở các đường nóng (tiêu đề X-Pack-Session) — trong hạn vé các đường đó không
+// đọc database để xác thực (middleware/pack-session.ts). Đường này LUÔN đi xác thực thường: không dùng vé để xin vé.
+// ticket = null: máy chủ không cấp (đang tắt, hoặc nhân viên được giao quá nhiều gian) → máy quay cứ gọi như cũ.
+router.post(
+  "/session",
+  handle(async (req, res) => {
+    const caps = capsOf(req);
+    const channels = req.allowedChannelIds ?? null;
+    if (!packSessionEnabled() || (channels !== null && channels.length > PACK_SESSION_MAX_CHANNELS)) {
+      res.json({ ticket: null, expiresAt: null, ttlSec: 0 });
+      return;
+    }
+    const staff = !caps.manage;
+    const ownerEmail = staff ? await ownerEmailOf(req.ownerId!) : (req.userEmail ?? null);
+    res.json(
+      signPackSessionTicket({
+        userId: req.userId!,
+        ownerId: req.ownerId!,
+        staff,
+        pack: caps.pack,
+        unbox: caps.unbox,
+        pilot: isPackVideoPilot(ownerEmail),
+        allowedChannelIds: channels,
+      })
+    );
   })
 );
 

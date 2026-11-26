@@ -16,6 +16,7 @@ import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
 import { collectInvoiceHealth, invoiceSignal, type InvoiceHealth } from "./invoice-health";
 import { collectStockCounterHealth, stockCounterSignal, type StockCounterHealth } from "./stock-committed";
+import { collectPackStorageHealth, packStorageSignal, type PackStorageHealth } from "./pack-video/storage-health";
 import { DELIVERY_FAIL_FEATURE } from "../integrations/shopee/delivery-fail";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import {
@@ -182,6 +183,8 @@ export interface InfraLayer {
   /** WAL trên ổ (MB) — cộng vào tử số % ổ. null = không đọc được; vắng mặt ở ảnh chụp trước 26/11/2026. */
   walMb?: number | null;
   dbTopTables: { table: string; mb: number }[];
+  /** Kho video đóng hàng trên R2 — số worker dọn ghi mỗi 6 giờ (26/11/2026). null = không đọc được; vắng mặt ở ảnh chụp trước ngày này. */
+  packStorage?: PackStorageHealth | null;
   dbConnections: number | null;
   dbMaxConnections: number | null;
   ramMb: number; // RSS — mức hệ điều hành đang giữ cho tiến trình
@@ -492,6 +495,7 @@ export async function collectInfra(): Promise<InfraLayer> {
   } catch {
     // bảng chưa migrate — HQ hiện "không đọc được"
   }
+  const packStorage = await safe<PackStorageHealth | null>("packVideo.storage", collectPackStorageHealth(), null);
   const mem = process.memoryUsage();
   const ramMb = Math.round(mem.rss / 1048576);
   const heapMb = Math.round(mem.heapUsed / 1048576);
@@ -504,6 +508,7 @@ export async function collectInfra(): Promise<InfraLayer> {
     dbSizeMb,
     walMb,
     dbTopTables,
+    packStorage,
     dbConnections,
     dbMaxConnections,
     ramMb,
@@ -723,6 +728,8 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     i.dbPct != null ? levelFor(i.dbPct, T.dbPctWarn, T.dbPctCrit) : "ok",
     "Ổ tự nở ×1,5 khi Supabase báo dùng 90 % (tiền ổ 0,125 USD/GB/tháng phần trên 8 GB) — nở xong sửa CURRENT_INFRA.dbSizeMb; muốn nhỏ lại: retention/rollup (giai đoạn 4). Nâng compute KHÔNG thêm ổ"
   );
+  // Ảnh chụp trước 26/11/2026 không có trường này → không vẽ dấu hiệu.
+  if (i.packStorage !== undefined) push("infra.r2", "Kho video đóng hàng (R2)", ...packStorageSignal(i.packStorage));
   push(
     "infra.ram",
     "RAM tiến trình",

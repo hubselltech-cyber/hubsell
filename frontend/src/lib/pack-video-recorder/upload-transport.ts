@@ -14,6 +14,7 @@ import {
   beginPackVideoUpload,
   completePackVideoUpload,
   signPackVideoParts,
+  type PackVideoHoursBalance,
   type PackVideoKind,
   type PackVideoUploadPlan,
 } from "@/lib/api";
@@ -46,7 +47,8 @@ export class StorageError extends Error {
   }
 }
 
-export async function uploadClip(req: UploadRequest): Promise<void> {
+/** Trả số giờ máy chủ gửi kèm (M2.2) — null khi máy chủ bản cũ chưa gửi. */
+export async function uploadClip(req: UploadRequest): Promise<PackVideoHoursBalance | null> {
   const begun = await beginPackVideoUpload({
     clientId: req.clientId,
     trackingCode: req.code,
@@ -60,7 +62,8 @@ export async function uploadClip(req: UploadRequest): Promise<void> {
   });
   const plan = begun.upload;
   if (plan) await sendToStorage(req, begun.video.id, plan);
-  await completePackVideoUpload(begun.video.id);
+  const done = await completePackVideoUpload(begun.video.id);
+  return done.hours ?? null;
 }
 
 async function sendToStorage(req: UploadRequest, videoId: string, plan: PackVideoUploadPlan): Promise<void> {
