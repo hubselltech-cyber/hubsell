@@ -17,6 +17,17 @@ export interface StockFixture {
   cleanup(): Promise<void>;
 }
 
+/**
+ * Đặt cài đặt kho của một shop thử (có dòng thì sửa, chưa có thì tạo). Shop thử sinh ra đã có sẵn
+ * dòng cài đặt (xem createStockFixture) nên test KHÔNG gọi shopSyncSetting.create nữa.
+ */
+export async function setStockSettings(
+  userId: string,
+  data: { stockModel?: "LEGACY" | "ON_HAND"; restockOnReturn?: "ON_CANCEL" | "ON_RECEIVE" }
+): Promise<void> {
+  await prisma.shopSyncSetting.upsert({ where: { userId }, update: data, create: { userId, stockModel: "LEGACY", ...data } });
+}
+
 export async function createStockFixture(name: string): Promise<StockFixture> {
   const suffix = `${name}-${Date.now()}`;
   const user = await prisma.user.create({
@@ -39,6 +50,11 @@ export async function createStockFixture(name: string): Promise<StockFixture> {
       status: "ACTIVE",
     },
   });
+
+  // Shop thử mặc định chạy cách CŨ (LEGACY), ghi rõ bằng một dòng cài đặt: từ 26/11/2026 shop không có
+  // dòng cài đặt là ON_HAND, mà hơn 60 tệp test dùng fixture này được viết cho cách cũ (cách cũ vẫn
+  // còn cho shop được Hubsell cho về cũ). Test của cách mới gọi setStockSettings(…, { stockModel: "ON_HAND" }).
+  await prisma.shopSyncSetting.create({ data: { userId: user.id, stockModel: "LEGACY" } });
 
   let productSeq = 0;
   let orderSeq = 0;

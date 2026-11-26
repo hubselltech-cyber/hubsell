@@ -18,7 +18,7 @@ import { signToken } from "../../middleware/auth";
 import { CANCELLED_AFTER_SHIP } from "../cancelled-after-ship";
 import { deductStockTx, restoreReturnedStockTx, restoreStockTx, shipStockTx } from "../order-stock";
 import { shipOrdersTx } from "../../services/stock-committed";
-import { createStockFixture, type StockFixture } from "./fixtures";
+import { createStockFixture, setStockSettings, type StockFixture } from "./fixtures";
 
 let legacy: StockFixture; // shop ở chế độ mặc định ON_CANCEL
 let std: StockFixture; // shop ở chế độ chuẩn ON_RECEIVE
@@ -54,7 +54,7 @@ const logsOf = (orderId: string) =>
 beforeAll(async () => {
   legacy = await createStockFixture("ret-legacy");
   std = await createStockFixture("ret-std");
-  await prisma.shopSyncSetting.create({ data: { userId: std.userId, restockOnReturn: "ON_RECEIVE" } });
+  await setStockSettings(std.userId, { restockOnReturn: "ON_RECEIVE" });
 });
 
 afterAll(async () => {

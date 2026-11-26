@@ -67,6 +67,7 @@ describe("resolveStockSettings — cách hiển thị tồn đang áp cho một 
   });
 
   it("shop chưa có dòng cài đặt → mặc định; có dòng thì theo dòng; giá trị lạ → cách cũ", () => {
+    expect(DEFAULT_STOCK_MODEL).toBe("ON_HAND"); // 26/11/2026: mở cho mọi shop
     expect(resolveStockSettings(null)).toEqual({ stockModel: DEFAULT_STOCK_MODEL, restockOnReturn: "ON_CANCEL" });
     expect(resolveStockSettings({ stockModel: "ON_HAND", restockOnReturn: "ON_RECEIVE" })).toEqual({
       stockModel: "ON_HAND",

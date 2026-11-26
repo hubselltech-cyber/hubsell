@@ -68,8 +68,10 @@ export interface StockSettings {
 /**
  * Cách hiển thị của shop CHƯA có dòng cài đặt (đa số shop). Dòng có sẵn thì theo đúng giá trị của
  * dòng — muốn cho MỘT shop về cách cũ: đặt stockModel = 'LEGACY' ở dòng của shop đó.
+ * 26/11/2026: đổi LEGACY → ON_HAND — mở cách "hàng trong kho" cho MỌI shop (anh Trung: "bật cho tất
+ * cả các shop luôn"), cùng migration 20261126130000 (mặc định của cột + chuyển các dòng đang LEGACY).
  */
-export const DEFAULT_STOCK_MODEL: StockModel = "LEGACY";
+export const DEFAULT_STOCK_MODEL: StockModel = "ON_HAND";
 
 /**
  * CÔNG TẮC KHẨN cho cách hiển thị (26/11/2026): STOCK_MODEL_FORCE=LEGACY trên dịch vụ web → MỌI shop

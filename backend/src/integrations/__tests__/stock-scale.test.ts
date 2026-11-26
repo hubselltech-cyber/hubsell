@@ -22,7 +22,7 @@ import { deductStockTx, restoreStockTx, shipStockTx } from "../order-stock";
 import { LOG_COUNT_CAP } from "../../routes/inventory";
 import { looseLookupIds, LOOKUP_LOOSE_DAYS } from "../../routes/orders";
 import { NOT_BACK_WINDOW_DAYS, restockedNotBackYet } from "../../services/stock-awaiting-ship";
-import { createStockFixture, type StockFixture } from "./fixtures";
+import { createStockFixture, setStockSettings, type StockFixture } from "./fixtures";
 
 let shop: StockFixture; // cách mới (ON_HAND), cộng tồn khi sàn báo hủy
 let legacy: StockFixture; // cách cũ
@@ -69,9 +69,9 @@ beforeAll(async () => {
   shop = await createStockFixture("sc-main");
   legacy = await createStockFixture("sc-legacy");
   other = await createStockFixture("sc-other");
-  await prisma.shopSyncSetting.create({ data: { userId: shop.userId, stockModel: "ON_HAND" } });
-  await prisma.shopSyncSetting.create({ data: { userId: other.userId, stockModel: "ON_HAND" } });
-  await prisma.shopSyncSetting.create({ data: { userId: legacy.userId, stockModel: "LEGACY" } });
+  await setStockSettings(shop.userId, { stockModel: "ON_HAND" });
+  await setStockSettings(other.userId, { stockModel: "ON_HAND" });
+  await setStockSettings(legacy.userId, { stockModel: "LEGACY" });
   await new Promise<void>((resolve) => {
     server = createApp().listen(0, "127.0.0.1", () => resolve());
   });
@@ -197,7 +197,7 @@ describe("Dòng 'chưa về kho' của Tổng kho (GET /api/products/not-back-ye
   it("bản mới = bản cũ khi mọi đơn nằm trong cửa sổ; đơn đã nhận, đơn hủy trước khi rời kho không tính", async () => {
     const fx = await createStockFixture("sc-nb");
     try {
-      await prisma.shopSyncSetting.create({ data: { userId: fx.userId, stockModel: "ON_HAND" } });
+      await setStockSettings(fx.userId, { stockModel: "ON_HAND" });
       const p = await fx.createProduct(100);
       await cancelledAfterShip(fx, p, 3);
       await cancelledAfterShip(fx, p, 2);
@@ -220,7 +220,7 @@ describe("Dòng 'chưa về kho' của Tổng kho (GET /api/products/not-back-ye
   it("đơn cộng lại quá cửa sổ ngày thì không tính nữa; dòng cũ chưa có 'kind' (trước 20/11) trong cửa sổ vẫn tính", async () => {
     const fx = await createStockFixture("sc-nbw");
     try {
-      await prisma.shopSyncSetting.create({ data: { userId: fx.userId, stockModel: "ON_HAND" } });
+      await setStockSettings(fx.userId, { stockModel: "ON_HAND" });
       const p = await fx.createProduct(100);
       const oldOrder = await cancelledAfterShip(fx, p, 4);
       const legacyRow = await cancelledAfterShip(fx, p, 6);
@@ -257,6 +257,45 @@ describe("Dòng 'chưa về kho' của Tổng kho (GET /api/products/not-back-ye
     await prisma.$transaction((tx) => deductStockTx(tx, lo, "test"));
     const lr = await call(legacy, "GET", "/api/products?awaiting=1&pageSize=100");
     expect((lr.body.items as Json[]).find((x) => x.id === lp)!.awaitingShip).toBe(3);
+  });
+});
+
+describe("Bật cách 'hàng trong kho' cho mọi shop (26/11/2026)", () => {
+  it("shop CHƯA có dòng cài đặt chạy cách mới; lưu một cài đặt khác không lặng lẽ đổi cách; dòng LEGACY thì về cách cũ", async () => {
+    const fx = await createStockFixture("sc-default");
+    try {
+      await prisma.shopSyncSetting.deleteMany({ where: { userId: fx.userId } });
+      const p = await fx.createProduct(10);
+      const o = await fx.createOrder(p, 4);
+      await prisma.$transaction((tx) => deductStockTx(tx, o, "test"));
+      const list = await call(fx, "GET", "/api/products?awaiting=1&pageSize=100");
+      expect(list.body.stockModel).toBe("ON_HAND");
+      const row = (list.body.items as Json[]).find((x) => x.id === p)!;
+      expect(row).toMatchObject({ stockModel: "ON_HAND", onHand: 10, heldQuantity: 4, quantityInStock: 6 });
+      expect((await call(fx, "GET", "/api/inventory/sync-settings")).body.stockModel).toBe("ON_HAND");
+
+      // Khách lưu tồn an toàn → dòng cài đặt được tạo, cách hiển thị vẫn là cách mới.
+      const put = await call(fx, "PUT", "/api/inventory/sync-settings", { safetyStockDefault: 1 });
+      expect(put.status).toBe(200);
+      expect(put.body.stockModel).toBe("ON_HAND");
+      expect((await prisma.shopSyncSetting.findUniqueOrThrow({ where: { userId: fx.userId } })).stockModel).toBe("ON_HAND");
+
+      // Hubsell cho riêng shop này về cách cũ.
+      await setStockSettings(fx.userId, { stockModel: "LEGACY" });
+      expect((await call(fx, "GET", "/api/products?pageSize=100")).body.stockModel).toBe("LEGACY");
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  it("công tắc khẩn STOCK_MODEL_FORCE=LEGACY đưa cả shop đã bật về cách cũ, gỡ ra thì về lại", async () => {
+    process.env.STOCK_MODEL_FORCE = "LEGACY";
+    try {
+      expect((await call(shop, "GET", "/api/products?pageSize=20")).body.stockModel).toBe("LEGACY");
+    } finally {
+      delete process.env.STOCK_MODEL_FORCE;
+    }
+    expect((await call(shop, "GET", "/api/products?pageSize=20")).body.stockModel).toBe("ON_HAND");
   });
 });
 

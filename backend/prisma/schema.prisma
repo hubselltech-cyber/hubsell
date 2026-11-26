@@ -2492,7 +2492,7 @@ model ShopSyncSetting {
   ///   ON_HAND = chuẩn quốc tế: "Tồn kho" là hàng TRONG KHO = sổ + đang giữ cho đơn + ô không bán;
   ///             sửa ô / Excel đặt số trong kho; Kiểm kê so với số trong kho và ghi PHẦN CHÊNH.
   /// Sổ quantityInStock và số đẩy sàn KHÔNG đổi nghĩa ở cả hai chế độ. Chưa cho khách tự bật.
-  stockModel String @default("LEGACY")
+  stockModel String @default("ON_HAND")
 
   /// ĐƠN HỦY / GIAO THẤT BẠI SAU KHI HÀNG ĐÃ RỜI KHO thì cộng lại tồn lúc nào (anh Trung chốt
   /// 12/11/2026 "chia theo shop"):

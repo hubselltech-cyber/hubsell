@@ -18,7 +18,7 @@ import { createApp } from "../../app";
 import { signToken } from "../../middleware/auth";
 import { deductStockTx, shipStockTx } from "../order-stock";
 import { createRootLocationTx } from "../../services/stock-ledger";
-import { createStockFixture, type StockFixture } from "./fixtures";
+import { createStockFixture, setStockSettings, type StockFixture } from "./fixtures";
 
 let legacy: StockFixture;
 let onHand: StockFixture;
@@ -49,7 +49,7 @@ const lineOf = async (fx: StockFixture, id: string, productId: string) =>
 beforeAll(async () => {
   legacy = await createStockFixture("kk-old");
   onHand = await createStockFixture("kk-new");
-  await prisma.shopSyncSetting.create({ data: { userId: onHand.userId, stockModel: "ON_HAND" } });
+  await setStockSettings(onHand.userId, { stockModel: "ON_HAND" });
   const staff = await prisma.user.create({
     data: {
       email: `test-kk-staff-${Date.now()}@hubsell.test`,

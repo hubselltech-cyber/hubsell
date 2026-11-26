@@ -18,7 +18,7 @@ import { createApp } from "../../app";
 import { signToken } from "../../middleware/auth";
 import { deductStockTx, holdStockTx, shipStockTx } from "../order-stock";
 import { createRootLocationTx } from "../../services/stock-ledger";
-import { createStockFixture, type StockFixture } from "./fixtures";
+import { createStockFixture, setStockSettings, type StockFixture } from "./fixtures";
 
 let onHand: StockFixture;
 let legacy: StockFixture;
@@ -80,7 +80,7 @@ beforeAll(async () => {
   stats = await createStockFixture("oh-stats");
   located = await createStockFixture("oh-loc");
   for (const fx of [onHand, stats, located]) {
-    await prisma.shopSyncSetting.create({ data: { userId: fx.userId, stockModel: "ON_HAND" } });
+    await setStockSettings(fx.userId, { stockModel: "ON_HAND" });
   }
   await new Promise<void>((resolve) => {
     server = createApp().listen(0, "127.0.0.1", () => resolve());
