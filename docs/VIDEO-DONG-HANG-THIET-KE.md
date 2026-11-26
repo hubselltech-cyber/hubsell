@@ -2989,3 +2989,104 @@ M2.5 (EXPLAIN câu tra mã vận đơn trên prod — chỉ mục `Order(trackin
 
 M2.5 phần đo trên prod · **M2.4** (vé không ghi + ghi gộp lúc xong — có migration, đổi hợp đồng API, phải đi cùng bản app kế; chưa làm,
 cần anh chốt lúc ra bản app) · M4 đo tải · M2.7 khi số đo đòi.
+
+## 40. Màn quay của APP lên master (26/11/2026 khuya, anh Trung: "Tiếp tục phần Quay video đóng hàng đưa lên app, cấp quyền cho nhân viên, hoàn thiện nốt phần M2.4 và các phần liên quan tới app mobile") — CODE LOCAL, chưa commit, CHƯA dựng bản app nào
+
+### 40.1 Trước và sau
+
+| | Trước (tới 26/11) | Sau |
+|---|---|---|
+| Mã màn quay của app | chỉ ở nhánh thử `thu/video-dong-goi-lat-0` (worktree `D:\HubsellVideo`, không đẩy), bản TestFlight 1.5.1 (41–44) | nằm trên master, đã bỏ phần chỉ dùng để thử |
+| Ai thấy lối vào | bản dựng từ nhánh thử (cờ `IS_VIDEO_TEST_BUILD` = gói Android `vn.hubsell.thuvideo`) | theo cổng MÁY CHỦ (`features.packVideo` + `packVideoCaps`) VÀ bản app có phần gốc camera quay |
+| Nhân viên | máy chủ + web lên prod 24/11 (`2fd1599a`); app chỉ có ở bản thử 44 | cùng luật trên app thật: quyền Đơn hàng → quay đóng, quyền Đối soát đơn hoàn → quay khui; không có ô quyền mới |
+| Chủ shop chưa bấm đồng ý | chỉ bấm được trên web | bấm được ngay trên app (thẻ "Bật Video đóng hàng") |
+| Đường tải lên | v1, không vé phiên, không nghe `Retry-After` | vé phiên quay (M2.1) + số giờ kèm câu trả lời (M2.2) + `Retry-After` (M2.6) + v2 (M2.4, mục 41) |
+
+### 40.2 Cách đưa lên — chép có chọn lọc, KHÔNG gộp nhánh
+
+Nhánh thử có các thứ chỉ để thử (đổi gói Android thành `vn.hubsell.thuvideo`, mở thẳng màn thử không đăng nhập, ghi clip ra thư mục ngoài để kéo qua cáp, nút QUAY THỬ / XÓA SỔ TEM / ⚙ fps + soi, nhật ký `[thu]` từng lượt đọc mã) nên không gộp nguyên nhánh. Đã chép và viết lại:
+
+| Tệp trên master | Từ nhánh thử | Đổi gì |
+|---|---|---|
+| `src/screens/PackVideoScreen.tsx` | `app/video-test.tsx` | bỏ mọi nút / số liệu thử; fps cố định (iPhone 30, Android 15), khung soi mã cố định; clip ghi vào thư mục tạm của app; danh sách clip hiện mã tem ĐẦY ĐỦ + thời lượng + trạng thái tải; nút "Dừng quay" chỉ hiện khi đang quay. Luật cắt theo tem, sổ tem theo chế độ, mã hiện trễ 1 giây (cách C), khóa 3:4 · 800k, âm báo: GIỮ NGUYÊN |
+| `src/app/pack-video.tsx` (mới) | — | cửa của màn quay: kiểm đăng nhập → bản app có camera quay → cổng máy chủ → quyền; thẻ đồng ý cho chủ shop; nạp màn quay MUỘN |
+| `src/lib/pack-video-access.ts` (mới) | thay `video-test-flag.ts` | `hasPackVideoNative()` (hỏi mô-đun gốc `NitroModules`), `packVideoRecordCaps`, `showPackVideoEntry` |
+| `src/api/pack-video.ts` (mới) | — | mọi lượt gọi máy chủ của màn quay: vé phiên, hỏi tem, số giờ, đồng ý, tải lên v1 + v2 |
+| `src/lib/pack-video-upload.ts` | cùng tên | thêm vé tải lên v2 giữ trong sổ hàng chờ, `Retry-After`, số giờ từ câu trả lời, câu lỗi mới (chưa đồng ý, mất quyền, máy chủ bận) |
+| `src/lib/pack-video-queue-record.ts` | cùng tên | dòng sổ có thêm `ticket` + `partSize` (tùy chọn — sổ của bản app trước vẫn đọc được; vé hỏng thì bỏ vé chứ không bỏ clip) |
+| `pack-video-hours.ts`, `pack-video-overlay.ts`, `components/PackVideoQueueResume.tsx` | cùng tên | chỉ đổi chú thích |
+| `app/(admin)/orders.tsx`, `screens/WarehouseHubPage.tsx`, `app/_layout.tsx` | cùng tệp | nút "Quay video" (cột thứ tư hàng tiêu đề tab Đơn hàng), nút "Quay video khui hàng" (Kho › Đơn hoàn), thẻ gửi tiếp hàng chờ ở gốc app — đều theo cổng mới |
+| `patches/react-native-vision-camera+5.2.4.patch`, `package.json` | cùng tệp | 4 gói gốc (vision-camera 5.2.4, barcode-scanner 5.2.4, nitro-modules 0.37.2, nitro-image 0.15.2) + `patch-package` chạy sau `npm install`; câu xin quyền camera thêm "quay video đóng gói" |
+
+KHÔNG chép: `video-test-flag.ts`, sửa `app/index.tsx` (mở thẳng màn thử), cấu hình `thuVideo` trong `eas.json`, thư mục `patches-thu/` (bản sao nguồn của bản vá), đổi gói Android. `app.json` giữ `vn.hubsell.app`, phiên bản CHƯA đổi (40.5).
+
+### 40.3 Chốt an toàn cho bản app CŨ
+
+Runtime của cập nhật từ xa tính theo số phiên bản app. Mã JS trên master giờ có nhập thư viện camera gốc, mà bản 1.5.0 / 1.4.3 đang ở máy khách KHÔNG có phần gốc đó. Hai lớp chặn:
+
+1. `hasPackVideoNative()` — hỏi `TurboModuleRegistry.get("NitroModules")` (tên đã đối chiếu trong mã của `react-native-nitro-modules`): thiếu thì mọi lối vào ẩn, thẻ hàng chờ ở gốc app không dựng.
+2. Màn quay (tệp DUY NHẤT nhập thư viện camera) được `require` bên trong `app/pack-video.tsx`, sau khi lớp 1 qua. Mở thẳng `/pack-video` trên bản cũ / bản web ra thẻ "Bản app này chưa quay video được".
+
+Đã thấy chạy trên bản WEB của app (không có phần gốc): tab Đơn hàng không có nút, `/pack-video` ra thẻ thông báo, không lỗi. **CHƯA chạy trên bản 1.5.0 thật** — lớp chặn này là lý luận từ mã + bản web; trước khi đẩy cập nhật từ xa của master cho khách 1.5.0 nên thử trên một máy 1.5.0 kênh `preview`.
+
+### 40.4 Quyền nhân viên + đồng ý lần đầu trên app
+
+- Máy chủ quyết (`services/pack-video/access.ts`, không đổi): chủ shop còn hạn gói đã đồng ý → `open`; nhân viên của chủ đó → theo quyền Đơn hàng (`pack`) / Đối soát đơn hoàn (`unbox`); chủ chưa đồng ý → `consent` (không ai có quyền quay); còn lại → `locked`.
+- App: nút ở tab Đơn hàng hiện khi có một trong hai quyền quay; chỉ có quyền khui thì mở thẳng chế độ khui. Nút "Quay video khui hàng" ở Kho › Đơn hoàn hiện khi có quyền khui. Trong màn quay, có đúng MỘT quyền thì khóa ở chế độ đó. Nhân viên có tab Đơn hàng / Kho theo quyền từ bản 23/11 (`accessOf`).
+- Chủ shop ở trạng thái `consent`: vẫn thấy nút "Quay video" → thẻ bật: bốn ý như web (tem có tên / số điện thoại / địa chỉ; kho R2 ngoài Việt Nam; tự xóa sau hạn khiếu nại 3 ngày, tối đa 60 ngày; tặng 2 giờ) + nút "Đồng ý và bắt đầu" → `POST /consent` → đọc lại `/me` → vào màn quay. **Khác web một chỗ, cố ý: KHÔNG có câu "2.000 đ một giờ, mua trước"** — app không nêu giá, không mời mua giờ (luật thanh toán của Apple). Nhân viên ở trạng thái này không thấy nút; mở thẳng thì ra câu nhờ chủ shop bật.
+- Vé phiên 10 phút: rút quyền một nhân viên có hiệu lực chậm tối đa 10 phút trên đường quay (đã ghi ở 29.7).
+
+### 40.5 Việc CHƯA làm / phải anh quyết
+
+1. **Chưa dựng bản app nào từ master.** Tính năng cần BẢN DỰNG KHO mới (thư viện gốc) — không cập nhật từ xa được. Chưa chạy màn quay bản master trên máy thật; phần đã thử trên iPhone (TestFlight 41–44) và Note8 là mã của nhánh thử — logic quay giữ nguyên nhưng tệp đã viết lại.
+2. **Số phiên bản: ✅ anh chốt 1.6.0** (26/11 khuya: "build app cả android và ios… bản 1.6.0 cũng đẩy bản TestFlight cho anh") — `app.json` đã lên 1.6.0; 1.5.1 chỉ còn là bốn bản thử TestFlight (41–44) của nhánh thử.
+3. **Cập nhật từ xa cho khách 1.5.0 / 1.4.3** (các ý 1–4 của đợt 3, `MOBILE-NANG-CAP-DOT-3.md`): đẩy TRƯỚC khi nâng số phiên bản trên master, hoặc đặt tạm số như các lần trước.
+4. **Android:** thư viện kéo CameraX của cả app lên bản mới hơn → phải thử lại các màn quét cũ (`expo-camera`) trên Android trước khi phát hành; Android chưa in được hai dòng mã lên video (chỉ ngày giờ); mới thử trên một máy (Note8). Dựng Android tại máy cần nới bộ nhớ Gradle như bản thử (`-Xmx4096m`, bỏ `lintVital`).
+5. **Ghi chú gửi duyệt kho:** nêu tính năng quay video + câu xin quyền camera mới; bản khách KHÔNG gắn build 41–44.
+6. Nợ đã biết của màn quay (không đổi trong lượt này): clip ĐANG quay lúc app bị tắt thì mất; chưa quay thử 25–30 phút liền; web còn ghi "app sắp có" (đổi khi bản app lên kho).
+7. Nhánh thử `thu/video-dong-goi-lat-0` + worktree `D:\HubsellVideo`: không dùng nữa sau lượt này, CHƯA xóa (chờ anh).
+
+## 41. M2.4 — vé tải lên không ghi sổ + ghi gộp lúc báo xong (26/11/2026 khuya) — CODE LOCAL, chưa commit; công tắc MẶC ĐỊNH TẮT
+
+Thiết kế ở 29.5. Phần máy chủ + web do một tác tử phụ viết theo hợp đồng em chốt, em đã đọc lại mã và tự chạy lại test; phần app em viết (mục 40).
+
+### 41.1 Có gì
+
+| | Đường cũ (v1, giữ nguyên) | Đường mới (v2) |
+|---|---|---|
+| Bắt đầu | `POST /api/pack-videos` — CHÈN dòng PENDING (+ 1 UPDATE nếu tải theo mảnh) | `POST /api/pack-videos/v2` — KHÔNG ghi database; trả cách tải + **vé tải lên** (JWT, `aud: pack-video-upload`, hạn 7 ngày) mang sẵn mọi thứ để ghi dòng sổ |
+| Ký mảnh | `POST /:id/parts` — đọc dòng sổ | `POST /v2/parts { ticket, partNumbers }` — không đọc database |
+| Báo xong | `POST /:id/complete` — UPDATE PENDING → STORED | `POST /v2/complete { ticket }` — hỏi R2 như cũ, đọc MỘT lượt theo `clientId`, rồi CHÈN thẳng dòng STORED qua bộ ghi gộp |
+| Ghi / clip | 2 (3 nếu theo mảnh) | 1 dòng trong một câu INSERT nhiều dòng (mẻ ≤ 100 dòng hoặc ≤ 200 ms — hai số tự chọn theo 29.5, chưa đo) |
+
+- **KHÔNG cần migration** (29.5 dự kiến có): bảng `pack_videos` không có ràng buộc nào chặn chèn thẳng `STORED`.
+- **Công tắc:** env `PACK_UPLOAD_V2`, chỉ đúng chữ `on` mới mở; không đặt = TẮT. Máy quay biết qua trường `uploadV2` trong câu trả lời `POST /session` → bật / tắt ở Render, web và app không phải ra bản. Tắt giữa chừng: `POST /v2` trả `409 V2_OFF` (máy quay tự về v1), còn vé ĐÃ cấp vẫn ký mảnh / báo xong được — không clip nào kẹt.
+- **Chống trùng:** `id` video CỐ ĐỊNH theo (chủ shop, `clientId`) (32 ký tự đầu của HMAC) → xin vé lại trong ngày ra cùng đường dẫn tệp, không sinh tệp mồ côi; báo xong lặp thì lượt đọc theo `clientId` bắt; hai lượt đua nhau thì ràng buộc duy nhất của bảng bắt, lượt thua trả dòng của lượt thắng. Giờ quay chỉ cộng khi CHÍNH lượt đó chèn được dòng.
+- **Đã có dòng v1 cho clip đó** (app / web bản cũ mở dở): `POST /v2` trả đúng như v1 cho dòng đó + `ticket: null` → máy quay đi tiếp đường v1.
+- **Đường nóng:** ba đường v2 nhận vé phiên quay (M2.1) và nằm trong bộ đếm gọi dồn (M2.6).
+- **Máy quay:** web (`upload-flow.ts`, `upload-transport.ts`) và app (`pack-video-upload.ts`) dùng v2 khi `/session` báo `uploadV2: true`; giữ vé theo clip (app: trong sổ hàng chờ trên máy) → thử lại thì báo xong / gửi nốt mảnh bằng vé cũ; `TICKET_INVALID` / `UPLOAD_EXPIRED` → bỏ vé, bắt đầu lại cùng `clientId`.
+
+### 41.2 Tệp
+
+Máy chủ: `lib/group-commit.ts` (bộ ghi gộp thuần) · `lib/pack-upload-ticket.ts` · `services/pack-video/upload-v2.ts` · `services/pack-video/upload.ts` (tách hàm dùng chung, v1 không đổi hành vi) · `routes/pack-videos.ts` · `middleware/pack-session.ts` · `config/pack-video.ts`. Web: `lib/pack-video-recorder/upload-flow.ts` (mới) · `upload-transport.ts` · `session.ts` · `lib/api.ts`. App: mục 40.2.
+
+### 41.3 Kiểm
+
+- Máy chủ: kiểm kiểu sạch; thư mục `services/pack-video` + test bộ ghi gộp / vé tải / vé phiên / chặn gọi dồn = **157 / 157** (14 tệp; test v2 chạy trên Postgres local với kho giả: bắt đầu không ghi dòng nào, báo xong ghi đúng một dòng STORED và cộng giờ một lần, gọi lặp không trùng, nhân viên không dùng được vé người khác, vé sai chủ bị từ chối, lệch cỡ thì xóa tệp và không ghi, 20 clip báo xong cùng lúc ra 20 dòng với ít hơn hẳn 20 câu INSERT).
+- Web: kiểm kiểu sạch; bộ quay 65 / 65 (11 ca mới). App: kiểm kiểu sạch; sổ hàng chờ 10 / 10.
+- Qua HTTP thật trên máy chủ local (công tắc tắt): đồng ý lần đầu → cổng `consent` → `open`; `/session` trả `uploadV2: false`; `POST /v2` → 409 `V2_OFF`; vé rác ở `/v2/complete` + `/v2/parts` → 409 `TICKET_INVALID`.
+- **CHƯA:** chạy v2 với công tắc BẬT qua HTTP + kho R2 thật (em không đẩy tệp thử vào bucket dùng chung với prod); quay webcam / điện thoại thật trên v2; số đo câu database / clip trước – sau.
+
+### 41.4 Chỗ yếu đã biết
+
+1. **Tệp / lượt tải dở mồ côi trên kho:** v2 không có dòng PENDING nên việc dọn PENDING quá 7 ngày không thấy lượt bỏ dở. Lưới hiện có: luật vòng đời của bucket xóa tệp sau 60 ngày (đặt 26/11, mục 34.7); lượt tải theo mảnh bỏ dở do kho tự hủy theo mặc định của R2 — **mặc định đó em CHƯA mở trang cài đặt bucket để nhìn**.
+2. **Hai dòng cho một clip (tính giờ hai lần) — ca rất hẹp:** cùng một clip được cấp hai vé ở HAI ngày khác nhau rồi hai lượt báo xong chạy đúng cùng lúc: cả hai qua lượt đọc trước, ràng buộc duy nhất có cột ngày nên không bắt. Ca tuần tự đã chặn + có test.
+3. Một mẻ ghi hỏng thì tối đa 100 lượt "báo xong" cùng nhận lỗi; máy quay thử lại, không mất video.
+4. Bộ ghi gộp sống trong bộ nhớ của tiến trình web: máy chủ khởi động lại giữa lúc mẻ chờ (≤ 200 ms) thì các lượt đó lỗi và được thử lại.
+
+### 41.5 Bật thế nào (em KHÔNG tự bật)
+
+1. Push (backend + web cùng một lần; không migration) → mọi thứ chạy y như hôm nay vì công tắc tắt.
+2. Anh đặt `PACK_UPLOAD_V2=on` trên dịch vụ WEB `hubsell-backend-sg` → trong ≤ 10 phút (hạn vé phiên) các máy quay web chuyển sang v2.
+3. Quay thử 2–3 clip bằng webcam: video hiện ở danh sách, số giờ trừ đúng một lần, quay lại tem cũ báo "đã quay rồi". Lệch gì thì gỡ biến → về v1 ngay, vé đã cấp vẫn báo xong được.
+4. App dùng v2 từ bản dựng kho có màn quay (mục 40.5).

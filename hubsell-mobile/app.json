@@ -3,7 +3,7 @@
     "name": "Hubsell",
     "slug": "hubsell-mobile",
     "owner": "hubselltech",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-1024.png",
     "scheme": "hubsellmobile",
@@ -68,7 +68,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Hubsell cần Camera để quét mã vận đơn trên kiện hàng hoàn."
+          "cameraPermission": "Hubsell cần Camera để quét mã vận đơn và quay video đóng gói hàng làm bằng chứng khi khiếu nại."
         }
       ],
       [

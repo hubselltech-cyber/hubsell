@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,6 +31,7 @@ import {
   type ReturnShipTone,
 } from "@/lib/return-shipping";
 import { useReturnCarrierStatus } from "@/lib/useReturnCarrierStatus";
+import { fitHint } from "@/lib/fit-hint";
 import { Badge } from "@/components/Badge";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
@@ -37,6 +39,8 @@ import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { Card } from "@/components/Card";
 import { ICON_TINT, TABULAR, type IconTint } from "@/theme/tokens";
 import { useColorScheme } from "nativewind";
+import { useAuth } from "@/auth/AuthContext";
+import { packVideoRecordCaps } from "@/lib/pack-video-access";
 
 // Bộ lọc sàn — cùng thứ tự với tab Tin nhắn (chốt 13/08)
 const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
@@ -82,6 +86,10 @@ const SHIP_TONE: Record<ReturnShipTone, { dot: string; text: string }> = {
  */
 export function WarehouseHubPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  // Quay video KHUI hàng hoàn: chủ shop đã mở Video đóng hàng, hoặc nhân viên có quyền Đối soát đơn hoàn của chủ đó
+  // (anh Trung chốt 24/11/2026) — và bản app có phần gốc camera quay video (lib/pack-video-access.ts).
+  const canRecordUnbox = packVideoRecordCaps(user).unbox;
   const [summary, setSummary] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [items, setItems] = useState<ReturnOrderDto[]>([]);
   const [page, setPage] = useState(1);
@@ -230,6 +238,13 @@ export function WarehouseHubPage() {
   };
   const { colorScheme } = useColorScheme();
   const dark = colorScheme === "dark";
+  // Chữ gợi ý ô tìm vừa một dòng ở mọi cỡ màn / cỡ chữ máy (lib/fit-hint.ts): ô rộng hết hàng, trừ đệm + icon.
+  const { width: winWidth, fontScale } = useWindowDimensions();
+  const searchHint = fitHint(
+    ["Tìm mã đơn, mã vận đơn, tên khách…", "Tìm mã đơn, mã vận đơn…", "Tìm đơn hoàn…"],
+    winWidth - 88,
+    fontScale
+  );
   const filterCount =
     (channel ? 1 : 0) + (statusDetail ? 1 : 0) + (ship ? 1 : 0) + (overdueOnly ? 1 : 0);
 
@@ -307,8 +322,8 @@ export function WarehouseHubPage() {
                   style={active ? { borderColor: tint.icon, borderWidth: 1.5 } : { borderWidth: 1.5 }}
                   onPress={() => pickTile(t.key)}
                 >
-                  {/* min-h 2 dòng: nhãn dài ("Hàng hỏng · chờ khiếu nại sàn") hiện đủ chữ,
-                      bốn thẻ vẫn cao bằng nhau. */}
+                  {/* Nhãn dài ("Hàng hỏng · chờ khiếu nại sàn") hiện ĐỦ chữ: 2 dòng ở màn thường, tới 3 dòng ở màn hẹp +
+                      cỡ chữ máy lớn (thẻ cùng hàng tự cao bằng nhau). min-h 2 dòng để hàng trên / hàng dưới đều nhau. */}
                   <View className="mb-1.5 min-h-[32px] flex-row items-center gap-2">
                     <View
                       className="h-6 w-6 items-center justify-center rounded-md"
@@ -318,7 +333,7 @@ export function WarehouseHubPage() {
                     </View>
                     <Text
                       className="flex-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400"
-                      numberOfLines={2}
+                      numberOfLines={3}
                     >
                       {t.label}
                     </Text>
@@ -351,6 +366,22 @@ export function WarehouseHubPage() {
               Mở camera quét đơn hoàn
             </Text>
           </Pressable>
+
+          {/* Kiện hoàn về là quay mở kiện ngay tại đây — vào thẳng màn quay ở chế độ khui (màu tím như web). */}
+          {canRecordUnbox ? (
+            <Pressable
+              className="-mt-2 mb-4 flex-row items-center justify-center gap-2 rounded-2xl border border-violet-300 bg-white py-3 active:opacity-70 dark:border-violet-700 dark:bg-slate-900"
+              onPress={() => {
+                hapticTap();
+                router.push("/pack-video?mode=unbox" as Href);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Quay video khui hàng hoàn"
+            >
+              <Ionicons name="videocam" size={18} color="#8b5cf6" />
+              <Text className="text-sm font-bold text-violet-700 dark:text-violet-300">Quay video khui hàng</Text>
+            </Pressable>
+          ) : null}
 
           {/* 2 tab: hàng đã về tay (đã quét) hay chưa — đơn xong việc không còn
               chen giữa đơn cần đi đòi. Số đếm SCANNED backend tính sẵn, cùng
@@ -385,7 +416,7 @@ export function WarehouseHubPage() {
             <Ionicons name="search-outline" size={16} color="#94a3b8" />
             <TextInput
               className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
-              placeholder="Tìm mã đơn, mã vận đơn, tên khách…"
+              placeholder={searchHint}
               placeholderTextColor="#94a3b8"
               value={search}
               onChangeText={onSearch}
@@ -459,14 +490,19 @@ export function WarehouseHubPage() {
                     )}
                   </View>
                   <View className="flex-1">
-                    <View className="flex-row items-center justify-between">
+                    {/* Mã đơn + nhãn trạng thái: vừa một hàng thì mã trái, nhãn phải như cũ; KHÔNG vừa (màn hẹp, cỡ chữ
+                        máy lớn, nhãn dài kiểu "Hàng hỏng · chờ khiếu nại sàn") thì nhãn tự xuống dòng dưới — mã đơn
+                        không bị ép cụt, nhãn không tràn khỏi thẻ. */}
+                    <View className="flex-row flex-wrap items-center justify-between gap-x-2 gap-y-1">
                       <Text
-                        className="flex-1 pr-2 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+                        className="shrink text-[13px] font-semibold text-slate-900 dark:text-slate-100"
                         numberOfLines={1}
                       >
                         {o.orderCode}
                       </Text>
-                      <Badge label={ret.label} bg={ret.bg} text={ret.text} />
+                      <View className="max-w-full shrink">
+                        <Badge label={ret.label} bg={ret.bg} text={ret.text} />
+                      </View>
                     </View>
                     <Text className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
                       {/* Chỉ gọi "VĐ hoàn" khi sàn đã cấp mã hoàn; chưa có thì ghi rõ là
@@ -492,8 +528,8 @@ export function WarehouseHubPage() {
                         </Text>
                       </View>
                     ) : null}
-                    <View className="mt-0.5 flex-row items-center justify-between">
-                      <Text className="text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
+                    <View className="mt-0.5 flex-row items-center justify-between gap-2">
+                      <Text className="min-w-0 flex-1 text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
                         {CHANNEL_LABEL[o.channel.channelName] ?? o.channel.channelName}
                         {" · "}
                         {o.customerName}

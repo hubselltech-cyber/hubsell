@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { Image } from "expo-image";
 import { fetchOrders, lookupOrder, type OrdersFilter } from "@/api/orders";
 import { fetchChannels } from "@/api/channels";
@@ -44,6 +44,8 @@ import { groupChannelsByPlatform } from "@/lib/channel-groups";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { hapticTap } from "@/lib/haptics";
+import { packVideoRecordCaps, showPackVideoEntry } from "@/lib/pack-video-access";
+import { fitHint } from "@/lib/fit-hint";
 import { Badge } from "@/components/Badge";
 import { OrderDetailSheet } from "@/components/OrderDetailSheet";
 import { PickSheet } from "@/components/PickSheet";
@@ -134,7 +136,24 @@ function OrdersScreen() {
   const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { width: winWidth } = useWindowDimensions();
+  const { width: winWidth, fontScale } = useWindowDimensions();
+  // Chữ gợi ý của ô tìm: câu dài nhất còn VỪA một dòng (ô nhập Android không cắt "…" mà xuống dòng, lòi mép chữ ở đáy
+  // ô — lib/fit-hint.ts). Bề ngang chỗ viết chữ = ba cột của lưới 4 cột trừ đệm + icon.
+  const searchHint = fitHint(
+    ["Mã đơn, tên khách, SĐT, mã vận đơn…", "Mã đơn, tên khách, SĐT…", "Mã đơn, tên khách…", "Tìm đơn…"],
+    0.75 * winWidth - 82,
+    fontScale
+  );
+  // QUAY VIDEO ĐÓNG HÀNG (lên bản app thật 26/11/2026): nút hiện theo quyền MÁY CHỦ trả — chủ shop đã mở; nhân viên của
+  // chủ đó theo quyền có sẵn (Đơn hàng → quay đóng; Đối soát đơn hoàn → quay khui) — và chỉ trên bản app có phần gốc
+  // camera quay video (lib/pack-video-access.ts). Chủ shop chưa bấm đồng ý lần đầu cũng thấy nút: bấm vào là thẻ bật.
+  const videoCaps = packVideoRecordCaps(user);
+  const videoEntry = showPackVideoEntry(user);
+  // Màn quay là route gốc, phủ thanh tab như màn Quét đóng gói. Chỉ có quyền khui (hiếm ở tab này) → mở thẳng chế độ khui.
+  const openPackVideo = () => {
+    hapticTap();
+    router.push((videoCaps.unbox && !videoCaps.pack ? "/pack-video?mode=unbox" : "/pack-video") as Href);
+  };
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   // Thẻ/phễu ở Tổng quan đẩy sang kèm ?status= → khởi tạo NGAY từ param
@@ -681,8 +700,17 @@ function OrdersScreen() {
 
   return (
     <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 16 }}>
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <View>
+      {/* Hàng tiêu đề chia theo ĐÚNG lưới 4 cột của hàng ô tìm + Đóng gói bên dưới (khe 8 px, gốc 16 px rồi chia
+          3 : 1) → nút Quay video nằm trọn cột thứ tư, thẳng mép với nút Đóng gói và chip Lazada (anh Trung 20/11:
+          "Làm cho thẳng hàng thẳng lối"). Không có nút Quay video thì ba cột tiêu đề giãn hết hàng như trước. */}
+      <View className="mb-3 flex-row items-center gap-2 px-4">
+        {/* Chuông (nhân viên không có Trang chủ) nằm TRONG ba cột của tiêu đề, mép phải, để nút Quay video vẫn đúng
+            cột thứ tư của lưới. */}
+        <View
+          style={{ flexGrow: 3, flexShrink: 1, flexBasis: 16, minWidth: 0 }}
+          className="flex-row items-center justify-between gap-2"
+        >
+          <View className="min-w-0 flex-1">
           <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Đơn hàng</Text>
           {/* Số đơn của BỘ LỌC đang xem (tab / khách xin hủy) như web "N đơn khớp
               bộ lọc" — trước luôn in tổng mọi trạng thái nên tab Đang giao 37 đơn
@@ -693,8 +721,44 @@ function OrdersScreen() {
           <Text className="text-xs text-slate-500 dark:text-slate-400" style={TABULAR}>
             {groupVN(total)} đơn{activeFilterCount > 0 ? " khớp bộ lọc" : ""}
           </Text>
+          </View>
+          {showBell ? <NotificationBell /> : null}
         </View>
-        {showBell ? <NotificationBell /> : null}
+        {/* Lối vào Quay video đóng hàng (anh Trung 20/11 dời từ Tổng quan sang góc phải tiêu đề tab Đơn hàng).
+            NÚT ĐẶC NỀN ĐẬM (anh Trung 26/11: "Nút quay video hơi mờ trên app, anh cần nổi hơn" — bản viền xám nền
+            trắng chìm vào nền trang): nền navy chữ trắng như chip "Tất cả" / nút "Xử lý đơn" (giao diện tối đảo thành
+            nền sáng chữ đậm), kèm chấm đỏ "đang quay" — không dùng xanh lá để khỏi lẫn với nút Đóng gói ngay bên dưới.
+            Rộng đúng MỘT ô lưới, không mang đệm ngang (đệm đội gốc lên là lệch cột). Một ô ở màn 390 chỉ ~83 px: chữ
+            "Quay video" ~64 px + chấm đỏ vừa; icon máy quay thay chấm khi ô từ 98 px (màn từ ~448 — máy bảng / máy
+            gập). Chữ không phóng theo cỡ chữ hệ thống; ô hẹp hơn chữ (màn 320) thì chữ tự co cho vừa. */}
+        {videoEntry ? (
+          <Pressable
+            className="active:opacity-70"
+            style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}
+            onPress={openPackVideo}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Quay video đóng hàng"
+          >
+            {/* Viền nằm ở lớp trong — ô chia cột mà mang viền thì rộng hơn ô Đóng gói đúng bằng viền. */}
+            <View className="flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-900 bg-slate-900 py-2.5 dark:border-slate-100 dark:bg-slate-100">
+              {(winWidth - 56) / 4 >= 98 ? (
+                <Ionicons name="videocam" size={14} color="#ef4444" />
+              ) : (
+                <View className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              )}
+              <Text
+                className="shrink text-xs font-bold text-white dark:text-slate-900"
+                numberOfLines={1}
+                allowFontScaling={false}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                Quay video
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Ô tìm + nút QUÉT ĐÓNG GÓI (anh Trung 05/11). Nút có chữ vì nút QR giữa thanh
@@ -711,7 +775,7 @@ function OrdersScreen() {
               className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
               // minWidth 0: trên web ô nhập có bề rộng tối thiểu riêng, không ép thì đẩy nút quét ra ngoài màn 320.
               style={{ minWidth: 0 }}
-              placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
+              placeholder={searchHint}
               placeholderTextColor="#94a3b8"
               value={search}
               onChangeText={onSearch}

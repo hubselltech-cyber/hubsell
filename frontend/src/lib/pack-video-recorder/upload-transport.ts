@@ -5,6 +5,7 @@
 //   1. POST /api/pack-videos   → dòng sổ PENDING + đường dẫn ký sẵn (ký cả cỡ và kiểu tệp)
 //   2. PUT thẳng lên kho        (một lượt, hoặc theo mảnh với tệp lớn)
 //   3. POST …/complete          → máy chủ tự hỏi kho cỡ thật rồi mới ghi STORED
+// Máy chủ bật đường BẢN 2 (M2.4, 26/11/2026) thì bước 1 + 3 đi /api/pack-videos/v2 bằng VÉ TẢI — trình tự ở upload-flow.ts.
 // `clientId` giữ nguyên qua mọi lần thử lại — kể cả sau khi tải lại trang — nên không sinh dòng trùng (rào D1).
 // Vé (đường dẫn ký sẵn) được xin NGAY TRƯỚC mỗi lượt gửi, không xin sẵn: hàng chờ dài mấy cũng không hết hạn vé (N7).
 // ============================================================
@@ -12,94 +13,37 @@
 import {
   ApiError,
   beginPackVideoUpload,
+  beginPackVideoUploadV2,
   completePackVideoUpload,
+  completePackVideoUploadV2,
+  packVideoUploadV2Enabled,
   signPackVideoParts,
+  signPackVideoPartsV2,
   type PackVideoHoursBalance,
-  type PackVideoKind,
-  type PackVideoUploadPlan,
 } from "@/lib/api";
 
 import { ClipFileBroken } from "./clip-store";
+import { StorageError, runUpload, type UploadApi, type UploadRequest } from "./upload-flow";
 import type { UploadVerdict } from "./upload-queue";
 
-export interface UploadRequest {
-  clientId: string;
-  code: string;
-  kind: PackVideoKind;
-  startedAtIso: string;
-  durationSec: number;
-  sizeBytes: number;
-  width: number;
-  height: number;
-  deviceName: string | null;
-  /** Chỉ được gọi khi kho thật sự cần tệp (video đã lên từ lượt trước thì không đọc ổ). */
-  blob(): Promise<Blob>;
-  /** Tổng số byte kho đã nhận của clip này tính tới lúc gọi. */
-  onProgress(sentBytes: number): void;
-}
+export { StorageError, type UploadMemo, type UploadRequest } from "./upload-flow";
 
-export class StorageError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
+const API: UploadApi = {
+  uploadV2Enabled: packVideoUploadV2Enabled,
+  begin: beginPackVideoUpload,
+  signParts: signPackVideoParts,
+  complete: completePackVideoUpload,
+  beginV2: beginPackVideoUploadV2,
+  signPartsV2: signPackVideoPartsV2,
+  completeV2: completePackVideoUploadV2,
+};
 
-/** Trả số giờ máy chủ gửi kèm (M2.2) — null khi máy chủ bản cũ chưa gửi. */
-export async function uploadClip(req: UploadRequest): Promise<PackVideoHoursBalance | null> {
-  const begun = await beginPackVideoUpload({
-    clientId: req.clientId,
-    trackingCode: req.code,
-    kind: req.kind,
-    recordedAt: req.startedAtIso,
-    durationSec: Math.max(1, Math.round(req.durationSec)),
-    sizeBytes: req.sizeBytes,
-    width: req.width,
-    height: req.height,
-    deviceName: req.deviceName,
-  });
-  const plan = begun.upload;
-  if (plan) await sendToStorage(req, begun.video.id, plan);
-  const done = await completePackVideoUpload(begun.video.id);
-  return done.hours ?? null;
-}
-
-async function sendToStorage(req: UploadRequest, videoId: string, plan: PackVideoUploadPlan): Promise<void> {
-  const file = await req.blob();
-  const total = file.size;
-  if (total !== req.sizeBytes) throw new ClipFileBroken("Tệp chờ gửi không đúng cỡ đã ghi sổ");
-  if (plan.mode === "single") {
-    await putToStorage(plan.url, plan.headers, file, req.onProgress);
-    return;
-  }
-  const held = new Set(plan.uploadedParts ?? []);
-  const urlOf = new Map(plan.parts.map((p) => [p.partNumber, p.url]));
-  const count = Math.ceil(total / plan.partSize);
-  let sentBefore = 0;
-  for (let n = 1; n <= count; n++) {
-    const start = (n - 1) * plan.partSize;
-    const end = Math.min(total, start + plan.partSize);
-    if (!held.has(n)) {
-      const body = file.slice(start, end);
-      const base = sentBefore;
-      const progress = (sent: number) => req.onProgress(base + sent);
-      let url = urlOf.get(n) ?? (await signPackVideoParts(videoId, [n])).parts[0]?.url;
-      if (!url) throw new Error("Máy chủ không cấp đường dẫn cho một mảnh của tệp");
-      try {
-        await putToStorage(url, {}, body, progress);
-      } catch (err) {
-        // Đường dẫn của mảnh hết hạn (403) → xin ký lại đúng một lần rồi gửi lại.
-        if (!(err instanceof StorageError) || err.status !== 403) throw err;
-        url = (await signPackVideoParts(videoId, [n])).parts[0]?.url;
-        if (!url) throw err;
-        await putToStorage(url, {}, body, progress);
-      }
-    }
-    sentBefore = end;
-    req.onProgress(sentBefore);
-  }
+/**
+ * Gửi trọn một clip — trình tự (bản 1 / bản 2 "vé không ghi", M2.4) nằm ở upload-flow.ts.
+ * Trả số giờ máy chủ gửi kèm (M2.2) — null khi máy chủ bản cũ chưa gửi.
+ */
+export function uploadClip(req: UploadRequest): Promise<PackVideoHoursBalance | null> {
+  return runUpload(req, { api: API, put: putToStorage });
 }
 
 /** PUT thẳng lên kho bằng XMLHttpRequest để có tiến độ tải lên (fetch không báo tiến độ gửi). */
@@ -128,8 +72,8 @@ function putToStorage(
   });
 }
 
-/** Mã lỗi máy chủ mà thử lại là qua được (lượt tải theo mảnh hết hạn, kho chưa thấy tệp…). */
-const RETRYABLE_CODES = new Set(["UPLOAD_EXPIRED", "NOT_UPLOADED", "PARTS_MISSING", "SIZE_MISMATCH"]);
+/** Mã lỗi máy chủ mà thử lại là qua được (lượt tải theo mảnh hết hạn, kho chưa thấy tệp, vé tải bản 2 hết dùng được…). */
+const RETRYABLE_CODES = new Set(["UPLOAD_EXPIRED", "NOT_UPLOADED", "PARTS_MISSING", "SIZE_MISMATCH", "TICKET_INVALID"]);
 
 /**
  * Lỗi này thử lại có qua được không + câu cho người đóng hàng đọc.

@@ -1,0 +1,507 @@
+diff --git a/node_modules/react-native-vision-camera/android/build.gradle b/node_modules/react-native-vision-camera/android/build.gradle
+index bfcb0e0..9f345a7 100644
+--- a/node_modules/react-native-vision-camera/android/build.gradle
++++ b/node_modules/react-native-vision-camera/android/build.gradle
+@@ -151,6 +151,8 @@ dependencies {
+   implementation "androidx.camera:camera-video:${camerax_version}"
+   implementation "androidx.camera:camera-view:${camerax_version}"
+   implementation "androidx.camera:camera-extensions:${camerax_version}"
++  // HUBSELL ban thu lat 0, cua 4: lop phu ngay gio in vao video luc quay
++  implementation "androidx.camera:camera-effects:${camerax_version}"
+ 
+   // EXIF Interface for editing EXIF in photos
+   implementation 'androidx.exifinterface:exifinterface:1.4.2'
+diff --git a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/outputs/HybridVideoOutput.kt b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/outputs/HybridVideoOutput.kt
+index c65d44f..8660a0a 100644
+--- a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/outputs/HybridVideoOutput.kt
++++ b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/outputs/HybridVideoOutput.kt
+@@ -86,8 +86,31 @@ class HybridVideoOutput(
+           // Sets the Quality itself (UHD, FHD, ...). We intentionally do not call
+           // `setAspectRatio` - it's a hard filter that can force CameraX to crop the
+           // chosen Quality's typical size, e.g. SD@640x480 + RATIO_16_9 → 640x360.
+-          val qualitySelector = options.targetResolution.toQualitySelector()
+-          setQualitySelector(qualitySelector)
++          // HUBSELL ban thu (55.12): dich la khung 3:4 thi ep ty le 4:3 de tep video dung ty le cam bien,
++          // khong cat giua 16:9 nua. Muc chat luong chon theo CANH NGAN (768x1024 -> HD), vi cac muc cua
++          // CameraX chi co co 16:9 dien hinh: de nguyen dich 4:3 thi no roi xuong SD 640x480 (ban 11).
++          // HD + 4:3 = 960x720. Bao cho lop phu ngay gio biet ty le khung video.
++          val hubsellTarget = options.targetResolution.toSize()
++          val hubsellLong = maxOf(hubsellTarget.width, hubsellTarget.height).toFloat()
++          val hubsellShort = minOf(hubsellTarget.width, hubsellTarget.height).toFloat()
++          val hubsellIs43 = hubsellShort > 0f && kotlin.math.abs(hubsellLong / hubsellShort - 4f / 3f) < 0.05f
++          if (hubsellIs43) {
++            val all = androidx.camera.video.Quality.getSortedQualities()
++            val sorted =
++              all.sortedBy { q ->
++                if (q is androidx.camera.video.Quality.ConstantQuality) {
++                  q.typicalSizes.minOfOrNull { kotlin.math.abs(minOf(it.width, it.height) - hubsellShort) } ?: Float.MAX_VALUE
++                } else {
++                  Float.MAX_VALUE
++                }
++              }
++            setQualitySelector(androidx.camera.video.QualitySelector.fromOrderedList(sorted))
++            setAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
++            com.margelo.nitro.camera.session.TimestampOverlay.videoLongOverShort = 4f / 3f
++          } else {
++            setQualitySelector(options.targetResolution.toQualitySelector())
++            com.margelo.nitro.camera.session.TimestampOverlay.videoLongOverShort = 16f / 9f
++          }
+         }.build()
+   }
+ 
+diff --git a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/ConstraintResolver.kt b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/ConstraintResolver.kt
+index 2431cd8..1892e45 100644
+--- a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/ConstraintResolver.kt
++++ b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/ConstraintResolver.kt
+@@ -69,6 +69,7 @@ object ConstraintResolver {
+       val sessionConfig =
+         SessionConfig
+           .Builder(preparedUseCases.map { it.useCase })
++          .apply { TimestampOverlay.effectFor(preparedUseCases.map { it.useCase })?.let { addEffect(it) } } // HUBSELL cua 4
+           .build()
+ 
+       if (cameraInfo.isSessionConfigSupported(sessionConfig) || activeConstraints.isEmpty()) {
+@@ -80,6 +81,7 @@ object ConstraintResolver {
+             SessionConfig
+               .Builder(preparedUseCases.map { it.useCase })
+               .apply { setFrameRateRange(resolvedFPSRange) }
++              .apply { TimestampOverlay.effectFor(preparedUseCases.map { it.useCase })?.let { addEffect(it) } } // HUBSELL cua 4
+               .build()
+           } else {
+             sessionConfig
+diff --git a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/TimestampOverlay.kt b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/TimestampOverlay.kt
+new file mode 100644
+index 0000000..88c71a5
+--- /dev/null
++++ b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/session/TimestampOverlay.kt
+@@ -0,0 +1,143 @@
++package com.margelo.nitro.camera.session
++
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.Paint
++import android.graphics.PorterDuff
++import android.graphics.Typeface
++import android.os.Handler
++import android.os.HandlerThread
++import android.util.Log
++import androidx.camera.core.CameraEffect
++import androidx.camera.core.Preview
++import androidx.camera.core.UseCase
++import androidx.camera.effects.OverlayEffect
++import androidx.camera.video.VideoCapture
++import java.text.SimpleDateFormat
++import java.util.Date
++import java.util.Locale
++
++/**
++ * HUBSELL - ban thu lat 0, cua 4 (14/11/2026).
++ * In NGAY GIO (dd/MM/yyyy HH:mm:ss, chay tung giay) vao goc TRAI TREN cua hinh, ngay luc quay:
++ * lop phu cua CameraX duoc tron vao khung hinh truoc khi toi bo ma hoa, nen chu nam trong tep MP4.
++ * Chi in ngay gio - khong ma van don, khong ten shop (anh Trung chot 14/11).
++ * Gio lay tu dong ho DIEN THOAI (ban thu chua co may chu).
++ */
++object TimestampOverlay {
++  private const val TAG = "HubsellTimestamp"
++
++  /** Tat = quay hinh tron nhu truoc (de so sanh cua 2 / cua 3). */
++  @Volatile
++  var enabled: Boolean = true
++
++  /** Canh dai / canh ngan cua KHUNG TEP VIDEO (16:9 mac dinh, 4:3 khi dau quay duoc ep 4:3). */
++  @Volatile
++  var videoLongOverShort: Float = 16f / 9f
++
++  private val thread by lazy { HandlerThread("HubsellTimestampOverlay").apply { start() } }
++  private val handler by lazy { Handler(thread.looper) }
++  private val format = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US)
++  private val textPaint =
++    Paint(Paint.ANTI_ALIAS_FLAG).apply {
++      color = Color.WHITE
++      typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
++    }
++  private val boxPaint = Paint().apply { color = Color.argb(150, 0, 0, 0) }
++  private var effect: OverlayEffect? = null
++  private var loggedGeometry = false
++
++  /**
++   * Tra ve lop phu neu phien co CA xem truoc lan quay video; khong thi null (phien chi quet ma,
++   * chi chup anh... giu nguyen nhu thu vien goc).
++   */
++  @Synchronized
++  fun effectFor(useCases: List<UseCase>): CameraEffect? {
++    if (!enabled) return null
++    val hasPreview = useCases.any { it is Preview }
++    val hasVideo = useCases.any { it is VideoCapture<*> }
++    if (!hasPreview || !hasVideo) return null
++    effect?.let { return it }
++
++    val created =
++      OverlayEffect(
++        CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE,
++        0, // khong xep hang khung hinh: chu khong phu thuoc ket qua phan tich
++        handler,
++      ) { error -> Log.e(TAG, "Lop phu ngay gio loi", error) }
++    created.setOnDrawListener { frame ->
++      try {
++        val canvas = frame.overlayCanvas
++        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
++        val crop = frame.cropRect
++        val rotation = ((frame.rotationDegrees % 360) + 360) % 360
++        if (!loggedGeometry) {
++          loggedGeometry = true
++          Log.i(TAG, "khung=${frame.size} cat=$crop xoay=$rotation")
++        }
++        draw(canvas, crop.left.toFloat(), crop.top.toFloat(), crop.width().toFloat(), crop.height().toFloat(), rotation)
++      } catch (e: Throwable) {
++        Log.e(TAG, "Ve ngay gio loi", e)
++      }
++      true
++    }
++    effect = created
++    Log.i(TAG, "Da tao lop phu ngay gio")
++    return created
++  }
++
++  /**
++   * Ve trong he toa do "nguoi xem": (0,0) la goc trai tren cua hinh SAU khi xoay cho dung chieu.
++   * Vung dem (w x h, goc tai left/top) phai xoay `rotation` do theo chieu kim dong ho moi dung chieu.
++   */
++  private fun draw(canvas: Canvas, left: Float, top: Float, w: Float, h: Float, rotation: Int) {
++    canvas.save()
++    canvas.translate(left, top)
++    val viewW: Float
++    val viewH: Float
++    when (rotation) {
++      90 -> {
++        canvas.translate(0f, h)
++        canvas.rotate(-90f)
++        viewW = h
++        viewH = w
++      }
++      180 -> {
++        canvas.translate(w, h)
++        canvas.rotate(180f)
++        viewW = w
++        viewH = h
++      }
++      270 -> {
++        canvas.translate(w, 0f)
++        canvas.rotate(90f)
++        viewW = h
++        viewH = w
++      }
++      else -> {
++        viewW = w
++        viewH = h
++      }
++    }
++    // Luong chung cho xem truoc + quay la 4:3, con tep video la 16:9 cat GIUA (nhat ky ban 7:
++    // khung 1440x1080, video cat Rect(0,135-1440,945)). Lop phu khong duoc biet vung cat cua video,
++    // nen dat chu trong vung 16:9 nam giua - neu khong, dau dong chu bi cat khoi tep quay.
++    val targetRatio = if (viewW < viewH) 1f / videoLongOverShort else videoLongOverShort
++    var safeW = viewW
++    var safeH = viewH
++    if (viewW / viewH > targetRatio) safeW = viewH * targetRatio else safeH = viewW / targetRatio
++    canvas.translate((viewW - safeW) / 2f, (viewH - safeH) / 2f)
++    val shortSide = minOf(safeW, safeH)
++    val textSize = shortSide * 0.035f // 720 px -> chu cao ~25 px
++    val margin = shortSide * 0.02f
++    val pad = textSize * 0.3f
++    textPaint.textSize = textSize
++    val text = format.format(Date())
++    val textW = textPaint.measureText(text)
++    val metrics = textPaint.fontMetrics
++    val boxH = (metrics.descent - metrics.ascent) + pad * 2
++    canvas.drawRect(margin, margin, margin + textW + pad * 2, margin + boxH, boxPaint)
++    canvas.drawText(text, margin + pad, margin + pad - metrics.ascent, textPaint)
++    canvas.restore()
++  }
++}
+diff --git a/node_modules/react-native-vision-camera/ios/Hybrid Objects/Outputs/HybridCameraVideoFrameOutput.swift b/node_modules/react-native-vision-camera/ios/Hybrid Objects/Outputs/HybridCameraVideoFrameOutput.swift
+index ddf5895..a3d3b76 100644
+--- a/node_modules/react-native-vision-camera/ios/Hybrid Objects/Outputs/HybridCameraVideoFrameOutput.swift	
++++ b/node_modules/react-native-vision-camera/ios/Hybrid Objects/Outputs/HybridCameraVideoFrameOutput.swift	
+@@ -19,6 +19,8 @@ final class HybridCameraVideoFrameOutput: HybridCameraVideoOutputSpec, NativeCam
+   let requiresDepthFormat: Bool = false
+   let output: AVCaptureVideoDataOutput
+   private var recorders = WeakArray<HybridFrameRecorder>()
++  // HUBSELL cua 4 (iPhone): in ngay gio len khung hinh truoc khi ghi. CHUA DICH THU.
++  private let hubsellTimestamp = HubsellTimestampOverlay()
+   private let fileType: RecorderFileType
+ 
+   var streamType: StreamType = .video
+@@ -74,6 +76,10 @@ final class HybridCameraVideoFrameOutput: HybridCameraVideoOutputSpec, NativeCam
+     // set the delegate to append to the Recorder
+     delegate.onFrame = { [weak self] buffer, timestamp, orientation, isMirrored in
+       guard let self else { return }
++      // HUBSELL cua 4 (iPhone): chi ve khi dang co ban ghi chay, de luc cho khong ton CPU.
++      if self.recorders.values().contains(where: { $0.isRecording }) {
++        self.hubsellTimestamp.draw(on: buffer)
++      }
+       self.onFrame(buffer, type: .video)
+     }
+   }
+@@ -131,13 +137,25 @@ final class HybridCameraVideoFrameOutput: HybridCameraVideoOutputSpec, NativeCam
+         settings: settings,
+         delegate: self)
+       // 2. Initialize its video track immediately
++      // HUBSELL (iPhone, 18/11): ep H.264 ngay tai day. `setOutputSettings({codec})` tu JS bao "does not support the
++      // codec h264" khi goi luc dau ra chua noi vao phien camera, va dat AVVideoCodecKey vao videoSettings cua
++      // AVCaptureVideoDataOutput la khoa Apple khong ho tro. Khong co cau hinh H.264 thi lui ve mac dinh cua thu vien.
+       guard
+-        let videoSettings = self.output.recommendedVideoSettingsForAssetWriter(
+-          writingTo: self.fileType.toAVFileType())
++        var videoSettings = self.output.recommendedVideoSettings(
++          forVideoCodecType: .h264, assetWriterOutputFileType: self.fileType.toAVFileType())
++          ?? self.output.recommendedVideoSettingsForAssetWriter(
++            writingTo: self.fileType.toAVFileType())
+       else {
+         throw RuntimeError.error(
+           withMessage: "Cannot initialize Recorder - no available video settings were found!")
+       }
++      // HUBSELL (iPhone): thu vien chua ho tro `targetBitRate` o duong quay nay (xem TODO o init) ->
++      // tu dat bitrate trung binh vao cau hinh nen cua AVAssetWriter. CHUA DICH THU.
++      if let hubsellBitRate = self.options.targetBitRate, hubsellBitRate > 0 {
++        var compression = (videoSettings[AVVideoCompressionPropertiesKey] as? [String: Any]) ?? [:]
++        compression[AVVideoAverageBitRateKey] = NSNumber(value: Int(hubsellBitRate))
++        videoSettings[AVVideoCompressionPropertiesKey] = compression
++      }
+       try recorder.initializeVideoTrack(withSettings: videoSettings)
+ 
+       // 3. Set video metadata
+@@ -193,7 +211,8 @@ final class HybridCameraVideoFrameOutput: HybridCameraVideoOutputSpec, NativeCam
+     if let codec = self.output.videoSettings[AVVideoCodecKey] as? AVVideoCodecType {
+       return codec
+     }
+-    return .hevc
++    // HUBSELL (18/11): bo ghi luon nen H.264 (xem createRecorder) -> metadata cung xin theo H.264.
++    return .h264
+   }
+ 
+   private func getMasterClock() throws -> CMClock {
+diff --git a/node_modules/react-native-vision-camera/ios/Utils/HubsellTimestampOverlay.swift b/node_modules/react-native-vision-camera/ios/Utils/HubsellTimestampOverlay.swift
+new file mode 100644
+index 0000000..0eda50a
+--- /dev/null
++++ b/node_modules/react-native-vision-camera/ios/Utils/HubsellTimestampOverlay.swift
+@@ -0,0 +1,219 @@
++///
++/// HubsellTimestampOverlay.swift
++/// HUBSELL - ban thu lat 0, cua 4 tren iPhone (14/11/2026); them MA VAN DON + MA DON HANG 18/11/2026.
++/// !!! Phan them 18/11 viet tren Windows, CHUA DICH THU, CHUA CHAY LAN NAO !!!
++///
++/// In vao goc TRAI TREN cua tung khung hinh TRUOC khi khung duoc ghi bang AVAssetWriter (duong quay
++/// `enablePersistentRecorder`), nen chu nam trong tep video:
++///   dong 1: NGAY GIO (dd/MM/yyyy HH:mm:ss), gio lay tu dong ho DIEN THOAI;
++///   dong 2-4: cac dong chu do man quay (JS) dua xuong - hien la "Ma van don: ..." va "Ma don hang: ...".
++/// Anh Trung 18/11: "cu thu duong in them ma don hang va ma van don kem xem sao" (dao quyet dinh 14/11
++/// "chi can ngay gio thoi") - san doi video phai THAY RO ma van don, tem that trong hinh qua nho.
++///
++/// DUONG TRUYEN CHU tu JS: JS goi `Settings.set({ hubsellPackOverlayLabel: "dong 1\ndong 2" })` cua React
++/// Native -> NSUserDefaults.standard; lop nay doc lai khoa do o MOI khung hinh (doc tu bo nho, re). JS dat
++/// chu SAU khi clip cu da dung va TRUOC khi mo clip moi, nen clip nao mang dung ma cua clip do. Chuoi rong
++/// = chi in ngay gio. Noi dung chu do JS quyet -> doi cau chu khong can dung lai app.
++///
++/// Ve thang len bo dem hinh:
++///   - 4:2:0 hai mat phang 8 bit (dinh dang goc thuong gap): ve chu trang + nen den mo len mat phang
++///     DO SANG bang CGContext xam, roi dat mau cua vung nen ve trung tinh (128).
++///   - BGRA: ve bang CGContext RGB.
++///   - Dinh dang khac (10 bit / HDR...): KHONG ve, in mot dong nhat ky.
++/// Lop phu nay KHONG hien tren man xem truoc cua iPhone (man xem truoc lay hinh thang tu camera) -
++/// man thu tu ve lai cac dong nay len tren.
++///
++
++import AVFoundation
++import CoreGraphics
++import CoreText
++import CoreVideo
++import Foundation
++
++final class HubsellTimestampOverlay {
++  /// Khoa NSUserDefaults ma man quay (JS) ghi cac dong chu can in, cach nhau bang dau xuong dong.
++  static let labelKey = "hubsellPackOverlayLabel"
++  /// Toi da ngan nay dong chu them (ngoai dong ngay gio) va ngan nay ky tu moi dong.
++  static let maxLabelLines = 3
++  static let maxLabelChars = 44
++
++  var enabled = true
++
++  private let formatter: DateFormatter
++  /// Dong chu da dung san: "<co chu>|<chuoi>" -> CTLine. Ngay gio doi moi giay, ma doi moi clip.
++  private var lineCache: [String: CTLine] = [:]
++  private var loggedFormat = false
++
++  /// Mot hop chu da tinh xong vi tri (toa do CGContext: goc o DUOI TRAI).
++  private struct Box {
++    let line: CTLine
++    let rect: CGRect
++    let textOrigin: CGPoint
++    /// Mep tren / duoi cua hop tinh tu DINH hinh (de xoa mau o mat phang mau).
++    let top: CGFloat
++    let bottom: CGFloat
++  }
++
++  init() {
++    let formatter = DateFormatter()
++    formatter.locale = Locale(identifier: "en_US_POSIX")
++    formatter.dateFormat = "dd/MM/yyyy HH:mm:ss"
++    self.formatter = formatter
++  }
++
++  private func makeLine(_ text: String, fontSize: CGFloat) -> CTLine {
++    let key = "\(Int(fontSize))|\(text)"
++    if let cached = lineCache[key] { return cached }
++    if lineCache.count > 24 { lineCache.removeAll() }
++    let font = CTFontCreateWithName("Menlo-Bold" as CFString, fontSize, nil)
++    let attributes: [NSAttributedString.Key: Any] = [
++      NSAttributedString.Key(kCTFontAttributeName as String): font,
++      NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1.0, alpha: 1.0),
++    ]
++    let made = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes) as CFAttributedString)
++    lineCache[key] = made
++    return made
++  }
++
++  /// Cac dong chu JS dua xuong (da cat bot so dong va do dai).
++  private func labelLines() -> [String] {
++    guard let raw = UserDefaults.standard.string(forKey: HubsellTimestampOverlay.labelKey), !raw.isEmpty else {
++      return []
++    }
++    var lines: [String] = []
++    for part in raw.components(separatedBy: "\n") {
++      let trimmed = part.trimmingCharacters(in: .whitespaces)
++      if trimmed.isEmpty { continue }
++      lines.append(String(trimmed.prefix(HubsellTimestampOverlay.maxLabelChars)))
++      if lines.count >= HubsellTimestampOverlay.maxLabelLines { break }
++    }
++    return lines
++  }
++
++  func draw(on sampleBuffer: CMSampleBuffer) {
++    guard enabled, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
++    let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
++    let width = CVPixelBufferGetWidth(pixelBuffer)
++    let height = CVPixelBufferGetHeight(pixelBuffer)
++    guard width > 16, height > 16 else { return }
++
++    let isBiPlanar8 =
++      pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
++      || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
++    let isBGRA = pixelFormat == kCVPixelFormatType_32BGRA
++    if !loggedFormat {
++      loggedFormat = true
++      print("[HubsellTimestamp] khung=\(width)x\(height) dinhDang=\(pixelFormat) ve=\(isBiPlanar8 || isBGRA)")
++    }
++    guard isBiPlanar8 || isBGRA else { return }
++
++    // Kich thuoc theo canh ngan cua KHUNG VIDEO, giong ban Android: ngay gio cao ~3,5 % (720 -> ~25 diem anh);
++    // dong ma to hon mot bac (~4,2 %) vi day la thu san can doc.
++    let frameW = CGFloat(width)
++    let frameH = CGFloat(height)
++    let shortSide = min(frameW, frameH)
++    let stampSize = (shortSide * 0.035).rounded()
++    let codeSize = (shortSide * 0.042).rounded()
++    let margin = (shortSide * 0.02).rounded()
++    let gap = max(CGFloat(2), (shortSide * 0.004).rounded())
++    let available = frameW - margin * 2
++
++    var texts: [String] = [formatter.string(from: Date())]
++    var sizes: [CGFloat] = [stampSize]
++    for label in labelLines() {
++      texts.append(label)
++      sizes.append(codeSize)
++    }
++
++    // Xep cac hop tu tren xuong. Dong nao rong hon khung thi thu nho co chu cho vua.
++    var boxes: [Box] = []
++    var top = margin
++    for index in 0..<texts.count {
++      let text = texts[index]
++      var fontSize = sizes[index]
++      var pad = (fontSize * 0.3).rounded()
++      var line = makeLine(text, fontSize: fontSize)
++      var ascent: CGFloat = 0
++      var descent: CGFloat = 0
++      var leading: CGFloat = 0
++      var textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
++      if textWidth + pad * 2 > available && textWidth > 0 {
++        let shrunk = (fontSize * (available - pad * 2) / textWidth).rounded(.down)
++        fontSize = max(CGFloat(8), shrunk)
++        pad = (fontSize * 0.3).rounded()
++        line = makeLine(text, fontSize: fontSize)
++        textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
++      }
++      let boxWidth = (textWidth + pad * 2).rounded(.up)
++      let boxHeight = (ascent + descent + pad * 2).rounded(.up)
++      // Het cho (khung qua nho / qua nhieu dong) thi dung, khong ve ra ngoai bo dem.
++      if margin + boxWidth >= frameW || top + boxHeight + margin >= frameH { break }
++      let box = Box(
++        line: line,
++        rect: CGRect(x: margin, y: frameH - top - boxHeight, width: boxWidth, height: boxHeight),
++        textOrigin: CGPoint(x: margin + pad, y: frameH - top - pad - ascent),
++        top: top,
++        bottom: top + boxHeight)
++      boxes.append(box)
++      top += boxHeight + gap
++    }
++    guard !boxes.isEmpty else { return }
++
++    guard CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess else { return }
++    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
++
++    if isBGRA {
++      guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
++      let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
++      guard
++        let context = CGContext(
++          data: base, width: width, height: height, bitsPerComponent: 8,
++          bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
++          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo)
++      else { return }
++      for box in boxes {
++        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 0.6)
++        context.fill(box.rect)
++        context.textPosition = box.textOrigin
++        CTLineDraw(box.line, context)
++      }
++      return
++    }
++
++    // 4:2:0 hai mat phang: mat phang 0 = do sang (1 byte / diem anh).
++    guard let lumaBase = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) else { return }
++    let lumaWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
++    let lumaHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
++    guard
++      let context = CGContext(
++        data: lumaBase, width: lumaWidth, height: lumaHeight, bitsPerComponent: 8,
++        bytesPerRow: CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0),
++        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
++    else { return }
++    for box in boxes {
++      context.setFillColor(gray: 0.0, alpha: 0.6)
++      context.fill(box.rect)
++      context.textPosition = box.textOrigin
++      CTLineDraw(box.line, context)
++    }
++
++    // Mat phang 1 = mau (Cb, Cr xen ke; moi chieu bang mot nua). Dat vung nen ve 128 = khong mau,
++    // de chu trang khong bi am mau cua canh ben duoi.
++    guard let chromaBase = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1) else { return }
++    let chromaWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 1)
++    let chromaHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 1)
++    let chromaBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
++    let chromaLeft = Int(margin) / 2
++    for box in boxes {
++      let chromaRight = min(chromaWidth, (Int(margin + box.rect.width) + 1) / 2)
++      let topRow = Int(box.top) / 2
++      let bottomRow = min(chromaHeight, (Int(box.bottom) + 1) / 2)
++      if chromaRight <= chromaLeft || bottomRow <= topRow { continue }
++      let byteCount = min((chromaRight - chromaLeft) * 2, chromaBytesPerRow - chromaLeft * 2)
++      if byteCount <= 0 { continue }
++      for row in topRow..<bottomRow {
++        memset(chromaBase.advanced(by: row * chromaBytesPerRow + chromaLeft * 2), 128, byteCount)
++      }
++    }
++  }
++}

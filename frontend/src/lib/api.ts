@@ -10773,7 +10773,7 @@ const PACK_TICKET_RENEW_BEFORE_MS = 60_000;
 /** Xin vé hỏng / máy chủ không cấp → thôi hỏi trong ngần này. */
 const PACK_TICKET_RETRY_MS = 60_000;
 
-let packTicket: { forToken: string; value: string | null; untilMs: number } | null = null;
+let packTicket: { forToken: string; value: string | null; untilMs: number; uploadV2: boolean } | null = null;
 let packTicketInflight: Promise<void> | null = null;
 
 async function packSessionHeaders(): Promise<Record<string, string>> {
@@ -10784,11 +10784,14 @@ async function packSessionHeaders(): Promise<Record<string, string>> {
     packTicketInflight ??= (async () => {
       let value: string | null = null;
       let untilMs = Date.now() + PACK_TICKET_RETRY_MS;
+      // Máy chủ có bảo dùng đường tải BẢN 2 không (M2.4) — vắng mặt (máy chủ bản cũ) / xin vé hỏng = không.
+      let uploadV2 = false;
       try {
-        const r = await apiFetch<{ ticket: string | null; ttlSec: number }>("/api/pack-videos/session", {
+        const r = await apiFetch<{ ticket: string | null; ttlSec: number; uploadV2?: boolean }>("/api/pack-videos/session", {
           method: "POST",
           body: "{}",
         });
+        uploadV2 = r.uploadV2 === true;
         if (r.ticket && r.ttlSec > 0) {
           value = r.ticket;
           untilMs = Date.now() + Math.max(PACK_TICKET_RETRY_MS, r.ttlSec * 1000 - PACK_TICKET_RENEW_BEFORE_MS);
@@ -10796,7 +10799,7 @@ async function packSessionHeaders(): Promise<Record<string, string>> {
       } catch {
         // không có vé — gọi bằng token đăng nhập
       }
-      packTicket = { forToken: token, value, untilMs };
+      packTicket = { forToken: token, value, untilMs, uploadV2 };
       packTicketInflight = null;
     })();
     await packTicketInflight;
@@ -10829,6 +10832,47 @@ export async function completePackVideoUpload(id: string) {
   return apiFetch<{ video: { id: string; status: PackVideoStatus }; hours?: PackVideoHoursBalance }>(
     `/api/pack-videos/${encodeURIComponent(id)}/complete`,
     { method: "POST", body: JSON.stringify({}), headers: await packSessionHeaders() }
+  );
+}
+
+// ---------- TẢI LÊN BẢN 2 — "vé không ghi" (M2.4, 26/11/2026) ----------
+// Máy chủ KHÔNG ghi sổ lúc bắt đầu: trả một VÉ TẢI đã ký, màn quay gửi lại vé ở bước ký mảnh / báo xong.
+// Chỉ dùng khi câu trả lời MỚI NHẤT của /session có `uploadV2: true` (lib/pack-video-recorder/upload-flow.ts).
+
+/** Câu trả lời mới nhất của /session có bảo dùng đường tải bản 2 không (xin / làm mới vé phiên quay nếu cần). */
+export async function packVideoUploadV2Enabled(): Promise<boolean> {
+  await packSessionHeaders();
+  return packTicket !== null && packTicket.forToken === getToken() && packTicket.uploadV2;
+}
+
+export interface PackVideoBeginV2Response extends PackVideoBeginResponse {
+  /** null = clip này đã có dòng sổ từ trước → đi tiếp đường bản 1 theo `video.id`. */
+  ticket: string | null;
+}
+
+/** Bước 1 bản 2. Máy chủ đang tắt bản 2 → ApiError 409 mã V2_OFF (quay về beginPackVideoUpload). */
+export async function beginPackVideoUploadV2(payload: PackVideoBeginPayload) {
+  return apiFetch<PackVideoBeginV2Response>("/api/pack-videos/v2", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: await packSessionHeaders(),
+  });
+}
+
+/** Xin ký lại mảnh bằng vé tải. */
+export async function signPackVideoPartsV2(ticket: string, partNumbers: number[]) {
+  return apiFetch<{ parts: PackVideoSignedPart[]; uploadedParts: number[]; expiresAt: string }>("/api/pack-videos/v2/parts", {
+    method: "POST",
+    body: JSON.stringify({ ticket, partNumbers }),
+    headers: await packSessionHeaders(),
+  });
+}
+
+/** Bước cuối bản 2: báo tải xong bằng vé tải. Vé hết dùng được → ApiError 409 mã TICKET_INVALID (bắt đầu lại). */
+export async function completePackVideoUploadV2(ticket: string) {
+  return apiFetch<{ video: { id: string; status: PackVideoStatus }; hours?: PackVideoHoursBalance }>(
+    "/api/pack-videos/v2/complete",
+    { method: "POST", body: JSON.stringify({ ticket }), headers: await packSessionHeaders() }
   );
 }
 

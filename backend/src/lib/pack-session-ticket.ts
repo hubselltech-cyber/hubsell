@@ -31,10 +31,12 @@ export interface PackSessionClaims {
   allowedChannelIds: string[] | null;
 }
 
-function secretOf(env: NodeJS.ProcessEnv = process.env): string {
+/** Khóa ký vé của Video đóng hàng — vé phiên quay ở đây và vé tải (lib/pack-upload-ticket.ts) dùng chung. */
+export function packTicketSecret(env: NodeJS.ProcessEnv = process.env): string {
   // Cùng khóa với token đăng nhập (middleware/auth.ts); tách bằng `aud`, không thêm biến môi trường mới.
   return env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
 }
+const secretOf = packTicketSecret;
 
 export function signPackSessionTicket(
   claims: PackSessionClaims,

@@ -27,6 +27,11 @@ export function setAuthToken(token: string | null) {
   authToken = token;
 }
 
+/** Token của phiên đang đăng nhập — để vé phiên quay video gắn với đúng phiên đã xin nó (api/pack-video.ts). */
+export function currentAuthToken(): string | null {
+  return authToken;
+}
+
 export function setOnUnauthorized(cb: (() => void) | null) {
   onUnauthorized = cb;
 }
@@ -43,6 +48,8 @@ export function setOnPlanLocked(cb: (() => void) | null) {
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  /** Máy chủ bảo chờ ít nhất ngần này trước khi thử lại (tiêu đề Retry-After của 429 / 503); không có thì bỏ trống. */
+  retryAfterMs?: number;
   constructor(message: string, status: number, body: unknown) {
     super(message);
     this.name = "ApiError";
@@ -56,6 +63,8 @@ interface ApiOptions {
   body?: unknown;
   /** Bỏ qua token (màn đăng nhập). */
   anonymous?: boolean;
+  /** Tiêu đề gửi thêm (vé phiên quay video X-Pack-Session). */
+  headers?: Record<string, string>;
 }
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
@@ -71,6 +80,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
       headers: {
         ...(isForm ? {} : { "Content-Type": "application/json" }),
         ...(sentToken ? { Authorization: `Bearer ${sentToken}` } : {}),
+        ...(opts.headers ?? {}),
       },
       body: isForm
         ? (opts.body as FormData)
@@ -114,7 +124,10 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     const message = body?.code?.startsWith("PLAN_")
       ? "Tính năng này hiện chưa được bật cho tài khoản của bạn. Vui lòng liên hệ quản trị viên shop."
       : (body?.error ?? `Máy chủ trả lỗi (${res.status})`);
-    throw new ApiError(message, res.status, data);
+    const apiError = new ApiError(message, res.status, data);
+    const retryAfterSec = Number(res.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) apiError.retryAfterMs = retryAfterSec * 1000;
+    throw apiError;
   }
   return data as T;
 }

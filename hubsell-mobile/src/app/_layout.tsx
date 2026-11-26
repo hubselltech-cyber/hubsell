@@ -8,12 +8,17 @@ import { BiometricGate } from "@/auth/BiometricGate";
 import { PlanProvider } from "@/plan/PlanContext";
 import { NotificationsProvider } from "@/notifications/NotificationsContext";
 import { ThemeProvider } from "@/theme/ThemeContext";
+import { PackVideoQueueResume } from "@/components/PackVideoQueueResume";
+import { hasPackVideoNative } from "@/lib/pack-video-access";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
+          {/* Video đóng hàng: gửi tiếp các video còn trong hàng chờ trên máy — thẻ rỗng. Chỉ bản app có phần gốc
+              camera quay video mới có gì để gửi (bản cũ nhận mã này qua cập nhật từ xa thì bỏ qua). */}
+          {hasPackVideoNative() ? <PackVideoQueueResume /> : null}
           <PlanProvider>
           {/* Chuông + push: ở gốc vì màn Thông báo / Cài đặt nằm ngoài nhóm (admin);
               tự im khi chưa đăng nhập hoặc không phải chủ shop. */}

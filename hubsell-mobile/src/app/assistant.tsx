@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -19,6 +18,7 @@ import type { AssistantReply } from "@/types/api";
 import { AssistantOrb } from "@/components/AssistantOrb";
 import { useVoiceInput } from "@/lib/use-voice-input";
 import { hapticTap } from "@/lib/haptics";
+import { useKeyboardLift } from "@/lib/useKeyboardLift";
 
 /**
  * TRỢ LÝ HUBSELL trên mobile — cùng backend tầng luật với bong bóng chat web
@@ -93,6 +93,12 @@ export default function AssistantScreen() {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
   const scrollRef = useRef<ScrollView>(null);
+  // BÀN PHÍM CHE Ô NHẬP (anh Trung 26/11/2026): màn này mở dạng tờ trượt của iOS, không nằm
+  // sát mép trên màn hình, nên KeyboardAvoidingView (tính theo khung cha) nâng thiếu đúng
+  // khoảng tờ trượt cách mép trên → bàn phím che gần hết ô nhập. Đo phần bị che ngay trong
+  // cửa sổ rồi đệm đáy đúng bấy nhiêu (lib/useKeyboardLift.ts) — đúng cả Android tràn viền.
+  const rootRef = useRef<View>(null);
+  const { kbLift, kbOpen } = useKeyboardLift(rootRef, { animate: true });
   const loadingRef = useRef(false);
   loadingRef.current = loading;
 
@@ -170,10 +176,10 @@ export default function AssistantScreen() {
   });
 
   useEffect(() => {
-    // Tin mới / đang trả lời → cuộn xuống đáy
+    // Tin mới / đang trả lời / bàn phím vừa mở (khung hội thoại co lại) → cuộn xuống đáy
     const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     return () => clearTimeout(t);
-  }, [msgs, loading]);
+  }, [msgs, loading, kbLift]);
 
   if (status === "loading") return null;
   if (status === "signedOut" || !user) return <Redirect href="/login" />;
@@ -187,9 +193,11 @@ export default function AssistantScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <View
+      ref={rootRef}
+      collapsable={false}
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      behavior="padding"
+      style={{ paddingBottom: kbLift }}
     >
       {/* ── Header — band navy LUÔN TỐI (nhận diện trợ lý, như web) ── */}
       <View
@@ -349,7 +357,9 @@ export default function AssistantScreen() {
       {/* ── Ô hỏi: gõ tay hoặc bấm mic nói ── */}
       <View
         className="flex-row items-center gap-2 border-t border-slate-200 bg-white px-3 pt-3 dark:border-slate-800 dark:bg-slate-900"
-        style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+        // Bàn phím mở thì ô nhập ngồi sát bàn phím — không chừa thêm vùng an toàn đáy
+        // (thanh home / thanh điều hướng lúc đó đã nằm dưới bàn phím).
+        style={{ paddingBottom: kbOpen ? 12 : Math.max(insets.bottom, 12) }}
       >
         <TextInput
           value={input}
@@ -361,7 +371,10 @@ export default function AssistantScreen() {
           }
           placeholderTextColor="#94a3b8"
           maxLength={300}
-          className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 dark:border-slate-700 dark:text-slate-100"
+          // min-h (không cao cứng) + bỏ đệm dọc mặc định của ô nhập Android: cỡ chữ máy lớn thì chữ không bị cắt mép trên
+          // (soi máy ảo Android cỡ chữ 1,5×, 26/11/2026 — ô cao cứng 40 cắt mất nửa dòng chữ gợi ý).
+          className="min-h-10 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-0 text-sm text-slate-900 dark:border-slate-700 dark:text-slate-100"
+          style={{ textAlignVertical: "center" }}
         />
         {voice.supported && (
           <Pressable
@@ -394,6 +407,6 @@ export default function AssistantScreen() {
           <Ionicons name="send" size={16} color="#ffffff" />
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

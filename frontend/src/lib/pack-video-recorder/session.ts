@@ -38,7 +38,7 @@ import { playAlarm, playNotice } from "./sound";
 import type { ClipKind, ClipOutcome, ClipSinkLike } from "./types";
 import { UploadQueue, type UploadJobEvent, type UploadQueueState } from "./upload-queue";
 import { RecordRateMeter, UploadSpeedMeter, type DiskState, type QueueSnapshot } from "./upload-speed";
-import { classifyUploadError, uploadClip } from "./upload-transport";
+import { classifyUploadError, uploadClip, type UploadMemo } from "./upload-transport";
 
 export type SessionClipStatus = "recording" | "saving" | "queued" | "uploading" | "stored" | "failed";
 
@@ -73,6 +73,8 @@ interface Job {
   meta: StoredClipMeta;
   /** Dòng sổ đã nằm trong IndexedDB (clip sống qua tải lại trang). */
   persisted: boolean;
+  /** Vé tải bản 2 của clip này (M2.4) — chỉ trong bộ nhớ; các lần thử lại dùng lại vé thay vì xin vé mới. */
+  uploadMemo?: UploadMemo;
 }
 
 /** Ghi thử chừng này để biết ổ còn nhận nổi không — ≈ 10 phút quay của một bàn. Số tự chọn. */
@@ -664,6 +666,7 @@ async function uploadJob(localId: string): Promise<void> {
       deviceName: meta.deviceName,
       blob: () => opened.store.blobOf(meta.file),
       onProgress: (sent) => onUploadProgress(localId, sent, meta.file.sizeBytes),
+      memo: (job.uploadMemo ??= {}),
     });
     if (hours) hoursOfClip.set(localId, hours);
     // Xóa SỔ trước, TỆP sau: đứt giữa chừng thì còn lại một thư mục không có sổ = rác, lần sau tự dọn.

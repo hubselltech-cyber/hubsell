@@ -35,7 +35,8 @@ import { hapticTap } from "@/lib/haptics";
 import { DonutChart } from "@/components/DonutChart";
 import { ReceiptIcon } from "@/components/ReceiptIcon";
 import { BreakdownTile } from "@/components/BreakdownTile";
-import { WaterfallChart, type WaterfallStep } from "@/components/WaterfallChart";
+import { WaterfallChart } from "@/components/WaterfallChart";
+import { costSegments, waterfallSteps } from "@/lib/finance-breakdown";
 import { Card } from "@/components/Card";
 import { CashByShopTable } from "@/components/CashByShopTable";
 import { TABULAR } from "@/theme/tokens";
@@ -46,10 +47,10 @@ import { TABULAR } from "@/theme/tokens";
  *   1. 4 THẺ của Báo cáo dòng tiền web (/api/finance/analytics): Tổng giá trị
  *      SP · Doanh thu · Chi phí · Lợi nhuận ròng tạm tính — bấm thẻ bung khoản con.
  *   2. BÓC TÁCH DÒNG TIỀN — thác nước như Tổng quan web (/api/analytics):
- *      Tổng giá trị SP → Giá vốn → Chi phí sàn → Thuế sàn → Ads → Vận hành → Lãi ròng
+ *      Tổng giá trị SP → Giá vốn → Chi phí sàn → Thuế sàn → Ads → Vận hành → Thất thu → Lãi ròng
  *      (cột đầu là giá trị đơn khách đặt, 23/10 anh chốt KHÔNG gọi là Doanh thu).
- *   3. CƠ CẤU CHI PHÍ — donut 12 khoản đúng nhãn/màu Tổng quan web, donut
- *      TRÊN, chú thích DƯỚI.
+ *   3. CƠ CẤU CHI PHÍ — donut 13 khoản đúng nhãn/màu Tổng quan web (gồm Thất thu
+ *      hàng mất/hỏng), donut TRÊN, chú thích DƯỚI. Công thức 2 + 3: lib/finance-breakdown.ts.
  *   4. Tiền theo gian hàng (giữ nguyên). Lãi/Lỗ theo ngày đã bỏ (03/10).
  * Mọi bề rộng đo theo màn hình thật (flex + onLayout), không px cố định.
  * Lọc gian hàng (23/10/2026): ô ShopFilterField mở hộp trượt chọn sàn / đúng
@@ -67,62 +68,6 @@ function deltaOf(cur: number, prev: number | undefined): number | null {
 /** Tỷ trọng %: chia cho 0 → 0 (kỳ trống hiện 0% thay vì NaN). */
 function share(part: number, whole: number): number {
   return whole === 0 ? 0 : (part / whole) * 100;
-}
-
-/**
- * Cơ cấu chi phí — 12 khoản ĐÚNG nhãn + màu của CostStructure trên Tổng quan
- * web: 8 bucket sàn khấu trừ (platformFeeBreakdown) + giá vốn + Ads + 2 nhóm
- * vận hành. Σ = totalPlatformFee + totalCost + totalOperatingExpense.
- */
-function costSegments(a: OverviewAnalytics) {
-  const adsExpense = (a.expensesByCategory ?? [])
-    .filter((e) => e.category === "ADS")
-    .reduce((sum, e) => sum + e.amount, 0);
-  const fee = a.platformFeeBreakdown;
-  return [
-    { key: "service", label: "Phí nền tảng (CĐ, thanh toán, dịch vụ)", amount: fee?.service ?? 0, color: "#f97316" },
-    { key: "affiliate", label: "Phí tiếp thị liên kết", amount: fee?.affiliate ?? 0, color: "#f59e0b" },
-    { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN)", amount: fee?.tax ?? 0, color: "#ef4444" },
-    { key: "refund", label: "Tiền hoàn trả khách", amount: fee?.refund ?? 0, color: "#f43f5e" },
-    { key: "voucher", label: "Voucher & xu của shop", amount: fee?.voucher ?? 0, color: "#ec4899" },
-    { key: "shippingDiff", label: "Chênh lệch phí vận chuyển", amount: fee?.shippingDiff ?? 0, color: "#14b8a6" },
-    { key: "adWallet", label: "Nạp ví quảng cáo sàn", amount: fee?.adWallet ?? 0, color: "#6366f1" },
-    { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee?.other ?? 0, color: "#94a3b8" },
-    { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: a.totalCost ?? 0, color: "#3b82f6" },
-    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense, color: "#8b5cf6" },
-    { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: a.operatingVariableExpense ?? 0, color: "#10b981" },
-    { key: "fixops", label: "Chi phí Cố định Vận hành", amount: a.operatingFixedExpense ?? 0, color: "#a16207" },
-  ].filter((s) => s.amount !== 0);
-}
-
-/** Các bậc thác nước — đúng thứ tự + công thức của PnlBreakdown web. */
-function waterfallSteps(a: OverviewAnalytics): WaterfallStep[] {
-  const adsExpense = (a.expensesByCategory ?? [])
-    .filter((e) => e.category === "ADS")
-    .reduce((sum, e) => sum + e.amount, 0);
-  const operatingExpense = (a.totalOperatingExpense ?? 0) - adsExpense;
-  const fee = a.totalPlatformFee ?? 0;
-  const tax = a.totalPlatformTax ?? 0;
-  // KHUYẾN MÃI = voucher shop tự bỏ (platformFeeBreakdown.voucher) tách thành bậc
-  // riêng ngay sau cột giá trị SP để khách thấy tiền TRƯỚC / SAU khuyến mãi (góp ý
-  // khách 22/10, anh chốt 23/10 tối); Chi phí sàn bỏ phần này ra khỏi để không trừ đôi.
-  const promo = a.platformFeeBreakdown?.voucher ?? 0;
-  return [
-    { key: "promo", short: "Khuyến mãi", amount: promo, hue: "rose" },
-    { key: "cogs", short: "Giá vốn", amount: a.totalCost ?? 0, hue: "rose" },
-    { key: "fee", short: "Chi phí", amount: fee - tax - promo, hue: "rose" },
-    { key: "tax", short: "Thuế sàn", amount: tax, hue: "rose" },
-    { key: "ads", short: "Ads", amount: adsExpense, hue: "amber" },
-    { key: "ops", short: "Vận hành", amount: operatingExpense, hue: "amber" },
-    // Đơn chưa có giá vốn tính như giá vốn 0 (anh chốt 02/11/2026, áp 04/11): bỏ bậc
-    // "Thiếu vốn" (30/09 → 04/11) — backend trả excludedProfit = 0 nên bản cũ chưa OTA
-    // cũng tự đóng thác (WaterfallChart bỏ bậc 0); số đơn thiếu nhắc ở thẻ Lợi nhuận.
-    // Thu vận hành khác = bậc CỘNG (amount âm → chart vẽ "+" xanh); thuế bổ sung
-    // dự phòng = bậc trừ cuối — y web, để Lãi ròng dưới thác = thẻ Lợi nhuận
-    // (26/10/2026). amount 0 thì chart tự bỏ bậc.
-    { key: "income", short: "Thu khác", amount: -(a.operatingIncome ?? 0), hue: "amber" },
-    { key: "provisionTax", short: "Thuế DP", amount: a.additionalTax ?? 0, hue: "amber" },
-  ];
 }
 
 /**

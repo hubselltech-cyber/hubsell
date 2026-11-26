@@ -21,10 +21,15 @@
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
 //   DELETE /:id            chủ shop tự xóa một video đã lưu (không khôi phục được)
 //   POST /consent          chủ shop đồng ý lần đầu (ghi sổ đồng ý) — đường DUY NHẤT qua cổng khi chưa đồng ý
-//   POST /session          cấp VÉ PHIÊN QUAY 10 phút (M2.1) — đường nóng có vé thì không đọc database để xác thực
-// ĐƯỜNG NÓNG nhận vé: GET /match · POST / · POST /:id/parts · POST /:id/complete (middleware/pack-session.ts).
-// POST / và POST /:id/complete trả kèm hours (đã mua / đã quay / còn lại) — màn quay không gọi /hours riêng (M2.2).
-// Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
+//   POST /session          cấp VÉ PHIÊN QUAY 10 phút (M2.1) — đường nóng có vé thì không đọc database để xác thực;
+//                          trả kèm `uploadV2` (máy quay có được dùng đường tải bản 2 không)
+//   TẢI LÊN BẢN 2 — "vé không ghi + ghi gộp lúc xong" (M2.4, services/pack-video/upload-v2.ts; công tắc PACK_UPLOAD_V2):
+//   POST /v2               như POST / nhưng KHÔNG ghi database → cách tải + VÉ TẢI (đang tắt → 409 V2_OFF, app về POST /)
+//   POST /v2/parts         { ticket, partNumbers } ký lại / ký thêm mảnh — không đọc database
+//   POST /v2/complete      { ticket, parts? } máy chủ hỏi R2 rồi ghi thẳng dòng STORED (gộp nhiều clip một câu INSERT)
+// ĐƯỜNG NÓNG nhận vé: GET /match · POST / · POST /:id/parts · POST /:id/complete · ba đường /v2 (middleware/pack-session.ts).
+// POST / và POST /:id/complete (và bản 2 của chúng) trả kèm hours (đã mua / đã quay / còn lại) — màn quay không gọi /hours riêng (M2.2).
+// Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags, v2) khai TRƯỚC "/:id".
 //
 // QUYỀN TỪNG ĐƯỜNG (24/11/2026 — nhân viên của chủ đã mở được vào, docs VIDEO-DONG-HANG-THIET-KE mục 28;
 // cổng tổng + `req.packVideoCaps` ở middleware/require-pack-video.ts):
@@ -39,7 +44,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import type { PackVideoRequest } from "../middleware/require-pack-video";
-import { PACK_HOT_RATE, packSessionEnabled } from "../config/pack-video";
+import { PACK_HOT_RATE, packSessionEnabled, packUploadV2Enabled } from "../config/pack-video";
 import { createPackRateLimiter, packRateLimitMode } from "../lib/pack-rate-limit";
 import { isPackHotPath } from "../middleware/pack-session";
 import { PACK_SESSION_MAX_CHANNELS, signPackSessionTicket } from "../lib/pack-session-ticket";
@@ -79,6 +84,7 @@ import {
   signUploadParts,
   type PackVideoActor,
 } from "../services/pack-video/upload";
+import { beginUploadV2, completeUploadV2, signUploadPartsV2 } from "../services/pack-video/upload-v2";
 
 const router = Router();
 
@@ -215,19 +221,21 @@ router.post(
 // Màn quay xin vé MỘT lần rồi gửi kèm ở các đường nóng (tiêu đề X-Pack-Session) — trong hạn vé các đường đó không
 // đọc database để xác thực (middleware/pack-session.ts). Đường này LUÔN đi xác thực thường: không dùng vé để xin vé.
 // ticket = null: máy chủ không cấp (đang tắt, hoặc nhân viên được giao quá nhiều gian) → máy quay cứ gọi như cũ.
+// uploadV2 (M2.4) đi kèm ở CẢ HAI dạng trả lời: true = máy quay xin vé tải ở POST /v2; false = đi đường bản 1.
 router.post(
   "/session",
   handle(async (req, res) => {
     const caps = capsOf(req);
     const channels = req.allowedChannelIds ?? null;
+    const uploadV2 = packUploadV2Enabled();
     if (!packSessionEnabled() || (channels !== null && channels.length > PACK_SESSION_MAX_CHANNELS)) {
-      res.json({ ticket: null, expiresAt: null, ttlSec: 0 });
+      res.json({ ticket: null, expiresAt: null, ttlSec: 0, uploadV2 });
       return;
     }
     const staff = !caps.manage;
     const ownerEmail = staff ? await ownerEmailOf(req.ownerId!) : (req.userEmail ?? null);
-    res.json(
-      signPackSessionTicket({
+    res.json({
+      ...signPackSessionTicket({
         userId: req.userId!,
         ownerId: req.ownerId!,
         staff,
@@ -235,8 +243,9 @@ router.post(
         unbox: caps.unbox,
         pilot: isPackVideoPilot(ownerEmail),
         allowedChannelIds: channels,
-      })
-    );
+      }),
+      uploadV2,
+    });
   })
 );
 
@@ -249,6 +258,33 @@ router.post(
     if (!parsed.ok) throw new PackVideoError(400, "BAD_INPUT", parsed.error);
     requireRecordKind(req, parsed.value.kind);
     res.json(await beginUpload(actorOf(req), parsed.value));
+  })
+);
+
+// Bản 2 (M2.4) — khai TRƯỚC "/:id/parts" + "/:id/complete" để "/v2/parts" không bị hiểu là video có id "v2".
+router.post(
+  "/v2",
+  handle(async (req, res) => {
+    const parsed = parseBeginInput(req.body);
+    if (!parsed.ok) throw new PackVideoError(400, "BAD_INPUT", parsed.error);
+    requireRecordKind(req, parsed.value.kind);
+    res.json(await beginUploadV2(actorOf(req), parsed.value));
+  })
+);
+
+router.post(
+  "/v2/parts",
+  handle(async (req, res) => {
+    const body = (req.body ?? {}) as { ticket?: unknown; partNumbers?: unknown };
+    res.json(await signUploadPartsV2(actorOf(req), body.ticket, body.partNumbers));
+  })
+);
+
+router.post(
+  "/v2/complete",
+  handle(async (req, res) => {
+    const body = (req.body ?? {}) as { ticket?: unknown; parts?: unknown };
+    res.json(await completeUploadV2(actorOf(req), body.ticket, body.parts));
   })
 );
 

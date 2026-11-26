@@ -2,7 +2,7 @@
 // CỬA của nhóm /api/pack-videos (M2.1, 26/11/2026 — docs/VIDEO-DONG-HANG-THIET-KE.md mục 38).
 //
 // Hai lối vào, cùng ra một kiểu request (userId / ownerId / allowedChannelIds / packVideoCaps):
-//  1. VÉ PHIÊN QUAY — chỉ ở các ĐƯỜNG NÓNG của màn quay (hỏi tem, xin vé tải, ký mảnh, báo tải xong) và chỉ khi
+//  1. VÉ PHIÊN QUAY — chỉ ở các ĐƯỜNG NÓNG của màn quay (hỏi tem, xin vé tải, ký mảnh, báo tải xong — cả bản 2 /v2) và chỉ khi
 //     tiêu đề X-Pack-Session mang một vé còn hạn: KHÔNG đọc database (lib/pack-session-ticket.ts).
 //  2. XÁC THỰC THƯỜNG — mọi trường hợp còn lại: requireAuth → requirePackVideo như trước 26/11.
 // Vé hỏng / hết hạn / cổng không cho → KHÔNG trả lỗi, đi lối 2 (máy quay luôn gửi kèm token đăng nhập) — vé chỉ là
@@ -24,11 +24,14 @@ export type PackSessionRequest = PackVideoRequest & {
   viaPackSession?: boolean;
 };
 
-/** Đường nóng của màn quay — `path` là phần sau /api/pack-videos. Thuần, để test được. */
+/**
+ * Đường nóng của màn quay — `path` là phần sau /api/pack-videos. Thuần, để test được.
+ * Bản 2 (M2.4): POST /v2 khai riêng; /v2/parts + /v2/complete khớp sẵn khuôn "/<một đoạn>/(parts|complete)".
+ */
 export function isPackHotPath(method: string, path: string): boolean {
   if (method === "GET") return path === "/match";
   if (method !== "POST") return false;
-  return path === "/" || path === "" || /^\/[A-Za-z0-9_-]{1,64}\/(parts|complete)$/.test(path);
+  return path === "/" || path === "" || path === "/v2" || /^\/[A-Za-z0-9_-]{1,64}\/(parts|complete)$/.test(path);
 }
 
 export function packVideoGateway(req: PackSessionRequest, res: Response, next: NextFunction): void {

@@ -68,3 +68,74 @@ Chữ "Ship báo đã hoàn" là chữ anh chọn cho app; web cùng nhóm đang
 ## 4. Phát hành (chưa làm)
 
 Toàn bộ là JS → đi OTA được. Lưu ý: máy anh đang chạy 1.5.1 TestFlight dựng từ nhánh thử `thu/video-dong-goi-lat-0` (có nút "Quay video khui hàng" chen giữa nút quét và hàng tab của chính màn này) — gộp master vào nhánh thử sẽ đụng `WarehouseHubPage.tsx`; khách kho đang 1.4.3 / 1.5.0 (xem `mobile-index` + `DUA-APP-LEN-CH-PLAY-APP-STORE.md` mục OTA).
+
+## 5. Tài chính: thêm Thất thu hàng mất/hỏng
+
+**Anh nói:** "Trong 'tài chính' cần in thêm chi phí thất thu hàng hỏng" (đây cũng là việc anh dặn nhắc khi nâng cấp app bản sau, 13/11 — `docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md` mục 10).
+
+**Hiện trạng trước khi sửa (màn Tài chính của app, ba khối đọc số chi phí):**
+
+| Khối | Trước | Sau |
+|---|---|---|
+| Thẻ Chi phí (bấm bung "Chi phí theo khoản") | ĐÃ có dòng "Thất thu hàng mất/hỏng" — app in nguyên danh sách backend trả | không đổi |
+| Bóc tách dòng tiền (thác nước) | thất thu của đơn sàn hủy bị gộp vào bậc "Vận hành", của đơn tính doanh thu nằm trong "Giá vốn" — không thấy tên | bậc riêng **"Thất thu"** ngay sau Vận hành; Giá vốn và Vận hành gỡ phần đó ra |
+| Cơ cấu chi phí (vòng + chú thích) | phần thất thu của đơn sàn hủy KHÔNG có lát nào → "tổng chi" ở tâm vòng thấp hơn thẻ Chi phí đúng bằng khoản đó | lát riêng **"Thất thu hàng mất/hỏng"** (màu `#be123c` như web); tổng ở tâm khớp lại |
+
+**Công thức — y web Tổng quan (`frontend/src/app/page.tsx`), backend không đổi:** Giá vốn = `totalCost − damagedLossInCost`; Vận hành = `totalOperatingExpense − quảng cáo − (damagedLoss − damagedLossInCost)`; bậc / lát mới = `damagedLoss`. Số ghi theo NGÀY KHO BÁO HỎNG (anh chốt 20/11). Bậc / lát 0 đồng tự ẩn — shop không có đơn báo hỏng trong kỳ thấy màn như cũ. Backend bản cũ không gửi hai trường → vẽ như trước.
+
+**Tệp:** hai hàm `costSegments` / `waterfallSteps` chuyển từ `FinancePage.tsx` sang `hubsell-mobile/src/lib/finance-breakdown.ts` (thuần) để có test `finance-breakdown.test.ts` (5 ca) giữ hai đẳng thức với mọi bộ số, kể cả phần ngoài giá vốn ÂM: Σ lát = phí sàn + giá vốn + chi phí hoạt động; Tổng giá trị SP − Σ bậc = Lãi ròng. `types/api.ts` thêm `damagedLoss`, `damagedLossInCost`.
+
+**Kiểm:** test 5 / 5, kiểm kiểu sạch (lint: 3 mục của `FinancePage.tsx` có từ trước). Local kỳ 30 ngày với 1 đơn báo hỏng 92.000 đ: thẻ Chi phí 92 k (dòng Thất thu 92.000 đ) = bậc Thất thu −92 k = lát 92 k; 219 k − 92 k = 127 k = Lợi nhuận ròng; sáng + tối. **CHƯA:** máy thật, ca có cả hai loại thất thu cùng kỳ trên dữ liệu thật, so trực tiếp với màn web cùng tài khoản.
+
+## 6. Trợ lý Hubsell: bàn phím che ô nhập chat
+
+**Anh nói:** "Trợ lý Hubsell trên app khi khách sử dụng và chat thì khi thanh bàn phím hiện lên thì khu vực nhập chat bị che mất (giống trường hợp đăng ký, đăng nhập lần trước) — Fix luôn lỗi vặt này."
+
+**Gốc (đọc mã, CHƯA tái hiện trên máy thật):** màn `/assistant` mở dạng `presentation: "modal"` — trên iOS là TỜ TRƯỢT không sát mép trên màn hình. `KeyboardAvoidingView` tính phần bị che bằng "đáy của nó trong KHUNG CHA − mép trên bàn phím trên MÀN HÌNH", nên thiếu đúng khoảng tờ trượt cách mép trên (cỡ 55–60 pt trên iPhone có tai thỏ) → thanh nhập (cao ~86 pt gồm vùng an toàn đáy) bị che gần hết ô gõ. Khác ca Đăng nhập / Đăng ký 19/10 (ở đó là không tự cuộn ô đang gõ); Android mở màn này phủ kín nên phép tính cũ không lệch.
+
+**Sửa:** bỏ `KeyboardAvoidingView` ở màn Trợ lý, dùng `useKeyboardLift` (hook các màn quét đang dùng): lúc bàn phím mở, ĐO vị trí thật của màn trong cửa sổ rồi đệm đáy đúng phần bị che → không phụ thuộc màn nằm ở đâu, đúng cả Android tràn viền. Kèm: bàn phím mở thì thanh nhập bỏ khoảng vùng an toàn đáy (ngồi sát bàn phím); khung hội thoại tự cuộn xuống tin mới nhất khi bàn phím mở. Hook thêm tùy chọn `animate` (chỉ iOS, trượt cùng nhịp bàn phím như `KeyboardAvoidingView`), mặc định tắt — ba màn quét không đổi.
+
+**Tệp:** `hubsell-mobile/src/app/assistant.tsx`, `hubsell-mobile/src/lib/useKeyboardLift.ts`.
+
+**Kiểm:** kiểm kiểu sạch; bản web của app: màn Trợ lý mở, hỏi – đáp, bố cục như cũ (web không có bàn phím ảo nên KHÔNG kiểm được chính lỗi này). **CHƯA:** iPhone thật / TestFlight (nơi lỗi xảy ra), Android thật. Đây là màn modal duy nhất của app; các hộp nhập khác (Giá vốn, Thu chi, Tồn kho) dùng `Modal` phủ kín nên không dính ca này.
+
+## 7. Soi giao diện trên Android cỡ chữ lớn (26/11/2026 khuya)
+
+**Anh nói:** "Em xem lại phần giao diện đã đẹp chưa? Đừng để gặp vấn đề trên các màn hình android như hôm trước" (hôm 23/11: máy Samsung để cỡ chữ lớn, chữ đè nhau).
+
+**Cách soi:** máy ảo Android `hubsell` chạy ngầm, bản debug `vn.hubsell.app` nạp mã master qua Metro, `font_scale 1.5` (app chặn ở 1,2×) + `wm density 480` (màn 360dp) và `540` (màn 320dp), sáng + tối; đăng nhập tài khoản thử có 16 đơn hoàn đủ ca (mã đơn 23 ký tự, tên khách dài). Đọc chữ + tọa độ bằng `uiautomator dump`, chụp bằng `screencap`.
+
+**Tìm ra và đã sửa:**
+
+| Chỗ | Trên Android cỡ chữ lớn | Sửa |
+|---|---|---|
+| Dòng đơn hoàn — mã đơn + nhãn trạng thái | nhãn dài ("Hàng hỏng · chờ khiếu nại sàn", "Ship báo đã hoàn") ép mã đơn cụt còn vài ký tự; ở 320dp nhãn rộng hơn cả hàng (lỗi có từ trước với nhãn Hàng hỏng) | hàng tự xuống dòng: vừa thì mã trái nhãn phải như cũ, không vừa thì nhãn xuống dòng dưới — mã đơn luôn đủ |
+| Dòng đơn hoàn — "sàn · tên khách" + "chờ N ngày" | chữ trên máy thật không tự co → tên khách dài đẩy "chờ N ngày" ra mép | tên khách co + cắt "…", số ngày giữ nguyên |
+| Bốn thẻ số | 320dp: "Hàng hỏng · chờ khiếu nại sàn" cần 3 dòng, bản đầu cho 2 dòng nên bị cắt | cho tới 3 dòng, thẻ cùng hàng tự cao bằng nhau |
+| Ô nhập của Trợ lý | ô cao cứng 40 → chữ gợi ý bị cắt mép trên | bỏ chiều cao cứng + đệm dọc mặc định của ô nhập Android |
+| Thẻ đồng ý / thẻ thông báo của màn quay video | máy nhỏ + chữ lớn: thẻ dài hơn màn hình, không kéo tới nút được | bọc trong vùng cuộn |
+
+**Đã nhìn trên máy ảo, gọn ở 360dp và 320dp:** Kho › Đơn hoàn (thẻ số, danh sách, sheet Bộ lọc, thẻ Hàng hỏng → danh sách, giao diện tối), Tài chính (Lợi nhuận ròng, vòng cơ cấu + chú thích Thất thu), Trợ lý (bàn phím Android bật: ô nhập ngồi sát trên bàn phím, chữ gợi ý đủ).
+
+**Có từ trước, không thuộc đợt này (chỉ ghi):** orb Trợ lý nổi che cột "Ví sàn" của bảng Tiền theo gian hàng khi cuộn tới (đã ghi 23/11); ở 320dp hai nhãn "Trang chủ" và "Đơn hàng" trên thanh tab đứng sát nhau (chưa đè).
+
+### 7.1 Soi tiếp với bản Android CÓ thư viện camera (26/11/2026 ~22:30)
+
+Dựng bản debug mới tại máy (`expo run:android --no-bundler --variant debug`, 5 phút 48 giây, nới bộ nhớ Gradle `-Xmx4096m`) để máy ảo có phần gốc camera quay video → nhìn được các màn của mục 40 tài liệu video:
+
+- **Màn quay video bản master CHẠY trên Android** (lần đầu — trước đó chỉ có mã nhánh thử chạy trên máy thật): khung quay 3:4, ngày giờ in ở góc trái trên, bảng điều khiển Trở về · Đóng hàng · Khui hàng hoàn, "Giờ quay: Còn 2 giờ", bộ đếm lượt quay; nút Trở về quay lại đúng tab Đơn hàng; chế độ khui đổi nền tím. Máy ảo không có tem để đưa vào nên **CHƯA thấy cảnh đang quay / cắt clip / tải lên** trên bản master.
+- Nút "Quay video khui hàng" ở Kho › Đơn hoàn: gọn ở sáng + tối.
+- Sửa thêm hai chỗ thấy trong lượt này:
+
+| Chỗ | Trên Android cỡ chữ lớn | Sửa |
+|---|---|---|
+| Ô tìm tab Đơn hàng (có từ trước) | chữ gợi ý dài bị XUỐNG DÒNG, lòi mép chữ "vận đơn…" ở đáy ô (ô nhập Android không cắt "…") | `lib/fit-hint.ts`: mỗi ô có vài câu gợi ý từ dài tới ngắn, chọn câu dài nhất còn vừa một dòng theo bề ngang ô + cỡ chữ máy; áp cho ba ô tìm (Đơn hàng, Kho › Đơn hoàn, Tồn kho); test 5 ca |
+| Câu hướng dẫn chế độ khui trên màn quay | "Chờ tem kiện hoàn — quay đủ 6 mặt kiện trư…" bị cắt | câu chờ được hai dòng (đang quay vẫn một dòng) |
+
+## 8. Nút "Quay video" ở tab Đơn hàng nổi hơn
+
+**Anh nói (ảnh iPhone bản thử, khoanh nút):** "Nút quay video hơi mờ trên app, anh cần nổi hơn".
+
+Trước: nút viền xám nền trắng (cố ý trung tính để không tranh với nút Đóng gói — nhưng chìm vào nền trang). Nay: **nút đặc nền navy, chữ trắng, kèm chấm đỏ "đang quay"** (giao diện tối đảo thành nền sáng chữ đậm) — cùng tông với chip "Tất cả" và nút "Xử lý đơn", không dùng xanh lá để khỏi lẫn với nút Đóng gói ngay dưới. Vị trí, bề ngang một ô lưới, chữ không phóng theo cỡ chữ máy: giữ nguyên. Màn rộng (ô ≥ 98 px) thay chấm đỏ bằng icon máy quay đỏ.
+
+Đã nhìn trên máy ảo Android 360dp cỡ chữ lớn, sáng + tối: nút nổi rõ, thẳng cột với nút Đóng gói. **CHƯA nhìn trên iPhone** (cần bản dựng mới).

@@ -224,6 +224,29 @@ export function packSessionEnabled(env: NodeJS.ProcessEnv = process.env): boolea
 }
 
 /**
+ * VÉ KHÔNG GHI + GHI GỘP LÚC XONG (M2.4, 26/11/2026 — thiết kế mục 29.5): công tắc env `PACK_UPLOAD_V2`, CHỈ đúng giá trị
+ * `on` mới mở đường xin vé tải bản 2 (POST /api/pack-videos/v2). Mặc định (không đặt) = TẮT → máy quay đi đường bản 1.
+ * Máy quay biết qua `uploadV2` trong câu trả lời của POST /session, không cần ra bản. Tắt giữa chừng: vé tải ĐÃ cấp vẫn
+ * ký mảnh / báo xong được (đường /v2/parts + /v2/complete không xét công tắc) — không clip nào kẹt.
+ */
+export function packUploadV2Enabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PACK_UPLOAD_V2 === "on";
+}
+
+/**
+ * Hạn của VÉ TẢI (M2.4): 7 ngày — SỐ TỰ CHỌN. Vé mang sẵn mọi thứ để ghi dòng sổ lúc báo xong; hàng chờ trên điện thoại
+ * mất mạng có thể báo "tải xong" sau nhiều ngày. Cùng mốc 7 ngày với PACK_VIDEO_PENDING_STALE_DAYS của đường bản 1.
+ */
+export const PACK_UPLOAD_TICKET_TTL_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * GHI GỘP dòng sổ lúc báo tải xong (M2.4, lib/group-commit.ts): gom tối đa 100 dòng hoặc chờ tối đa 200 ms rồi ghi MỘT câu
+ * INSERT nhiều dòng; từng lượt gọi chỉ được trả lời sau khi mẻ của nó đã ghi xong. Hai số là SỐ TỰ CHỌN theo thiết kế
+ * mục 29.5 — chưa có số đo; 200 ms là độ trễ thêm tối đa của lượt "báo tải xong".
+ */
+export const PACK_STORE_BATCH = { maxItems: 100, maxWaitMs: 200 } as const;
+
+/**
  * ĐỆM SỐ DƯ GIỜ theo chủ shop (M2.3): 15 giây — SỐ TỰ CHỌN (mục 29.5). Đệm nằm trong từng tiến trình web; chỉ dùng
  * để trả lời "còn giờ không" lúc mở clip mới và để gửi số giờ kèm câu trả lời. Sai lệch tối đa = vài giây quay —
  * luật 14/11 cho phép quay lố ("phần lố trừ lần mua sau"). Đệm báo HẾT giờ thì luôn đọc lại database trước khi chặn.

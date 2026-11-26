@@ -10,7 +10,9 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
+import { fitHint } from "@/lib/fit-hint";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
@@ -110,6 +112,13 @@ function buildGroups(items: ProductDto[], groupTotals: Record<string, number>): 
  * (`/api/products?view=grouped`, cùng nguồn với bảng Tổng kho web).
  */
 export function StockPage() {
+  // Chữ gợi ý ô tìm vừa một dòng ở mọi cỡ màn / cỡ chữ máy (lib/fit-hint.ts).
+  const { width: winWidth, fontScale } = useWindowDimensions();
+  const searchHint = fitHint(
+    ["Tìm tên sản phẩm, mã SKU, phân loại…", "Tìm tên sản phẩm, mã SKU…", "Tìm sản phẩm…"],
+    winWidth - 88,
+    fontScale
+  );
   const [items, setItems] = useState<ProductDto[]>([]);
   const [groupTotals, setGroupTotals] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
@@ -336,7 +345,7 @@ export function StockPage() {
           <TextInput
             className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
             style={{ minWidth: 0 }}
-            placeholder="Tìm tên sản phẩm, mã SKU, phân loại…"
+            placeholder={searchHint}
             placeholderTextColor="#94a3b8"
             value={search}
             onChangeText={onSearch}

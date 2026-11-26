@@ -54,6 +54,16 @@ export interface AuthUser {
   hasPassword?: boolean;
   /** Đã liên kết đăng nhập Google / Apple (chỉ có sau /me, bản 1.3.0). */
   linked?: { google: boolean; apple: boolean };
+  /**
+   * Cổng tính năng MÁY CHỦ quyết (login + /me). Video đóng hàng:
+   *   packVideo      "open" = dùng được · "consent" = chủ shop chưa bấm đồng ý lần đầu · "locked" = chưa mở;
+   *   packVideoCaps  quay đóng / quay khui / việc của chủ — nhân viên của chủ đã mở quay theo quyền có sẵn
+   *                  (Đơn hàng → đóng; Đối soát đơn hoàn → khui; anh Trung chốt 24/11/2026).
+   */
+  features?: {
+    packVideo?: "open" | "consent" | "locked";
+    packVideoCaps?: { pack?: boolean; unbox?: boolean; manage?: boolean };
+  };
 }
 
 export interface LoginResponse {
@@ -328,6 +338,13 @@ export interface OverviewAnalytics {
   operatingVariableExpense?: number;
   /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương…). */
   operatingFixedExpense?: number;
+  /**
+   * Thất thu hàng mất/hỏng (backend 13/11/2026, ghi theo ngày kho báo hỏng từ 20/11): giá vốn
+   * hàng hoàn kho đã báo hỏng. `damagedLossInCost` = phần đã nằm trong totalCost; phần còn lại
+   * (damagedLoss − damagedLossInCost, âm được) đã nằm trong totalOperatingExpense.
+   */
+  damagedLoss?: number;
+  damagedLossInCost?: number;
   /** Chi phí nhập tay theo danh mục — ADS = quảng cáo (gồm cả sàn tự đồng bộ). */
   expensesByCategory?: { category: string; amount: number }[];
   /**

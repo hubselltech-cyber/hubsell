@@ -46,6 +46,8 @@ interface AuthContextValue {
   /** Nút "Đăng nhập bằng Apple" (iOS, 1.3.0). */
   signInWithApple: () => Promise<AuthUser>;
   signOut: () => Promise<void>;
+  /** Đọc lại người dùng từ máy chủ (/me) — sau khi cổng tính năng đổi (bật Video đóng hàng). Lỗi mạng thì giữ nguyên. */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -197,9 +199,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persistSession]
   );
 
+  const refreshUser = useCallback(async () => {
+    const me = await fetchMe();
+    setUser((cur) => (cur && cur.id === me.user.id ? me.user : cur));
+    await storage.setItem(USER_KEY, serializeUser(me.user));
+  }, []);
+
   const value = useMemo(
-    () => ({ status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut }),
-    [status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut]
+    () => ({ status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut, refreshUser }),
+    [status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut, refreshUser]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
