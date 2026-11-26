@@ -9,7 +9,7 @@
 
 Anh: "Xong phần này thì lên phương án xem thêm VAT quảng cáo, anh muốn đưa vào báo cáo tài chính, báo cáo dòng tiền. Anh nhớ không nhầm là 10% đối với TikTok và 8% với Shopee". Chi tiết: `docs/TAI-CHINH-VAT-QUANG-CAO.md`.
 
-- **Chi phí định kỳ trên prod:** backend lên `74140bb9` lúc 10:18 (`/health` đúng commit); SQL chỉ đọc: migration xong, RLS bật, 2 chỉ mục mới có, 174 khoản thu chi cũ còn nguyên, 0 luật. Web (Vercel) lúc ghi chưa xác nhận được bằng máy.
+- **Chi phí định kỳ trên prod:** backend lên `74140bb9` lúc 10:18 (`/health` đúng commit); SQL chỉ đọc: migration xong, RLS bật, 2 chỉ mục mới có, 174 khoản thu chi cũ còn nguyên, 0 luật. Web: 10:32 mở `app.hubsell.tech/finance/expenses` (tự chuyển sang `app.hubsell.vn`), tệp JS của trang đã có lời gọi `/api/expenses/recurring` → bản web mới đã lên. Chưa đăng nhập tài khoản thật để nhìn màn.
 - **Thuế:** anh nhớ đúng cho 2026 — TikTok 10% (từ 01/07/2025, TikTok Pte. Ltd.), Shopee 8% (01/07/2025 → hết 31/12/2026, sau đó về 10% nếu không có văn bản kéo dài). Cả hai cộng thêm lúc nạp → số sàn báo nhiều khả năng chưa gồm VAT (suy luận, chưa có nguồn nói thẳng). Lazada: có VAT, không có nguồn nêu %.
 - **Mã hiện tại:** `AdSpend` không có cột thuế; cả 4 báo cáo cộng quảng cáo qua một hàm `summarizeAdsSpend`; khoản nạp ví Shopee trích từ đơn đã gồm VAT; ROI / ROAS hòa vốn không đọc `AdSpend`.
 - **Số prod 30 ngày (27/10–25/11, chỉ đọc):** VAT quảng cáo chưa vào báo cáo ≈ 448 triệu (TikTok ≈ 368 triệu / 115 chủ shop, Shopee ≈ 79 triệu / 85 chủ shop, Lazada ≈ 1 triệu) theo giả định trên; chưa tách demo.
