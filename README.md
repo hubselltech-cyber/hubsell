@@ -95,7 +95,8 @@ hubsell/
 │       │   ├── shared/ · tour/ · data-table/ · ui/ (shadcn)
 │       └── lib/                         # api.ts (gọi API + token), format.ts, excel.ts, permissions.ts,
 │                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, hq-expense-categories.ts,
-│                                        #   overage.ts (chữ + mốc phí vượt dùng chung), phone.ts (soi SĐT khách gõ, chỉ cảnh báo), ...
+│                                        #   overage.ts (chữ + mốc phí vượt dùng chung), phone.ts (soi SĐT khách gõ, chỉ cảnh báo),
+│                                        #   date-input.ts (ô ngày gõ tay: năm 2 chữ số → 20yy, dùng trong <Input type="date">), ...
 │
 ├── backend/                             # Express + Prisma — Render SG: web (API) + worker (nền)
 │   ├── prisma/
@@ -119,16 +120,19 @@ hubsell/
 │       │                                #   plan-overage (phí vượt trần đơn "tính thẳng": một câu SQL cho tạm tính + chốt tháng) +
 │       │                                #   plan-overage-payment (thu / miễn phiếu) — docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, order-list + order-lookup (danh sách đơn / tra mã quét theo từng gian), sync-schedule,
+│       │                                #   recurring-expense (chi phí định kỳ: một câu SQL ghi các khoản tới hạn) + expense-input (kiểm nguồn tiền
+│       │                                #   dùng chung cho thu chi nhập tay và luật định kỳ) — docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md,
 │       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·
 │       │                                #   job-view · job-submit · job-worker · batch · manual · images · review-check — docs/SAO-CHEP-SAN-PHAM.md mục 29),
 │       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
 │       ├── routes/                      # 36 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
-│       ├── workers/                     # 32 tiến trình nền, đăng ký trong workers/index.ts:
+│       ├── workers/                     # 33 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
 │       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
 │       │                                #   plan-hibernate, plan-overage-close (chốt phí vượt từ 06:00 mùng 2), subscription-reminder, invoice-*, review-auto-reply,
+│       │                                #   recurring-expense (mỗi giờ ghi khoản chi định kỳ tới hạn; tắt RECURRING_EXPENSE_OFF=1),
 │       │                                #   read-lanes (làn đọc sàn mới — đọc bóng đơn theo gian ghi danh), ...
 │       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
 │       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/
@@ -168,7 +172,7 @@ Ký hiệu cột **Gác** (middleware trong `backend/src/middleware/auth.ts`):
 | `/api/webhooks` · `/api/webhook` · `/v1/webhooks` | `webhooks` | chữ ký trên body | TikTok, Shopee (Push), Lazada, MISA meInvoice, payOS → ghi hàng đợi bền rồi ack |
 | `/api/public` | `public` | rate-limit + honeypot | lead "Đăng ký tư vấn" + đếm sự kiện từ landing |
 | `/api/dashboard` · `/api/analytics` | `dashboard`, `analytics` | JWT · quyền `dashboard` · có gian | Tổng quan + biểu đồ |
-| `/api/expenses` | `expenses` | JWT · quyền `finance.expenses` · gói mở · có gian | chi phí vận hành |
+| `/api/expenses` | `expenses` (+ `recurring-expenses` gắn ở `/api/expenses/recurring`) | JWT · quyền `finance.expenses` · gói mở · có gian | thu chi vận hành + luật chi phí định kỳ |
 | `/api/finance` | `finance` | JWT · quyền `finance` \| `warehouse.shipping-alerts` \| `operations.loss-orders` · gói mở · có gian | dòng tiền, lãi/lỗ, giá vốn, đối soát phí ship, đơn lỗ (đọc sổ cái đơn) |
 | `/api/products` · `/api/inventory` · `/api/stock-locations` | `products`, `inventory`, `stock-locations` | JWT · quyền `warehouse.products` \| `orders` · có gian | hàng hóa, nhập/xuất kho, vị trí chứa hàng |
 | `/api/orders` | `orders` | JWT · quyền `orders` · có gian | đơn hàng, chuẩn bị hàng theo mẻ, in vận đơn |

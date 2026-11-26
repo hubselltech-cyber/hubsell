@@ -75,6 +75,8 @@ export const qk = {
     ["shipping-discrepancies", "by-product", params] as const,
   cashFlow: () => ["cash-flow"] as const,
   expenses: (range?: DateRange) => ["expenses", rangeToQuery(range)] as const,
+  // Cùng tiền tố "expenses" → invalidate(["expenses"]) làm mới cả bảng thu chi lẫn luật định kỳ.
+  recurringExpenses: () => ["expenses", "recurring"] as const,
 
   // ----- Sổ KOC -----
   kocSummary: (params: Record<string, unknown>) => ["koc-summary", params] as const,

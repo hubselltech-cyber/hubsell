@@ -5,6 +5,27 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~10:15–11:20 — Chi phí định kỳ: ĐÃ LÀM (ngày / tháng / năm) + sửa ô ngày, commit và push
+
+Anh: "Vậy họ muốn lặp lại hàng tháng, hàng năm thì sao?" → "Em cứ làm và push nhé. Xong anh quay lại kiểm tra." Chi tiết: `docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md` mục 5.3b + **mục 9**.
+
+- **Cách làm:** "định kỳ" là cách ghi, không phải phân loại thứ ba. Bảng luật `recurring_expenses`; máy ghi ra dòng `OperatingExpense` thường (cột mới `recurringId`) tới hết hôm nay giờ VN → 14 câu truy vấn báo cáo + app mobile không sửa.
+- **Backend:** migration `20261126150000_recurring_expenses` (bảng + cột + 2 chỉ mục + RLS); `lib/recurring-expense.ts` (ngày tới hạn, kẹp cuối tháng tính từ ngày gốc); `services/recurring-expense.ts` (một câu SQL ghi gộp theo mốc `generatedThrough`, `FOR UPDATE SKIP LOCKED` + `ON CONFLICT DO NOTHING`); `routes/recurring-expenses.ts` ở `/api/expenses/recurring` (tạo có ghi bù, Dừng, Xóa); worker `recurring-expense` mỗi giờ (tắt `RECURRING_EXPENSE_OFF=1`); `services/expense-input.ts` tách luật nguồn tiền dùng chung.
+- **Web:** hộp Thêm chi phí có ô **Lặp lại** (Một lần · Hằng ngày · Hằng tháng · Hằng năm) + câu tính sẵn; trang Thu chi vận hành có thanh tab `Thu chi` / `Chi phí định kỳ`, bảng luật, hộp hỏi lại Dừng / Xóa, nhãn "Định kỳ"; bỏ chữ `(FIXED)` / `(VARIABLE)`.
+- **Test:** 26 ca mới (11 phép tính ngày, 9 chạy câu SQL thật trên DB local, 6 ngày phát sinh). Cả bộ 3.074 qua, 21 đỏ — cùng 10 tệp và cùng số ca đỏ có sẵn sáng nay (không chạy lại trên mã gốc). Màn local đã nhìn ở 1280 / 1366 / 1700 + giao diện tối với dữ liệu rộng; dữ liệu thử đã xóa.
+- **Chưa làm / chưa kiểm:** đèn HQ Sức khỏe cho luật trễ mốc (câu soi tay ở docs 9.4); chưa nhìn màn prod bằng tài khoản thật, chưa thấy worker prod chạy qua một lần sang ngày; hằng tuần, tự chia đều tổng tháng, tạo luật từ app, sửa luật tại chỗ.
+- **⏳ Anh:** dòng prod năm 0026 (docs 1.4) vẫn chờ anh chạy câu sửa.
+
+## Phiên 26/11 ~09:30–10:00 — Thu chi vận hành: tìm gốc lỗi ô ngày gõ tay + đề xuất Chi phí định kỳ (đã làm ở mục trên)
+
+Anh: "(1) nghiên cứu kỹ để thêm một loại chi phí nữa đó là Chi phí định kỳ… mỗi ngày trừ 100K tiền kho, kéo dài một khoảng thời gian; (2) nhập tay một ngày bất kỳ thì không nhận → kiểm tra và fix". Chi tiết: `docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md`.
+
+- **Gốc lỗi ngày:** ô ngày của trình duyệt nhận năm gõ 2 chữ số thành năm 0026; máy chủ vẫn lưu và báo "Đã thêm" nhưng khoản chi nằm ngoài mọi kỳ. Tái hiện trên local; prod (SQL chỉ đọc) có 1 / 174 dòng năm 0026 của một khách (300.000 đ, tạo 10/11).
+- **Đã sửa (chưa commit, chưa push):** `frontend/src/lib/date-input.ts` mới; `<Input type="date">` rời ô tự đổi năm 2 chữ số thành 20yy (áp cho mọi ô ngày dùng `<Input>`); hộp Thêm thu / chi kiểm năm lúc gửi + toast báo khi khoản lưu ngoài khoảng đang lọc; `backend/src/lib/expense-date.ts` + `routes/expenses.ts` từ chối năm ngoài 2000 … hết năm sau (hai mốc tự chọn). Test 6 ca qua, kiểm kiểu hai phía qua, đã thử 4 ca trên màn local.
+- **Chi phí định kỳ (đề xuất):** là cách ghi lặp theo lịch, không thêm phân loại thứ ba; sinh dòng `OperatingExpense` thật mỗi ngày từ bảng luật nên 14 câu truy vấn báo cáo + app mobile không phải sửa. 3 lát ở mục 8.
+- **⏳ Anh:** 6 việc chốt ở mục 7 của docs; quyết có chạy câu sửa dòng prod năm 0026 (mục 1.4) không; commit + push phần sửa lỗi ngày.
+- Phụ: gói của `admin@hubsell.vn` trên DB **local** đã gia hạn tới 26/12 để mở được màn (hết hạn từ 05/09). Tab SQL Supabase trong Chrome còn mở (trang hỏi lưu câu truy vấn nên em không tự đóng).
+
 ## Phiên 26/11 ~09:10–09:30 — Kho chuẩn quốc tế: dọn sau khi bật + đặt lịch dựng lại chỉ mục 03:30 27/11
 
 Anh: "Được đêm nay dựng lại. Em dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree, commit rồi push". Bảng trước / sau: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 21.6.

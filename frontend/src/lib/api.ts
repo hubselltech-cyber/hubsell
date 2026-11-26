@@ -668,6 +668,42 @@ export interface OperatingExpense {
   note: string | null;
   expenseDate: string;
   createdAt: string;
+  /** Khoản do luật chi phí định kỳ tự ghi (null = nhập tay). */
+  recurringId: string | null;
+}
+
+/** Chu kỳ của một khoản chi phí định kỳ. */
+export type RecurringCadence = "DAILY" | "MONTHLY" | "YEARLY";
+/** ACTIVE còn ghi · STOPPED chủ shop dừng · ENDED đã ghi hết tới ngày kết thúc. */
+export type RecurringStatus = "ACTIVE" | "STOPPED" | "ENDED";
+
+/** LUẬT chi phí định kỳ — máy tự ghi một khoản chi thường mỗi kỳ (tới hết hôm nay). */
+export interface ShopRecurringExpense {
+  id: string;
+  name: string;
+  category: ExpenseCategory;
+  type: ExpenseType;
+  appliedSku: string | null;
+  /** Số tiền MỖI LẦN ghi. */
+  amount: number;
+  cadence: RecurringCadence;
+  /** "yyyy-mm-dd" — ngày ghi đầu tiên. */
+  startDay: string;
+  /** "yyyy-mm-dd"; null = lặp tới khi bấm Dừng. */
+  endDay: string | null;
+  status: RecurringStatus;
+  fundChannelId: string | null;
+  fundPlatform: ChannelName | null;
+  fundSource: FundSourceType | null;
+  fundChannelName: ChannelName | null;
+  fundShopName: string | null;
+  note: string | null;
+  /** Số khoản luật đã ghi (không tính khoản chủ shop đã xóa tay) + tổng tiền. */
+  entryCount: number;
+  entryTotal: number;
+  /** "yyyy-mm-dd" ngày ghi kế tiếp; null khi luật đã dừng / hết kỳ. */
+  nextDay: string | null;
+  createdAt: string;
 }
 
 // ----- Báo cáo Lời/Lỗ theo SKU -----
@@ -2735,6 +2771,46 @@ export function createOperatingTxn(data: {
 
 export function deleteExpense(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/expenses/${id}`, { method: "DELETE" });
+}
+
+// ----- Chi phí định kỳ của SHOP (luật tự ghi khoản chi theo lịch) -----
+// (Khác bộ "Chi phí cố định hàng tháng" của Sổ quỹ HQ ở cuối tệp: HqRecurringExpense.)
+
+export function fetchShopRecurringExpenses() {
+  return apiFetch<ShopRecurringExpense[]>("/api/expenses/recurring");
+}
+
+export function createShopRecurringExpense(data: {
+  name: string;
+  amount: number;
+  cadence: RecurringCadence;
+  startDay: string;
+  /** Bắt buộc với hằng ngày; tháng / năm bỏ trống = tới khi bấm Dừng. */
+  endDay?: string;
+  category: ExpenseCategory;
+  type: ExpenseType;
+  appliedSku?: string;
+  fundChannelId?: string;
+  fundPlatform?: ChannelName;
+  note?: string;
+}) {
+  // created = số khoản đã ghi bù ngay (ngày bắt đầu ≤ hôm nay).
+  return apiFetch<{ id: string; created: number }>("/api/expenses/recurring", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Dừng: thôi ghi từ ngày mai, các khoản đã ghi giữ nguyên. */
+export function stopShopRecurringExpense(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/expenses/recurring/${id}/stop`, { method: "POST" });
+}
+
+/** Xóa luật + MỌI khoản luật đã ghi. */
+export function deleteShopRecurringExpense(id: string) {
+  return apiFetch<{ ok: boolean; deletedEntries: number }>(`/api/expenses/recurring/${id}`, {
+    method: "DELETE",
+  });
 }
 
 // ----- Module Tài chính chuyên sâu /api/finance (chỉ Admin) -----

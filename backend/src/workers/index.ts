@@ -46,6 +46,7 @@ import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPackVideoJanitorWorker } from "./pack-video-janitor";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startPlanOverageCloseWorker } from "./plan-overage-close";
+import { startRecurringExpenseWorker } from "./recurring-expense";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 import { startProductBarcodeBackfillWorker } from "./product-barcode-backfill";
 import { startStockCommittedWorker } from "./stock-committed";
@@ -96,6 +97,9 @@ export function startAllWorkers(): void {
   startPlanHibernateWorker();
   // Chốt phí vượt trần đơn tháng trước từ 06:00 mùng 2 (11/11/2026, một câu INSERT … SELECT).
   startPlanOverageCloseWorker();
+  // Chi phí định kỳ (26/11/2026): mỗi giờ ghi các khoản chi tới hạn của mọi luật còn chạy —
+  // mỗi lô một câu INSERT … SELECT theo mốc, ngừng mấy ngày thì tự ghi bù; tắt RECURRING_EXPENSE_OFF=1.
+  startRecurringExpenseWorker();
   // Cron refresh token Shopee (app chính + Hubsell Ads) — lưới an toàn cạnh
   // lazy-refresh, quét DB lọc token sắp hết hạn rồi làm mới có giãn cách.
   startTokenRefreshWorker();

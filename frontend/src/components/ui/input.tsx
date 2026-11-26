@@ -1,12 +1,25 @@
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
 
+import { fixTypedYear, setInputValue } from "@/lib/date-input"
 import { cn } from "@/lib/utils"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, onBlur, ...props }: React.ComponentProps<"input">) {
+  // Ô ngày: gõ tay năm 2 chữ số ("26") trình duyệt hiểu là năm 0026 → rời ô thì
+  // đổi thành 2026 ngay trên ô cho người dùng thấy (lib/date-input.ts, 26/11/2026).
+  const handleBlur =
+    type === "date"
+      ? (e: React.FocusEvent<HTMLInputElement>) => {
+          const el = e.currentTarget
+          const fixed = fixTypedYear(el.value)
+          if (fixed !== el.value) setInputValue(el, fixed)
+          onBlur?.(e)
+        }
+      : onBlur
   return (
     <InputPrimitive
       type={type}
+      onBlur={handleBlur}
       data-slot="input"
       className={cn(
         // Cỡ chữ theo quy chuẩn: mobile 16px (chống iOS tự phóng to khi focus),

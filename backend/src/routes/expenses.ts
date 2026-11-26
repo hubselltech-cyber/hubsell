@@ -1,14 +1,11 @@
 import { Router } from "express";
-import {
-  ChannelName,
-  ExpenseCategory,
-  ExpenseType,
-  FundSourceType,
-  TransactionDirection,
-} from "@prisma/client";
+import { ExpenseCategory, ExpenseType, TransactionDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { parseDateRange } from "../lib/date-range";
+import { parseExpenseDate } from "../lib/expense-date";
+import { VALID_EXPENSE_CATEGORIES, resolveExpenseFund } from "../services/expense-input";
+import recurringExpensesRouter from "./recurring-expenses";
 
 // ============================================================
 // THU CHI VẬN HÀNH (OperatingExpense — giờ chứa CẢ thu lẫn chi)
@@ -19,13 +16,8 @@ import { parseDateRange } from "../lib/date-range";
 
 const router = Router();
 
-const VALID_CATEGORIES: ExpenseCategory[] = [
-  ExpenseCategory.RENT,
-  ExpenseCategory.SALARY,
-  ExpenseCategory.PACKAGING,
-  ExpenseCategory.ADS,
-  ExpenseCategory.OTHER,
-];
+// Luật CHI PHÍ ĐỊNH KỲ (máy tự ghi khoản chi theo lịch) — /api/expenses/recurring.
+router.use("/recurring", recurringExpensesRouter);
 
 // GET /api/expenses — danh sách THU & CHI vận hành của shop (mới nhất trước)
 router.get("/", async (req: AuthRequest, res, next) => {
@@ -47,6 +39,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         fundChannelId: e.fundChannelId,
         fundPlatform: e.fundPlatform,
         fundSource: e.fundSource,
+        // Khoản do luật chi phí định kỳ ghi (null = nhập tay) — web hiện nhãn "Định kỳ".
+        recurringId: e.recurringId,
         fundChannelName: e.fundChannel?.channelName ?? null,
         fundShopName: e.fundChannel?.shopName ?? null,
         note: e.note,
@@ -94,7 +88,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
     // CHI: category bắt buộc hợp lệ (giữ như cũ). THU: bỏ qua, để OTHER.
     let finalCategory: ExpenseCategory = ExpenseCategory.OTHER;
     if (dir === TransactionDirection.EXPENSE) {
-      if (!VALID_CATEGORIES.includes(category)) {
+      if (!VALID_EXPENSE_CATEGORIES.includes(category)) {
         res.status(400).json({
           error: "Loại chi phí không hợp lệ (RENT, SALARY, PACKAGING, ADS, OTHER)",
         });
@@ -114,38 +108,11 @@ router.post("/", async (req: AuthRequest, res, next) => {
         : null;
 
     // NGUỒN TIỀN — TÙY CHỌN ở API (form module gắn shop; quick-add dashboard bỏ trống).
-    // Ba mức gắn (xem chú thích model OperatingExpense):
-    //   - fundChannelId thật            → đích danh 1 gian.
-    //   - "ALL"/trống + fundPlatform    → khoản CHUNG CẤP SÀN ("Lazada — Tất cả shop").
-    //   - "ALL"/trống + không sàn       → khoản CHUNG TOÀN SHOP.
-    // Khoản chung không cộng/trừ vào cột dòng tiền của riêng gian nào (fundSource null).
-    // ERP CORE LOGIC: mọi khoản thu/chi THỦ CÔNG đi qua NGÂN HÀNG, TUYỆT ĐỐI không
-    // đụng Ví sàn (ví sàn chỉ nhận tiền sàn quyết toán về). Vì vậy khi có gắn gian,
-    // ÉP fundSource = BANK_ACCOUNT bất kể client gửi gì.
-    let finalFundChannelId: string | null = null;
-    let finalFundPlatform: ChannelName | null = null;
-    let finalFundSource: FundSourceType | null = null;
-    if (fundChannelId && fundChannelId !== "ALL") {
-      if (typeof fundChannelId !== "string") {
-        res.status(400).json({ error: "Gian hàng cho nguồn tiền không hợp lệ" });
-        return;
-      }
-      const channel = await prisma.channel.findFirst({
-        where: { id: fundChannelId, userId: req.ownerId! },
-        select: { id: true },
-      });
-      if (!channel) {
-        res.status(404).json({ error: "Không tìm thấy gian hàng của nguồn tiền" });
-        return;
-      }
-      finalFundChannelId = fundChannelId;
-      finalFundSource = FundSourceType.BANK_ACCOUNT; // luôn Ngân hàng
-    } else if (fundPlatform !== undefined && fundPlatform !== null && fundPlatform !== "" && fundPlatform !== "ALL") {
-      if (typeof fundPlatform !== "string" || !(fundPlatform in ChannelName)) {
-        res.status(400).json({ error: "Sàn cho nguồn tiền không hợp lệ" });
-        return;
-      }
-      finalFundPlatform = fundPlatform as ChannelName;
+    // Luật ba mức gắn + ép Ngân hàng: services/expense-input.ts.
+    const fund = await resolveExpenseFund({ fundChannelId, fundPlatform }, req.ownerId!);
+    if (!fund.ok) {
+      res.status(fund.status).json({ error: fund.error });
+      return;
     }
 
     if (note !== undefined && typeof note !== "string") {
@@ -153,15 +120,14 @@ router.post("/", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    let date: Date | undefined;
-    if (expenseDate !== undefined && expenseDate !== "") {
-      const d = new Date(expenseDate);
-      if (Number.isNaN(d.getTime())) {
-        res.status(400).json({ error: "Ngày phát sinh không hợp lệ" });
-        return;
-      }
-      date = d;
+    // Năm gõ tay 2 chữ số ("0026-…") vẫn là Date hợp lệ → phải chặn theo khoảng năm,
+    // không thì khoản chi lọt vào năm 26 và biến mất khỏi mọi báo cáo (lib/expense-date.ts).
+    const parsedDate = parseExpenseDate(expenseDate);
+    if (!parsedDate.ok) {
+      res.status(400).json({ error: parsedDate.error });
+      return;
     }
+    const date = parsedDate.date;
 
     const created = await prisma.operatingExpense.create({
       data: {
@@ -172,9 +138,9 @@ router.post("/", async (req: AuthRequest, res, next) => {
         type: finalType,
         appliedSku: finalAppliedSku,
         amount: amt,
-        fundChannelId: finalFundChannelId,
-        fundPlatform: finalFundPlatform,
-        fundSource: finalFundSource,
+        fundChannelId: fund.fundChannelId,
+        fundPlatform: fund.fundPlatform,
+        fundSource: fund.fundSource,
         note: typeof note === "string" && note.trim() ? note.trim() : null,
         ...(date ? { expenseDate: date } : {}),
       },

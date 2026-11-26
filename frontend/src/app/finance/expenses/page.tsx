@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Receipt, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Receipt, Repeat, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 
 import { AccessDenied } from "@/components/shared/access-denied";
 import { can } from "@/lib/permissions";
@@ -26,11 +26,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AddTxnDialog } from "@/components/finance/add-txn-dialog";
+import { RecurringExpensesTab } from "@/components/finance/recurring-expenses-tab";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
   deleteExpense,
   fetchChannels,
   fetchExpenses,
+  fetchShopRecurringExpenses,
   getStoredUser,
   getToken,
   type ExpenseType,
@@ -61,11 +64,14 @@ function fundLabel(e: OperatingExpense): string | null {
 }
 
 type TxnFilter = "ALL" | "INCOME" | "EXPENSE";
+/** "entries" = các khoản thu chi đã ghi · "recurring" = luật chi phí định kỳ (máy tự ghi). */
+type PageTab = "entries" | "recurring";
 
 export default function FinanceExpensesPage() {
   const router = useRouter();
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [filter, setFilter] = useState<TxnFilter>("ALL");
+  const [tab, setTab] = useState<PageTab>("entries");
   const allowed = can(getStoredUser(), "finance.expenses");
 
   useEffect(() => {
@@ -84,9 +90,18 @@ export default function FinanceExpensesPage() {
     staleTime: 5 * 60_000,
     retry: false,
   });
+  // Luật chi phí định kỳ — nạp luôn để tab có số đếm; cùng tiền tố khóa "expenses" nên
+  // thêm / xóa khoản nào cũng làm mới theo.
+  const recurringQ = useApiQuery({
+    queryKey: qk.recurringExpenses(),
+    queryFn: () => fetchShopRecurringExpenses(),
+    enabled: allowed,
+  });
   const invalidate = useInvalidate();
 
   const rows = expensesQ.data ?? [];
+  const rules = recurringQ.data ?? [];
+  const activeRules = rules.filter((r) => r.status === "ACTIVE").length;
   const channels = channelsQ.data ?? [];
   const loading = expensesQ.refreshing;
   const denied = !allowed || expensesQ.denied;
@@ -142,26 +157,61 @@ export default function FinanceExpensesPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            Thu &amp; chi vận hành của shop ({shown.length} khoản).
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
-            <NativeSelect
-              className="w-40"
-              aria-label="Lọc loại giao dịch"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as TxnFilter)}
-            >
-              <option value="ALL">Tất cả</option>
-              <option value="INCOME">Chỉ khoản thu</option>
-              <option value="EXPENSE">Chỉ khoản chi</option>
-            </NativeSelect>
-            <AddTxnDialog direction="EXPENSE" channels={channels} onAdded={load} />
-            <AddTxnDialog direction="INCOME" channels={channels} onAdded={load} />
+        <PageHeaderBand>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              {tab === "entries"
+                ? `Thu & chi vận hành của shop (${shown.length} khoản).`
+                : "Khoản chi lặp theo lịch — máy tự ghi mỗi ngày, mỗi tháng hoặc mỗi năm."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Lọc ngày / loại chỉ có nghĩa với bảng khoản đã ghi. */}
+              {tab === "entries" && (
+                <>
+                  <DateRangePicker value={range} onChange={setRange} disabled={loading} />
+                  <NativeSelect
+                    className="w-40"
+                    aria-label="Lọc loại giao dịch"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value as TxnFilter)}
+                  >
+                    <option value="ALL">Tất cả</option>
+                    <option value="INCOME">Chỉ khoản thu</option>
+                    <option value="EXPENSE">Chỉ khoản chi</option>
+                  </NativeSelect>
+                </>
+              )}
+              <AddTxnDialog direction="EXPENSE" channels={channels} onAdded={load} visibleRange={range} />
+              <AddTxnDialog direction="INCOME" channels={channels} onAdded={load} visibleRange={range} />
+            </div>
           </div>
-        </div>
+          <PageTabs
+            ariaLabel="Khu vực thu chi vận hành"
+            className="mt-2 border-b-0"
+            tabs={[
+              { key: "entries", label: "Thu chi" },
+              {
+                key: "recurring",
+                label: "Chi phí định kỳ",
+                count: activeRules,
+                countTitle: "Số khoản định kỳ đang chạy",
+              },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+        </PageHeaderBand>
+
+        {tab === "recurring" && (
+          <RecurringExpensesTab
+            rules={rules}
+            loading={recurringQ.loading}
+            refreshing={recurringQ.refreshing}
+          />
+        )}
+
+        {/* Tab Thu chi chỉ ẨN chứ không tháo — đổi tab qua lại không nháy bảng. */}
+        <div className={cn("space-y-6", tab !== "entries" && "hidden")}>
 
         {/* 3 card tổng hợp — theo tập đã lọc */}
         <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -239,6 +289,15 @@ export default function FinanceExpensesPage() {
                               {meta.label}
                             </span>
                           )}
+                          {e.recurringId && (
+                            <span
+                              className="ml-1 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600"
+                              title="Khoản do Chi phí định kỳ tự ghi — xem ở tab Chi phí định kỳ"
+                            >
+                              <Repeat className="size-3" />
+                              Định kỳ
+                            </span>
+                          )}
                           {!income && e.appliedSku && (
                             <span className="mt-0.5 block font-mono text-xs text-primary">
                               → {e.appliedSku}
@@ -292,6 +351,7 @@ export default function FinanceExpensesPage() {
             )}
           </CardContent>
         </Card>
+        </div>
 
         <p className="text-center text-xs text-muted-foreground">
           Hubsell Finance · Thu chi vận hành

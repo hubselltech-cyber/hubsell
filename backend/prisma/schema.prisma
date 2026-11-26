@@ -292,6 +292,7 @@ model User {
   inventoryLogsMade InventoryLog[]     @relation("InventoryLogActor")
   stockLocations    StockLocation[]    @relation("StockLocations")
   operatingExpenses OperatingExpense[]
+  recurringExpenses RecurringExpense[]
 
   // Phân quyền theo gian hàng — CHỈ có ý nghĩa với vai trò SALES.
   // Không gán gian nào = SALES đó chưa xem được đơn nào (mặc định đóng, an toàn
@@ -523,6 +524,7 @@ model Channel {
   invoiceConfigs        InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals     WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns         OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
+  recurringExpenses     RecurringExpense[] // luật chi phí định kỳ gắn nguồn tiền vào gian này
   adSpends              AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   adsCampaigns          AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
   adsItemSignals        AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
@@ -2252,11 +2254,76 @@ model OperatingExpense {
   expenseDate DateTime @default(now()) // ngày phát sinh
   createdAt   DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fundChannel Channel? @relation(fields: [fundChannelId], references: [id], onDelete: SetNull)
+  // Khoản do LUẬT CHI PHÍ ĐỊNH KỲ tự ghi (null = nhập tay). Xóa luật mà giữ khoản
+  // thì cột này về null. Cặp (recurringId, expenseDate) duy nhất = chốt chặn cuối
+  // chống ghi trùng một ngày (dòng nhập tay recurringId null không bao giờ đụng nhau).
+  recurringId String?
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fundChannel Channel?          @relation(fields: [fundChannelId], references: [id], onDelete: SetNull)
+  recurring   RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+
+  @@unique([recurringId, expenseDate])
+  @@index([userId])
+  @@index([userId, expenseDate])
+  @@index([fundChannelId])
+}
+
+/// Chu kỳ của một luật chi phí định kỳ.
+enum RecurringCadence {
+  DAILY // mỗi ngày một khoản
+  MONTHLY // mỗi tháng một khoản, vào "ngày trong tháng" của startDay (tháng thiếu ngày → ngày cuối tháng)
+  YEARLY // mỗi năm một khoản, vào ngày – tháng của startDay (29/02 → 28/02 năm thường)
+}
+
+enum RecurringStatus {
+  ACTIVE // còn ghi
+  STOPPED // chủ shop bấm Dừng — các khoản đã ghi giữ nguyên
+  ENDED // đã ghi hết tới ngày kết thúc
+}
+
+/// LUẬT CHI PHÍ ĐỊNH KỲ (26/11/2026, docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md) — "mỗi ngày
+/// trừ 100K tiền kho từ 01/12 tới 31/12", "ngày 5 hằng tháng 9,5 triệu lương".
+/// Luật KHÔNG tự vào báo cáo: máy ghi ra các dòng OperatingExpense thường (recurringId trỏ
+/// về đây) tới hết HÔM NAY giờ VN, nên mọi báo cáo đọc OperatingExpense không phải biết gì
+/// về luật. Việc ghi: services/recurring-expense.ts (một câu SQL gộp, đi theo mốc
+/// generatedThrough — worker ngừng mấy ngày thì lượt sau tự ghi bù, dòng khách xóa tay
+/// không bị ghi lại).
+model RecurringExpense {
+  id         String          @id @default(cuid())
+  userId     String // chủ shop
+  name       String
+  category   ExpenseCategory @default(OTHER)
+  type       ExpenseType     @default(FIXED)
+  appliedSku String? // chỉ với chi phí VARIABLE, chép sang từng khoản
+  amount     Decimal         @db.Decimal(12, 2) // số tiền MỖI LẦN ghi, luôn dương
+
+  cadence  RecurringCadence
+  startDay DateTime         @db.Date // ngày ghi đầu tiên (lịch giờ VN)
+  endDay   DateTime?        @db.Date // ngày cuối còn ghi; null = tới khi bấm Dừng (chỉ tháng / năm)
+
+  // Nguồn tiền — cùng ba mức gắn như OperatingExpense, chép nguyên sang từng khoản.
+  fundChannelId String?
+  fundPlatform  ChannelName?
+  fundSource    FundSourceType?
+  note          String?
+
+  status           RecurringStatus @default(ACTIVE)
+  /// Đã XÉT hết ngày này (lịch giờ VN): mọi ngày tới hạn ≤ mốc đã được ghi (hoặc chủ shop
+  /// đã xóa tay). Lúc tạo = startDay − 1.
+  generatedThrough DateTime        @db.Date
+  stoppedAt        DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fundChannel Channel?           @relation(fields: [fundChannelId], references: [id], onDelete: SetNull)
+  expenses    OperatingExpense[]
 
   @@index([userId])
+  @@index([status, generatedThrough])
   @@index([fundChannelId])
+  @@map("recurring_expenses")
 }
 
 // ---------- ĐỒNG BỘ TỒN KHO TỰ ĐỘNG (Inventory Sync) ----------
