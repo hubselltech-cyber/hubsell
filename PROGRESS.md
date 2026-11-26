@@ -5,7 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 26/11 ~10:15–11:20 — Chi phí định kỳ: ĐÃ LÀM (ngày / tháng / năm) + sửa ô ngày, commit và push
+## Phiên 26/11 ~10:20–10:45 — VAT quảng cáo: khảo sát + phương án (CHƯA code) · Chi phí định kỳ đã lên prod
+
+Anh: "Xong phần này thì lên phương án xem thêm VAT quảng cáo, anh muốn đưa vào báo cáo tài chính, báo cáo dòng tiền. Anh nhớ không nhầm là 10% đối với TikTok và 8% với Shopee". Chi tiết: `docs/TAI-CHINH-VAT-QUANG-CAO.md`.
+
+- **Chi phí định kỳ trên prod:** backend lên `74140bb9` lúc 10:18 (`/health` đúng commit); SQL chỉ đọc: migration xong, RLS bật, 2 chỉ mục mới có, 174 khoản thu chi cũ còn nguyên, 0 luật. Web (Vercel) lúc ghi chưa xác nhận được bằng máy.
+- **Thuế:** anh nhớ đúng cho 2026 — TikTok 10% (từ 01/07/2025, TikTok Pte. Ltd.), Shopee 8% (01/07/2025 → hết 31/12/2026, sau đó về 10% nếu không có văn bản kéo dài). Cả hai cộng thêm lúc nạp → số sàn báo nhiều khả năng chưa gồm VAT (suy luận, chưa có nguồn nói thẳng). Lazada: có VAT, không có nguồn nêu %.
+- **Mã hiện tại:** `AdSpend` không có cột thuế; cả 4 báo cáo cộng quảng cáo qua một hàm `summarizeAdsSpend`; khoản nạp ví Shopee trích từ đơn đã gồm VAT; ROI / ROAS hòa vốn không đọc `AdSpend`.
+- **Số prod 30 ngày (27/10–25/11, chỉ đọc):** VAT quảng cáo chưa vào báo cáo ≈ 448 triệu (TikTok ≈ 368 triệu / 115 chủ shop, Shopee ≈ 79 triệu / 85 chủ shop, Lazada ≈ 1 triệu) theo giả định trên; chưa tách demo.
+- **Đề xuất:** dòng con "Thuế GTGT quảng cáo" = phần quảng cáo ngoài đơn × thuế suất theo ngày (tệp cấu hình), tính lúc đọc, không migration; công tắc cho công ty khấu trừ; hòa vốn có VAT là lát riêng phải mô phỏng từng chiến dịch.
+- **⏳ Anh:** 6 việc chốt ở mục 7; 3 ảnh K1–K3 (bản kê TikTok có dòng nạp quảng cáo, lịch sử nạp Shopee Ads, màn nạp Lazada).
+
+## Phiên 26/11 ~09:45–10:20 — Chi phí định kỳ: ĐÃ LÀM (ngày / tháng / năm) + sửa ô ngày, commit và push
 
 Anh: "Vậy họ muốn lặp lại hàng tháng, hàng năm thì sao?" → "Em cứ làm và push nhé. Xong anh quay lại kiểm tra." Chi tiết: `docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md` mục 5.3b + **mục 9**.
 
@@ -16,7 +27,7 @@ Anh: "Vậy họ muốn lặp lại hàng tháng, hàng năm thì sao?" → "Em 
 - **Chưa làm / chưa kiểm:** đèn HQ Sức khỏe cho luật trễ mốc (câu soi tay ở docs 9.4); chưa nhìn màn prod bằng tài khoản thật, chưa thấy worker prod chạy qua một lần sang ngày; hằng tuần, tự chia đều tổng tháng, tạo luật từ app, sửa luật tại chỗ.
 - **⏳ Anh:** dòng prod năm 0026 (docs 1.4) vẫn chờ anh chạy câu sửa.
 
-## Phiên 26/11 ~09:30–10:00 — Thu chi vận hành: tìm gốc lỗi ô ngày gõ tay + đề xuất Chi phí định kỳ (đã làm ở mục trên)
+## Phiên 26/11 ~09:25–09:45 — Thu chi vận hành: tìm gốc lỗi ô ngày gõ tay + đề xuất Chi phí định kỳ (đã làm ở mục trên)
 
 Anh: "(1) nghiên cứu kỹ để thêm một loại chi phí nữa đó là Chi phí định kỳ… mỗi ngày trừ 100K tiền kho, kéo dài một khoảng thời gian; (2) nhập tay một ngày bất kỳ thì không nhận → kiểm tra và fix". Chi tiết: `docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md`.
 

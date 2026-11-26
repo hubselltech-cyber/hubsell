@@ -1,7 +1,7 @@
 # THU CHI VẬN HÀNH — LỖI Ô NGÀY GÕ TAY + CHI PHÍ ĐỊNH KỲ
 
 > 26/11/2026. Anh Trung: (1) "nghiên cứu kỹ để thêm một loại chi phí nữa đó là Chi phí định kỳ… ví dụ khách muốn mặc định mỗi ngày trừ 100K tiền kho và kéo dài trong một khoảng thời gian nhất định"; (2) "nhập tay một ngày bất kỳ thì không nhận → kiểm tra và fix".
-> Hiện trạng: **cả hai ĐÃ LÀM và push 26/11** — anh chốt ~10:15 "Em cứ làm và push nhé". Mục 1 = lỗi ô ngày. Mục 2–8 = bản đề xuất (giữ để biết vì sao chọn cách này). **Mục 9 = cái đã làm thật + cách thử + việc còn lại — đọc mục 9 trước.**
+> Hiện trạng: **cả hai ĐÃ LÀM và push 26/11** — anh chốt ~09:45 "Em cứ làm và push nhé". Mục 1 = lỗi ô ngày. Mục 2–8 = bản đề xuất (giữ để biết vì sao chọn cách này). **Mục 9 = cái đã làm thật + cách thử + việc còn lại — đọc mục 9 trước.**
 
 ## 1. Lỗi ô "Ngày phát sinh" gõ tay — ĐÃ SỬA (chưa push)
 
@@ -10,7 +10,7 @@
 - Ô `<input type="date">` của trình duyệt nhận NĂM đúng từng chữ số người gõ. Gõ `15/11/26` → giá trị ô là `0026-11-15` (năm 26), không tự hiểu là 2026. Chọn bằng lịch luôn ra năm đủ 4 chữ số nên không dính — đúng hiện tượng anh thấy.
 - Máy chủ chỉ kiểm `new Date(...)` có hợp lệ không; `0026-11-15` hợp lệ → trả 201, web báo "Đã thêm", nhưng khoản chi nằm ở năm 26 nên không kỳ báo cáo nào chứa nó. Khách thấy "không nhận".
 - Gõ năm đủ 4 chữ số thì vẫn chạy đúng (đã thử `15/11/2026`).
-- **Prod (SQL chỉ đọc, 26/11 ~09:45):** 174 dòng `OperatingExpense`, có **1 dòng năm 0026**: khoản CHI 300.000 đ nhóm Đóng gói, `expenseDate = 0026-05-11`, khách tạo 10/11/2026 20:43 (giờ VN). Không có dòng năm quá xa, không có dòng ngày tương lai.
+- **Prod (SQL chỉ đọc, 26/11 ~09:35):** 174 dòng `OperatingExpense`, có **1 dòng năm 0026**: khoản CHI 300.000 đ nhóm Đóng gói, `expenseDate = 0026-05-11`, khách tạo 10/11/2026 20:43 (giờ VN). Không có dòng năm quá xa, không có dòng ngày tương lai.
 
 ### 1.2 Đã sửa gì
 
@@ -83,7 +83,7 @@ Em **phản đối** cách thêm giá trị thứ ba vào enum `ExpenseType` (FI
 - Dòng do luật sinh trong bảng chính có nhãn "Định kỳ"; vẫn xóa từng ngày được.
 - Nhân tiện: bỏ chữ `(FIXED)` / `(VARIABLE)` trong ô Phân loại (anh khoanh trong ảnh) — chỉ còn "Cố định" / "Biến đổi".
 
-### 5.3b Chu kỳ hằng tháng / hằng năm (bổ sung 26/11 ~10:10, anh hỏi "họ muốn lặp lại hàng tháng, hàng năm thì sao?")
+### 5.3b Chu kỳ hằng tháng / hằng năm (bổ sung 26/11 ~09:40, anh hỏi "họ muốn lặp lại hàng tháng, hàng năm thì sao?")
 
 Cùng một bảng luật, cùng một việc nền — chỉ khác cách tính "ngày tới hạn". Em đề xuất làm luôn trong bản đầu: ô Lặp lại có 4 lựa chọn **Một lần · Hằng ngày · Hằng tháng · Hằng năm**.
 
