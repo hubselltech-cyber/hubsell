@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~09:20–09:45 — Kho chuẩn quốc tế: dọn sau khi bật + đặt lịch dựng lại chỉ mục 03:30 27/11
+
+Anh: "Được đêm nay dựng lại. Em dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree, commit rồi push". Bảng trước / sau: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 21.6.
+
+- Hàm tra mã quét về `services/order-lookup.ts`; phần gọi "chưa về kho" về component `on-hand-notice.tsx`; sửa chú thích lạc và câu "chạy bóng" đã cũ; bỏ một hằng xuất lại thừa. Không đổi hành vi (144 ca test kho qua, kiểm kiểu hai phía qua, đã mở lại Tổng kho local).
+- Xóa `backend/scripts/_tmp-kcqt-seed.ts` sau khi chạy `cleanup` trên database local. `backend/.env.example` thêm nhóm biến kho. Đầu tài liệu kho, `docs/README.md`, `docs/HQ-SUC-KHOE.md`, `README.md` ghi đúng hiện trạng.
+- Lịch soi cũ `kho-chuan-quoc-te-soi-doi-chieu` ĐÃ TẮT. Lịch một lần `hubsell-reindex-ma-van-don-chieu-hoan-27-11-03h30`: 03:30 ngày 27/11 chạy `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"` (cần app Claude + Chrome mở).
+- Không đụng: 7 tệp chưa commit trong `hubsell-marketing/` của phiên khác; chỉ mục cũ `InventoryLog_manual_idx` trên prod.
+
 ## Phiên 26/11 ~08:10–09:10 — Kho chuẩn quốc tế: bịt 4 lỗ quy mô + đèn báo (`f107cbb6`) rồi BẬT cho MỌI shop (`31585e23`)
 
 Anh: "Việc anh dùng thử mấy hôm anh thấy đã ok rồi nên bật cho tất cả các shop luôn. Chủ yếu phần kiểm soát các lỗi để tránh việc sập hệ thống như hôm qua là rất quan trọng… Làm và test cẩn thận". Chi tiết: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 21.
@@ -13,7 +22,7 @@ Anh: "Việc anh dùng thử mấy hôm anh thấy đã ok rồi nên bật cho 
 - **Prod chuẩn bị tay trước khi push:** thêm cột + trigger, điền 146.454 dòng cũ theo lô với `session_replication_role = replica` (không kích trigger sổ cái), 3 chỉ mục CONCURRENTLY đều hợp lệ.
 - **Bật 09:06:** mặc định trong mã + mặc định cột sang `ON_HAND`, 3 dòng `LEGACY` chuyển theo. Trước và sau khi bật bộ đếm khớp (683 = 683, 684 = 684, lệch 0).
 - **Test:** `stock-scale.test.ts` 19 ca, `stock-counter-health.test.ts` 10 ca; cả bộ 3.047 qua, 21 đỏ có sẵn (đã so với mã gốc), không ca đỏ mới. Màn local đã nhìn.
-- **⏳ Còn lại:** `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"` lúc 03:00–05:00 (chưa làm); app 1.4.3 chưa có cách hiển thị mới (không sai dữ liệu); pha C chưa làm; chưa nhìn màn prod / HQ (không đăng nhập); hai số tự chọn 30 ngày và 60 ngày / 20.000 đơn chờ anh xem.
+- **⏳ Còn lại:** `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"` (đã đặt lịch 03:30 ngày 27/11, mục trên); app 1.4.3 chưa có cách hiển thị mới (không sai dữ liệu); pha C chưa làm; chưa nhìn màn prod / HQ (không đăng nhập); hai số tự chọn 30 ngày và 60 ngày / 20.000 đơn chờ anh xem.
 
 ## Phiên 26/11 ~08:00 — Kho chuẩn quốc tế: rà lại trước khi MỞ cho shop khách (chỉ đọc mã + prod) — đã trình, anh chốt làm hết (mục trên)
 

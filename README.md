@@ -118,7 +118,7 @@ hubsell/
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-overage (phí vượt trần đơn "tính thẳng": một câu SQL cho tạm tính + chốt tháng) +
 │       │                                #   plan-overage-payment (thu / miễn phiếu) — docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md,
-│       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
+│       │                                #   plan-hibernation, order-ledger, order-watermark, order-list + order-lookup (danh sách đơn / tra mã quét theo từng gian), sync-schedule,
 │       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·
 │       │                                #   job-view · job-submit · job-worker · batch · manual · images · review-check — docs/SAO-CHEP-SAN-PHAM.md mục 29),
 │       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,

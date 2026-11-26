@@ -1,8 +1,22 @@
-# Quản lý kho bản chuẩn quốc tế — khảo sát hiển thị, thuật toán, phạm vi tác động (12/11/2026)
+# Quản lý kho bản chuẩn quốc tế — khảo sát, thiết kế, nhật ký đưa lên prod (12/11 → 26/11/2026)
 
 > Anh Trung 12/11: "lên phương án khảo sát phần Quản lý kho bản chuẩn quốc tế… khảo sát kỹ cách thức hiển thị, thuật toán tính, phạm vi tác động liên quan tới kiểm kê, nhập/xuất".
 > Nối tiếp [TONG-KHO-DANG-GIU-CHO-DON.md](TONG-KHO-DANG-GIU-CHO-DON.md) (11/11: cột "Chờ giao", bản 2). Đối thủ Việt (Sapo, KiotViet, Salework) đã khảo sát ở [QUAN-LY-KHO-TAI-CAU-TRUC.md](QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 11, không làm lại.
-> Trạng thái: **CHƯA CODE.** Số prod đã đo 12/11 (chỉ đọc) ở mục 11. Anh chốt 12/11: "Chia theo shop" + "Chuẩn quốc tế như thế nào thì em cứ làm như vậy" → bảng chốt ở đầu mục 9. Thiết kế lát 1 (chạy bóng) ở mục 13; **lát 1 ĐÃ PUSH 12/11 `6bf5eaf6`, đang chạy bóng trên prod — ngày chuyển 3.776 đơn, đối chiếu lần đầu lệch 0 (mục 13.11); soi mỗi ngày tới ~19/11 rồi mới sang lát 2.**
+> **Trạng thái 26/11/2026: ĐÃ BẬT cho MỌI shop.** Cách "hàng trong kho" (`ON_HAND`) chạy cho mọi shop từ 26/11 09:06; shop chưa có dòng cài đặt mặc định cách mới. Lùi gấp: env `STOCK_MODEL_FORCE=LEGACY` trên dịch vụ web. Đèn báo: HQ → Sức khỏe, dấu hiệu "Bộ đếm kho". Việc còn lại ở mục 21.5.
+>
+> **Đọc theo việc:**
+>
+> | Cần gì | Mục |
+> |---|---|
+> | Hiện trạng, cách lùi, việc còn lại | 21 |
+> | Vì sao phải bịt 4 câu trước khi mở rộng (số đo prod) | 20 |
+> | Chuẩn quốc tế nói gì, Hubsell lệch ở đâu, mô hình và thuật toán | 1–7 |
+> | Các quyết định anh đã chốt | đầu mục 9 |
+> | Bộ đếm "đang giữ", quét bù, đối chiếu (thiết kế đang chạy) | 14 (mục 13 là bản hai cột đã thay) |
+> | Hủy sau giao, hiển thị, lý do nhập / xuất, kiểm kê theo phiên | 15–17 |
+> | Nhật ký từng lần đưa lên prod | 13.10–13.12, 14.12, 19.1–19.3, 21 |
+>
+> Các mục giữ nguyên số thứ tự theo thời gian viết (mục 12 "Nguồn" nằm cuối tệp) để các chỗ trích dẫn "mục N" trong mã, PROGRESS và ghi chú không bị lệch. Dòng "CHƯA code", "chờ anh" trong tiêu đề các mục 13–19 là trạng thái của NGÀY viết mục đó.
 
 ## 0. Tóm tắt
 
@@ -1189,13 +1203,35 @@ Tổng kho có dải giải thích một lần ("Tồn kho từ nay là hàng th
 
 ### 21.5. CÒN LẠI
 
-- **Dựng lại chỉ mục hỏng `Order_returnTrackingCode_idx` — CHƯA làm.** Lệnh: `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"`, quét cả bảng đơn hai lần. Luật đã ghi 25/11: chỉ làm 03:00–05:00, một cái một lần, trước khi chạy không có giao dịch nào quá 30 giây. Em không làm vào buổi sáng. Tới lúc đó, quét mã vận đơn CHIỀU HOÀN vẫn đọc mọi đơn của gian như trước (hai kiểu mã kia đã nhanh).
+- **Dựng lại chỉ mục hỏng `Order_returnTrackingCode_idx` — CHƯA làm, ĐÃ ĐẶT LỊCH 03:30 ngày 27/11** (anh 26/11: "Được đêm nay dựng lại"; lịch một lần `hubsell-reindex-ma-van-don-chieu-hoan-27-11-03h30`, cần app Claude và Chrome đang mở; lịch tự kiểm giờ, kiểm giao dịch dài, chạy đúng một câu, kiểm `indisvalid` rồi sửa dòng này). Lệnh: `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"`, quét cả bảng đơn hai lần. Luật đã ghi 25/11: chỉ làm 03:00–05:00, một cái một lần, trước khi chạy không có giao dịch nào quá 30 giây. Em không làm vào buổi sáng. Tới lúc đó, quét mã vận đơn CHIỀU HOÀN vẫn đọc mọi đơn của gian như trước (hai kiểu mã kia đã nhanh).
 - **App mobile:** bản khách 1.4.3 (OTA dựng từ nhánh `ota/1.4.3-ten-khong-cat`) CHƯA có cách hiển thị mới, số "Tồn" trên app thấp hơn web đúng bằng phần đang giữ. Không sai dữ liệu: app chỉ nhập / xuất theo số lượng (`/adjust`, `/adjust-bulk`), không gõ đè tồn. Bản 1.5.0 đã có. Ra OTA cho 1.4.3 là việc gửi tới máy khách, em chưa làm.
 - **Pha C (mời dùng "cộng tồn khi kho nhận kiện" + lối thoát "kiện không về") — chưa làm.** Chế độ này khách vẫn tự bật được ở trang Đối soát đơn hoàn như từ 19/11; em không mời ai. Cửa sổ 30 ngày đã làm cho đống đơn Chờ hàng về không còn ảnh hưởng tốc độ Tổng kho.
 - **Hai con số tự chọn chờ anh xem:** 30 ngày của dòng "chưa về kho"; 60 ngày / 20.000 đơn mỗi gian của khớp lỏng.
 - **Chưa kiểm:** em không đăng nhập tài khoản nào trên prod nên chưa NHÌN màn prod của shop khách và trang HQ Sức khỏe; shop đang đếm dở một phiếu Kiểm kê nhanh đúng lúc chuyển cách (trang tải lại số sổ khi mở lại; em chưa dựng lại ca này); khớp lỏng mới đo một lần trên một shop; kiểm kê theo phiên vẫn tải lại toàn bộ dòng 15 giây một lần (20.3).
 - **Dọn sau:** chỉ mục cũ `InventoryLog_manual_idx` (12.616 kB) không còn câu nào dùng; bỏ là lệnh DROP trên prod, cần lời anh.
+- **Bảy tệp chưa commit trong `hubsell-marketing/`** (3 kịch bản TikTok 10–17/11, 2 tệp kết quả + 2 tệp SQL 17/11) là của các phiên khác, em không đụng.
 - Lúc mở local để nhìn màn em chạy nhầm cấu hình backend có kèm worker trong khoảng 1 phút rồi dừng; database local, `.env` local không có cấu hình gửi thư, nhật ký không có dòng gửi nào.
+
+### 21.6. Dọn sau khi bật (26/11 ~09:20–09:45, anh: "dọn dẹp cho sạch sẽ, chuyên nghiệp, đảm bảo mô hình tree")
+
+Rà theo luật đặt tệp ở `README.md` mục "Cấu trúc dự án". Không đổi hành vi nào; test kho 144 ca qua, kiểm kiểu backend + frontend qua, đã mở lại Tổng kho trên local.
+
+| Thứ | Trước | Sau |
+|---|---|---|
+| Hàm đọc database của tra mã quét | nằm trong `routes/orders.ts` kèm đoạn giải thích dài | `services/order-lookup.ts` (`lookupChannelIds`, `exactLookupWheres`, `looseLookupIds`, hai hằng số); route chỉ còn phần điều phối |
+| Phần gọi con số "chưa về kho" trên web | `useApiQuery` nằm trong `app/products/page.tsx` | nằm trong component `components/products/on-hand-notice.tsx`; trang chỉ truyền chế độ cộng tồn của shop |
+| `services/stock-awaiting-ship.ts` | chú thích của `awaitingShipByProduct` nằm lạc trên một hàm khác | chú thích về đúng hàm; đầu tệp nói đủ hai con số tệp này giữ |
+| `workers/stock-committed.ts` | xuất lại hằng `SWEEP_JOB_KEY` không ai dùng | bỏ; hằng chỉ ở `services/stock-committed.ts` |
+| `services/stock-committed.ts` | đầu tệp còn ghi "chạy bóng, chưa màn nào đọc" | ghi đúng: từ 26/11 mọi shop đọc bộ đếm; mục lục có phần đèn báo |
+| `backend/scripts/_tmp-kcqt-seed.ts` | script thử tạm từ 19/11, chưa commit | đã chạy `cleanup` trên database local (5 đơn `KCQT-*`, 1 mã rộng, 10 dòng sổ cái mồ côi) rồi xóa tệp; shop thử local để ở cách mới như prod |
+| `backend/.env.example` | không có biến nào của kho chuẩn quốc tế | thêm nhóm 5 biến (`STOCK_MODEL_FORCE`, `STOCK_COMMITTED_OFF`, ba biến nhịp) |
+| Đầu tệp này + `docs/README.md` | ghi "CHƯA CODE" / "shop khách CHƯA bật" | trạng thái 26/11 + bảng "đọc theo việc" |
+| `docs/HQ-SUC-KHOE.md`, `README.md` | chưa có dấu hiệu mới / tệp service mới | đã thêm |
+| Lịch tự chạy `kho-chuan-quoc-te-soi-doi-chieu` | còn bật (chạy lệch ngày sáng 26/11) | đã tắt |
+
+Giữ có chủ đích: đường cách cũ (`LEGACY`, `awaitingShipByProduct`, nhánh so "Chờ giao" của đối chiếu) vì công tắc khẩn và shop được cho về cũ còn dùng; `backend/scripts/stock-committed-plan-probe.ts` (chạy lại được, luật ở đầu `services/stock-committed.ts`); chỉ mục `InventoryLog_manual_idx` trên prod (bỏ là lệnh DROP, cần lời anh cho đúng câu đó).
+
+Một ca của `stocktake-sessions.test.ts` ("mở lại để đếm tiếp…") đỏ MỘT lần trong lượt chạy nhóm, ba lượt sau (hai lượt cả nhóm, một lượt riêng) đều qua; mã kiểm kê theo phiên em không đụng, chưa tìm ra vì sao chập chờn.
 
 ## 12. Nguồn
 

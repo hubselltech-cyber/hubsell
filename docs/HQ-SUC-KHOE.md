@@ -264,3 +264,9 @@ cần quyền trên Supabase (role thường được phép); nếu bị chặn 
   không lộ gói qua API) rồi tick "Đã làm xong mốc này" trên trang.
 - Chưa làm: dự báo cần ≥7 snapshot ngày (có sau 1 tuần chạy); RAM đo tiến trình
   đang trả lời request (web) — khi tách worker, số RAM worker chưa hiện (bổ sung sau).
+
+**Thêm dấu hiệu "Bộ đếm kho (hàng đang giữ)" 26/11/2026** (`worker.stockCounter`; `services/stock-committed.ts` → `collectStockCounterHealth`, `stockCounterSignal`; lý do ở `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 20.2 + 21.1):
+
+- Từ 26/11 mọi shop cộng thẳng bộ đếm "đang giữ" vào cột Tồn kho, nên bộ đếm lệch là khách thấy Tồn kho sai. Dấu hiệu đọc hai dòng `maintenance_jobs` (`stock-committed-check`, `stock-committed-sweep`) theo khóa chính, không đụng bảng đơn.
+- ĐỎ: lần đối chiếu gần nhất có lệch cứng; đối chiếu quá 26 giờ chưa chạy (nhịp 24 giờ + 2 giờ dư) hoặc chưa từng chạy; `STOCK_COMMITTED_OFF=1` đang bật. VÀNG: quét bù lỗi 3 nhịp liền (cùng quy ước "lỗi ≥ 3 lượt" của các dấu hiệu khác). Ảnh chụp trước 26/11 không có trường này nên không vẽ dấu hiệu.
+- Khi đỏ: không tự sửa số; đọc log worker `[stock-committed]`; cần gấp thì đặt `STOCK_MODEL_FORCE=LEGACY` trên web để mọi shop về cách hiển thị cũ.
