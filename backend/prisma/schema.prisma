@@ -1280,6 +1280,10 @@ model ShopTaxSetting {
   /// khớp với bộ lọc thời gian đang chọn.
   filterPeriod TaxFilterPeriod @default(MONTH)
 
+  /// Tính thuế GTGT sàn thu thêm trên tiền quảng cáo (TikTok 10 %, Shopee 8 % — config/ads-vat.ts)
+  /// vào chi phí của báo cáo. Mặc định BẬT; công ty kê khai khấu trừ thuế thì tắt (26/11/2026).
+  adsVatAsCost Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

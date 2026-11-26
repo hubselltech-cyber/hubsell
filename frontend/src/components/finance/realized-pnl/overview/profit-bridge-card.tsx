@@ -43,6 +43,12 @@ export function ProfitBridgeCard({ bridge, className }: { bridge: PnlProfitBridg
       hint: (
         <>
           Tiền quảng cáo đã tiêu trên sàn trong kỳ, hệ thống tự lấy về (Shopee Ads, TikTok GMV Max…).
+          {(bridge.adsVat ?? 0) > 0 && (
+            <span className="block">
+              • Gồm {formatVND(bridge.adsVat ?? 0)} thuế GTGT sàn cộng thêm khi nạp tiền quảng cáo
+              (TikTok 10%, Shopee 8%)
+            </span>
+          )}
           {bridge.adsNotes.map((n) => (
             <span key={n} className="block">
               • {n}

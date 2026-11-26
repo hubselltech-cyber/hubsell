@@ -102,6 +102,12 @@ export interface ShopTaxConfig {
   customTaxRate: number;
   calculationBase: TaxCalculationBase;
   filterPeriod: TaxFilterPeriod;
+  /**
+   * Tính thuế GTGT sàn thu thêm trên tiền quảng cáo vào CHI PHÍ (26/11/2026,
+   * docs/TAI-CHINH-VAT-QUANG-CAO.md). Mặc định true: hộ / cá nhân kinh doanh không khấu
+   * trừ được thuế đầu vào nên đó là tiền thật mất. Công ty kê khai khấu trừ thì tắt.
+   */
+  adsVatAsCost: boolean;
 }
 
 /** Mặc định khi shop CHƯA lưu cấu hình lần nào — khớp default của schema. */
@@ -109,6 +115,7 @@ export const DEFAULT_TAX_CONFIG: ShopTaxConfig = {
   customTaxRate: 0,
   calculationBase: TaxCalculationBase.PROFIT,
   filterPeriod: TaxFilterPeriod.MONTH,
+  adsVatAsCost: true,
 };
 
 /** Đọc cấu hình thuế của một shop; chưa có bản ghi thì trả mặc định. */
@@ -121,6 +128,7 @@ export async function getShopTaxConfig(
     customTaxRate: Number(s.customTaxRate),
     calculationBase: s.calculationBase,
     filterPeriod: s.filterPeriod,
+    adsVatAsCost: s.adsVatAsCost,
   };
 }
 
@@ -136,7 +144,9 @@ export function platformTaxOn(grossRevenue: number): number {
  */
 export function additionalTaxOn(
   base: { grossRevenue: number; profit: number },
-  cfg: ShopTaxConfig
+  // Chỉ cần hai trường này — các trường khác của cấu hình (kỳ áp dụng, thuế GTGT quảng cáo…)
+  // không tham gia phép tính.
+  cfg: Pick<ShopTaxConfig, "customTaxRate" | "calculationBase">
 ): number {
   if (cfg.customTaxRate <= 0) return 0;
   const taxBase =

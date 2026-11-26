@@ -133,3 +133,118 @@ describe("adSpendDateRange — khoảng giờ VN → khoảng NGÀY cho cột @d
     expect(r.lte.toISOString()).toBe("2026-09-26T00:00:00.000Z");
   });
 });
+
+// ============================================================
+// THUẾ GTGT QUẢNG CÁO (26/11/2026, docs/TAI-CHINH-VAT-QUANG-CAO.md): sàn cộng thuế thêm lúc
+// nạp tiền quảng cáo → phần quảng cáo NGOÀI ĐƠN cộng thêm thuế theo thuế suất của ngày tiêu.
+// ============================================================
+describe("summarizeAdsSpend — thuế GTGT quảng cáo", () => {
+  const base = {
+    tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
+    shopeeChannels: [{ id: "sp", shopName: "DarkMan", adsLinked: true }],
+    dateKey: key,
+  };
+
+  it("không truyền vatAsCost (hoặc false) → y như trước: vat = 0, total không đổi", () => {
+    for (const vatAsCost of [undefined, false]) {
+      const s = summarizeAdsSpend({ ...base, rows, chargedInOrderByChannel: new Map(), vatAsCost });
+      expect(s.total).toBe(943_529);
+      expect(s.vat).toBe(0);
+      expect(s.vatByDay.size).toBe(0);
+    }
+  });
+
+  it("tự nạp hết: TikTok 10 %, Shopee 8 % trên số sàn báo; total vẫn là số CHƯA thuế", () => {
+    const s = summarizeAdsSpend({ ...base, rows, chargedInOrderByChannel: new Map(), vatAsCost: true });
+    expect(s.total).toBe(943_529);
+    expect(s.vatByChannel.get("TIKTOK")).toBeCloseTo(84_352.9, 6);
+    expect(s.vatByChannel.get("SHOPEE")).toBeCloseTo(8_000, 6);
+    expect(s.vat).toBeCloseTo(92_352.9, 6);
+    // Theo ngày: 25/09 = 100.000 × 8 % + 300.000 × 10 %; 26/09 = 543.529 × 10 %.
+    expect(s.vatByDay.get("2026-09-25")).toBeCloseTo(38_000, 6);
+    expect(s.vatByDay.get("2026-09-26")).toBeCloseTo(54_352.9, 6);
+  });
+
+  it("Shopee trích từ đơn ĐÃ gồm thuế → bóc thuế trước khi trừ; tổng tiền quảng cáo = tiền thật rời túi", () => {
+    // Tháng tiêu 10.000.000 (sàn báo, chưa thuế); 5.400.000 trích từ đơn (= 5.000.000 + thuế 8 %).
+    const sp: AdSpendRow[] = [
+      { channelId: "sp", channelName: "SHOPEE", shopName: "DarkMan", date: d("2026-10-10"), amount: 4_000_000 },
+      { channelId: "sp", channelName: "SHOPEE", shopName: "DarkMan", date: d("2026-10-20"), amount: 6_000_000 },
+    ];
+    const s = summarizeAdsSpend({
+      ...base,
+      rows: sp,
+      chargedInOrderByChannel: new Map([["sp", -5_400_000]]),
+      vatAsCost: true,
+    });
+    expect(s.total).toBeCloseTo(5_000_000, 4); // ngoài đơn, chưa thuế
+    expect(s.vat).toBeCloseTo(400_000, 4); // 8 % của phần ngoài đơn
+    // Trong đơn 5.400.000 + ngoài đơn 5.000.000 + thuế 400.000 = 10.800.000 = 10.000.000 × 1,08.
+    expect(5_400_000 + s.total + s.vat).toBeCloseTo(10_800_000, 4);
+    // Tắt thuế → phép trừ cũ (không bóc thuế): 10.000.000 − 5.400.000.
+    const off = summarizeAdsSpend({
+      ...base,
+      rows: sp,
+      chargedInOrderByChannel: new Map([["sp", -5_400_000]]),
+      vatAsCost: false,
+    });
+    expect(off.total).toBeCloseTo(4_600_000, 4);
+    expect(off.vat).toBe(0);
+  });
+
+  it("Shopee trích trọn từ đơn (nạp ví = chi tiêu × 1,08) → không còn phần ngoài đơn, không cộng thuế", () => {
+    const sp: AdSpendRow[] = [
+      { channelId: "sp", channelName: "SHOPEE", shopName: "DarkMan", date: d("2026-10-10"), amount: 1_000_000 },
+    ];
+    const s = summarizeAdsSpend({
+      ...base,
+      rows: sp,
+      chargedInOrderByChannel: new Map([["sp", -1_080_000]]),
+      vatAsCost: true,
+    });
+    expect(s.total).toBeCloseTo(0, 4);
+    expect(s.vat).toBeCloseTo(0, 4);
+  });
+
+  it("TikTok trừ trong đơn: CHƯA biết đã gồm thuế chưa → giữ phép trừ cũ, thuế chỉ trên phần vượt", () => {
+    const s = summarizeAdsSpend({
+      ...base,
+      rows,
+      chargedInOrderByChannel: new Map([["tt", -120_000]]),
+      vatAsCost: true,
+    });
+    expect(s.byChannel.get("TIKTOK")).toBeCloseTo(723_529, 6);
+    expect(s.vatByChannel.get("TIKTOK")).toBeCloseTo(72_352.9, 6);
+  });
+
+  it("kỳ vắt qua 31/12/2026: Shopee 8 % tới hết năm, 10 % từ 01/01/2027", () => {
+    const sp: AdSpendRow[] = [
+      { channelId: "sp", channelName: "SHOPEE", shopName: "DarkMan", date: d("2026-12-31"), amount: 1_000_000 },
+      { channelId: "sp", channelName: "SHOPEE", shopName: "DarkMan", date: d("2027-01-01"), amount: 1_000_000 },
+    ];
+    const s = summarizeAdsSpend({ ...base, rows: sp, chargedInOrderByChannel: new Map(), vatAsCost: true });
+    expect(s.vatByDay.get("2026-12-31")).toBeCloseTo(80_000, 6);
+    expect(s.vatByDay.get("2027-01-01")).toBeCloseTo(100_000, 6);
+    expect(s.vat).toBeCloseTo(180_000, 6);
+  });
+
+  it("Lazada: chưa có nguồn nêu thuế suất → 0", () => {
+    const lz: AdSpendRow[] = [
+      { channelId: "lz", channelName: "LAZADA", shopName: "L", date: d("2026-10-10"), amount: 1_000_000 },
+    ];
+    const s = summarizeAdsSpend({ ...base, rows: lz, chargedInOrderByChannel: new Map(), vatAsCost: true });
+    expect(s.total).toBe(1_000_000);
+    expect(s.vat).toBe(0);
+  });
+
+  it("ADS_VAT_OFF=1 (đường lui toàn hệ thống) → như tắt, kể cả khi shop bật", () => {
+    process.env.ADS_VAT_OFF = "1";
+    try {
+      const s = summarizeAdsSpend({ ...base, rows, chargedInOrderByChannel: new Map(), vatAsCost: true });
+      expect(s.vat).toBe(0);
+      expect(s.total).toBe(943_529);
+    } finally {
+      delete process.env.ADS_VAT_OFF;
+    }
+  });
+});

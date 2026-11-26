@@ -19,10 +19,19 @@
 // 30/10/2026: gian Shopee chưa ủy quyền app Hubsell Ads cũng ghi chú như vậy —
 // trước đó im lặng, khách phamgiathang nhìn báo cáo không biết vì sao thiếu tiền ads
 // Shopee (Ads API Shopee chỉ đi qua app Ads riêng, chưa nối thì AdSpend trống).
+//
+// 26/11/2026 — THUẾ GTGT QUẢNG CÁO (docs/TAI-CHINH-VAT-QUANG-CAO.md): AdSpend là số sàn
+// báo, CHƯA gồm thuế sàn cộng thêm lúc nạp tiền (TikTok 10 %, Shopee 8 % — config/ads-vat.ts).
+// Khi shop để "tính thuế GTGT quảng cáo vào chi phí" (mặc định), phần quảng cáo NGOÀI ĐƠN
+// được cộng thêm thuế = phần ngoài đơn × thuế suất của ngày tiêu, trả ở trường `vat` (tách
+// khỏi `total` để dòng Ads vẫn đối chiếu được với Seller Center). Phần sàn đã trừ trong đơn
+// không cộng thuế lần nữa; riêng Shopee khoản trừ trong đơn ĐÃ gồm thuế nên bóc thuế ra
+// trước khi so với chi phí sàn báo (hai vế cùng gốc chưa thuế).
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
 import { ChannelAppKind } from "@prisma/client";
+import { adsChargedInOrderIncludesVat, adsVatGloballyOff, adsVatRate } from "../config/ads-vat";
 import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { dateKeyToDbDate } from "../lib/ads-dates";
 import { toBusinessDateKey } from "../lib/date-range";
@@ -51,12 +60,19 @@ export interface ShopeeAdsChannel {
 }
 
 export interface AdsSpendSummary {
-  /** Tổng CỘNG VÀO cột Chi phí (đã loại gian tham chiếu). */
+  /** Tổng CỘNG VÀO cột Chi phí (đã loại gian tham chiếu) — số sàn báo, CHƯA gồm thuế GTGT. */
   total: number;
   /** Theo ngày (khóa ngày nghiệp vụ) — chuỗi Doanh thu vs Chi phí. */
   byDay: Map<string, number>;
   /** Theo sàn (channelName) — bóc chi tiết dòng Ads. */
   byChannel: Map<string, number>;
+  /**
+   * Thuế GTGT sàn cộng thêm trên phần quảng cáo ngoài đơn (0 khi shop tắt / ADS_VAT_OFF).
+   * KHÔNG nằm trong `total` — nơi tính lợi nhuận phải cộng `total + vat`.
+   */
+  vat: number;
+  vatByDay: Map<string, number>;
+  vatByChannel: Map<string, number>;
   /** Gạch đầu dòng ngắn nối vào tooltip dòng Ads (gian chưa nối / khoản chỉ tham chiếu). */
   notes: string[];
 }
@@ -76,19 +92,49 @@ export function summarizeAdsSpend(input: {
   /** Gian Shopee trong phạm vi — thiếu = không ghi chú (caller cũ). */
   shopeeChannels?: ShopeeAdsChannel[];
   dateKey: (d: Date) => string;
+  /**
+   * Shop tính thuế GTGT quảng cáo vào chi phí (ShopTaxSetting.adsVatAsCost). Thiếu / false
+   * hoặc env ADS_VAT_OFF=1 → y như trước 26/11/2026: `vat` = 0, phép trừ không bóc thuế.
+   */
+  vatAsCost?: boolean;
 }): AdsSpendSummary {
-  const summary: AdsSpendSummary = { total: 0, byDay: new Map(), byChannel: new Map(), notes: [] };
+  const summary: AdsSpendSummary = {
+    total: 0,
+    byDay: new Map(),
+    byChannel: new Map(),
+    vat: 0,
+    vatByDay: new Map(),
+    vatByChannel: new Map(),
+    notes: [],
+  };
+  const vatOn = input.vatAsCost === true && !adsVatGloballyOff();
+
+  // Mỗi gian: Σ chi phí sàn báo (chưa thuế) + Σ thuế nếu TỰ NẠP hết (theo thuế suất từng ngày)
+  // → thuế suất bình quân của gian trong kỳ, dùng để bóc thuế khỏi khoản đã trừ trong đơn.
+  const spendByChannel = new Map<string, number>();
+  const fullVatByChannel = new Map<string, number>();
+  const platformOf = new Map<string, string>();
+  for (const r of input.rows) {
+    spendByChannel.set(r.channelId, (spendByChannel.get(r.channelId) ?? 0) + r.amount);
+    platformOf.set(r.channelId, r.channelName);
+    if (vatOn) {
+      const v = r.amount * adsVatRate(r.channelName, input.dateKey(r.date));
+      fullVatByChannel.set(r.channelId, (fullVatByChannel.get(r.channelId) ?? 0) + v);
+    }
+  }
 
   // Hệ số cộng của từng gian: 1 = cộng đủ; gian bị thu trong đơn = phần vượt / Σ AdSpend (0 khi thu trọn).
-  const spendByChannel = new Map<string, number>();
-  for (const r of input.rows) spendByChannel.set(r.channelId, (spendByChannel.get(r.channelId) ?? 0) + r.amount);
   const factorOf = new Map<string, number>();
   const offsetChannels = new Set<string>();
   for (const [channelId, fee] of input.chargedInOrderByChannel) {
     if (fee === 0) continue;
     offsetChannels.add(channelId);
     const spend = spendByChannel.get(channelId) ?? 0;
-    const extra = Math.max(0, spend - Math.abs(fee));
+    // Khoản trừ trong đơn đã gồm thuế (Shopee) → bóc thuế để so cùng gốc với chi phí sàn báo.
+    const avgRate = spend > 0 ? (fullVatByChannel.get(channelId) ?? 0) / spend : 0;
+    const includesVat = vatOn && adsChargedInOrderIncludesVat(platformOf.get(channelId) ?? "");
+    const charged = includesVat ? Math.abs(fee) / (1 + avgRate) : Math.abs(fee);
+    const extra = Math.max(0, spend - charged);
     factorOf.set(channelId, spend > 0 ? extra / spend : 0);
   }
 
@@ -99,6 +145,12 @@ export function summarizeAdsSpend(input: {
     const day = input.dateKey(r.date);
     summary.byDay.set(day, (summary.byDay.get(day) ?? 0) + amount);
     summary.byChannel.set(r.channelName, (summary.byChannel.get(r.channelName) ?? 0) + amount);
+    if (!vatOn) continue;
+    const vat = amount * adsVatRate(r.channelName, day);
+    if (vat === 0) continue;
+    summary.vat += vat;
+    summary.vatByDay.set(day, (summary.vatByDay.get(day) ?? 0) + vat);
+    summary.vatByChannel.set(r.channelName, (summary.vatByChannel.get(r.channelName) ?? 0) + vat);
   }
 
   const hasOffset = input.tiktokChannels.some((ch) => offsetChannels.has(ch.id));
@@ -156,11 +208,13 @@ export async function loadAdSpendRows(
  * Tổng quan và Trợ lý hỏi đáp, cùng luật với Báo cáo dòng tiền: gian bị sàn thu
  * tiền quảng cáo ngay trong đơn (TikTok GMV Max, Shopee nạp ví quảng cáo) thì
  * khoản đó đã nằm trong tiền về ví, không cộng lần nữa.
+ * `vatAsCost`: shop có tính thuế GTGT quảng cáo vào chi phí không (cấu hình thuế của shop).
  */
 export async function platformAdsSpend(
   scope: Prisma.ChannelWhereInput,
   range: { gte: Date; lte: Date } | undefined,
-  revenueRows: { channelId: string; adsCharged: number }[]
+  revenueRows: { channelId: string; adsCharged: number }[],
+  vatAsCost: boolean
 ): Promise<AdsSpendSummary> {
   const [rows, tiktokChannels, shopeeChannels] = await Promise.all([
     loadAdSpendRows(scope, range),
@@ -181,6 +235,7 @@ export async function platformAdsSpend(
     tiktokChannels,
     shopeeChannels,
     dateKey: toBusinessDateKey,
+    vatAsCost,
   });
 }
 

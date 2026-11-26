@@ -43,8 +43,12 @@ export interface OffOrderCostInputs {
   adSpendRows: AdSpendRow[];
   tiktokChannels: TiktokAdsChannel[];
   shopeeChannels: ShopeeAdsChannel[];
-  /** Gom AdSpend theo luật summarizeAdsSpend (gian bị sàn thu tiền quảng cáo trong đơn chỉ cộng phần vượt). */
-  adsSummary: (chargedInOrderByChannel: Map<string, number>) => AdsSpendSummary;
+  /**
+   * Gom AdSpend theo luật summarizeAdsSpend (gian bị sàn thu tiền quảng cáo trong đơn chỉ cộng
+   * phần vượt). `vatAsCost` = shop tính thuế GTGT quảng cáo vào chi phí (cấu hình thuế của shop,
+   * nạp song song với hàm này nên truyền lúc gọi).
+   */
+  adsSummary: (chargedInOrderByChannel: Map<string, number>, vatAsCost: boolean) => AdsSpendSummary;
 }
 
 export async function loadOffOrderCostInputs(input: {
@@ -91,13 +95,14 @@ export async function loadOffOrderCostInputs(input: {
     adSpendRows,
     tiktokChannels,
     shopeeChannels,
-    adsSummary: (chargedInOrderByChannel) =>
+    adsSummary: (chargedInOrderByChannel, vatAsCost) =>
       summarizeAdsSpend({
         rows: adSpendRows,
         chargedInOrderByChannel,
         tiktokChannels,
         shopeeChannels,
         dateKey: toBusinessDateKey,
+        vatAsCost,
       }),
   };
 }

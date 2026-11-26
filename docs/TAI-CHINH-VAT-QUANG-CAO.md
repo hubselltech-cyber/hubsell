@@ -1,7 +1,7 @@
-# VAT QUẢNG CÁO TRONG BÁO CÁO TÀI CHÍNH / DÒNG TIỀN — KHẢO SÁT + PHƯƠNG ÁN (chưa code)
+# VAT QUẢNG CÁO TRONG BÁO CÁO TÀI CHÍNH / DÒNG TIỀN — KHẢO SÁT + PHƯƠNG ÁN + BẢN ĐÃ CODE
 
 > 26/11/2026. Anh Trung: "lên phương án xem thêm VAT quảng cáo, anh muốn đưa vào báo cáo tài chính, báo cáo dòng tiền. Anh nhớ không nhầm là 10% đối với TikTok và 8% với Shopee thì phải".
-> Hiện trạng: **CHƯA CODE. Chờ anh chốt mục 7 và giúp 3 ảnh chụp ở mục 5.**
+> Hiện trạng: anh bấm "Làm theo đề xuất" ~10:33 26/11 → **lát 1 (báo cáo) + công tắc ĐÃ CODE trên máy, đã commit, CHƯA PUSH** — xem **mục 8** (cái đã làm, bảng trước / sau, việc còn lại). Mục 1–7 là khảo sát + đề xuất gốc. Ba ảnh K1–K3 ở mục 5 vẫn cần.
 > Đây là chuyện thuế: mỗi ý ghi mức chắc; chưa phải ý kiến của cơ quan thuế hay kế toán.
 
 ## 1. Kết luận ngắn
@@ -115,3 +115,45 @@ Còn mở từ trước, liên quan: Shopee chưa trả lời ticket 20/11 (ti�
 4. Có làm công tắc cho công ty khấu trừ ngay bản đầu không? (em đề xuất: có, một công tắc chung)
 5. Lát 3 (hòa vốn có VAT): cho em mô phỏng trước rồi trình, hay tạm chưa đụng? (em đề xuất: mô phỏng ngay sau lát 1)
 6. Anh giúp 3 ảnh K1–K3 (mục 5).
+
+## 8. ĐÃ CODE 26/11/2026 (anh: "Làm theo đề xuất") — đã commit, CHƯA push
+
+Làm theo các mặc định ở mục 7: ước theo ngày tiêu, dòng riêng, bật mặc định cho mọi shop, có công tắc cho công ty khấu trừ. Lát 3 (hòa vốn có VAT) CHƯA đụng.
+
+### 8.1 Tệp
+
+| Lớp | Tệp | Việc |
+|---|---|---|
+| Thuế suất | `backend/src/config/ads-vat.ts` (mới) | `adsVatRate(sàn, ngày)`: TikTok 5 % → 10 % từ 01/07/2025; Shopee 10 % → 8 % (01/07/2025–31/12/2026) → 10 %; Lazada 0. `adsChargedInOrderIncludesVat`: chỉ Shopee. Đường lui `ADS_VAT_OFF=1` |
+| Phép tính | `backend/src/services/ads-spend.ts` → `summarizeAdsSpend` | thêm `vat`, `vatByDay`, `vatByChannel` (tách khỏi `total`); Shopee bóc thuế khỏi khoản trích từ đơn trước khi trừ; không truyền `vatAsCost` = y như cũ |
+| Cấu hình | `ShopTaxSetting.adsVatAsCost` (migration `20261126160000_shop_tax_ads_vat_as_cost`, mặc định true) + `config/tax-config.ts` + `routes/tax.ts` (GET / PUT `/api/tax/settings`, trường không gửi = giữ nguyên) | công tắc theo chủ shop |
+| Dòng tiền | `routes/finance.ts` | dòng chi phí mới `adsVat` "Thuế GTGT quảng cáo" ngay dưới dòng Ads (bóc theo sàn, chỉ hiện khi > 0); tổng cột Chi phí, lợi nhuận thực tế, chuỗi theo ngày đều gồm thuế |
+| Lãi/Lỗ | `routes/finance.ts` (insights) + `profit-bridge-card.tsx` | bậc "Quảng cáo sàn" gồm thuế, tooltip nêu số thuế; trường `bridge.adsVat` |
+| Tổng quan | `routes/analytics.ts` + `app/page.tsx` | nhóm ADS gồm thuế (cùng lợi nhuận ròng với Dòng tiền), nhãn "Chi phí quảng cáo (gồm thuế GTGT)" khi có thuế; trường `platformAdsVat` |
+| Trợ lý | `routes/assistant.ts` | lợi nhuận kỳ + câu trả lời lãi / lỗ gồm thuế; dòng "Quảng cáo sàn (gồm thuế GTGT)" |
+| Cài đặt | `app/invoicing/tax-settings/page.tsx` | thẻ "Thuế GTGT quảng cáo" + công tắc, lưu ngay khi gạt (không lưu kèm số đang gõ dở ở khối trên) |
+| App mobile | không sửa | màn Dòng tiền vẽ theo danh sách `costs.items` của API nên dòng mới tự hiện, tổng tự đúng — CHƯA thử trên máy thật |
+
+Dòng "Chi phí quảng cáo sàn (Ads)" GIỮ số sàn báo (chưa thuế) để còn đối chiếu với Seller Center; thuế là dòng ngay dưới.
+
+### 8.2 Bảng trước / sau trên prod (SQL chỉ đọc, 30 ngày 27/10–25/11)
+
+- **158 chủ shop** đổi số. Tiền quảng cáo ngoài đơn trong báo cáo: **4.678 triệu → 5.131 triệu (+453 triệu)** = thuế TikTok ≈ 368 + thuế Shopee ≈ 79 + phần Shopee sửa gốc so ≈ 6.
+- Lợi nhuận ròng trên báo cáo của từng shop giảm đúng bằng phần tăng của shop đó (30 ngày): ≥ 10 triệu: 10 chủ shop · 5–10 triệu: 12 · 1–5 triệu: 47 · 100 nghìn–1 triệu: 60 · dưới 100 nghìn: 29. Trung vị ≈ 737 nghìn. Tám shop đổi nhiều nhất: 50,0 · 35,8 · 24,9 · 24,7 · 22,6 · 22,6 · 22,5 · 13,0 triệu.
+- Chưa tách tài khoản demo / tài khoản thử. Lazada không đổi (thuế suất 0).
+- ROI / ROAS hòa vốn, biên lãi quảng cáo, Trợ lý quảng cáo: KHÔNG đổi (không đọc đường này) — nên không có bảng theo chiến dịch.
+
+### 8.3 Đã kiểm
+
+- Test: `ads-spend.test.ts` thêm 8 ca thuế (tự nạp hết, Shopee trích một phần / trích trọn, TikTok trừ trong đơn, kỳ vắt qua 31/12/2026, Lazada, tắt, `ADS_VAT_OFF`), `ads-vat.test.ts` 4 ca; 9 ca cũ của `summarizeAdsSpend` không sửa vẫn xanh. Cả bộ backend: 3.086 qua, 21 đỏ — đúng 10 tệp `*-ledger-db` / `ads-*-db` / `channel-delete-db` và đúng số ca đỏ có sẵn như lượt chạy trước khi thêm thuế (10:04 cùng ngày). Kiểm kiểu hai phía + eslint tệp web đã sửa: sạch.
+- Màn local (gieo 5 ngày × 200.000 ₫ quảng cáo Shopee, đã xóa): Dòng tiền hiện "Chi phí quảng cáo sàn (Ads) 1.000.000" + "Thuế GTGT quảng cáo 80.000"; lợi nhuận ròng Dòng tiền = Tổng quan = Lãi/Lỗ; gạt công tắc tắt → thuế về 0, ba trang cùng tăng 80.000; bật lại → về như cũ, % thuế bổ sung không bị đụng.
+
+### 8.4 Chưa làm / chưa kiểm
+
+- **Chưa push** — đổi số lợi nhuận của ~158 chủ shop ngay khi lên, em chờ anh xem bảng 8.2 rồi cho lệnh.
+- **Thông báo cho khách** (một dòng trong app / bài hướng dẫn) về việc báo cáo có thêm dòng thuế: chưa viết — câu chữ gửi khách để anh duyệt.
+- Chữ "chưa gồm thuế GTGT" ở màn Trợ lý quảng cáo / chi tiết chiến dịch: chưa thêm.
+- K1–K3 (mục 5) chưa có ảnh: TikTok trừ trong đơn đang coi là chưa gồm thuế; Lazada 0 %.
+- Lát 3 (ROI / ROAS hòa vốn có thuế): chưa mô phỏng.
+- App mobile: chưa nhìn trên máy thật; dòng con riêng trên donut app nếu cần chỉnh thì OTA sau.
+- Số trên local chỉ có gian Shopee; ca TikTok mới qua test, chưa nhìn màn với dữ liệu thật.

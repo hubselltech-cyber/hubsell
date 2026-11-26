@@ -264,10 +264,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // quan KHÔNG trừ khoản này nên lợi nhuận cao hơn Báo cáo dòng tiền đúng bằng
     // tiền quảng cáo sàn (tháng 8 tài khoản demo lệch 617.858 ₫). Gộp vào nhóm
     // ADS của chi phí hoạt động để thác nước, donut và thẻ Tổng Chi phí cùng đổi.
+    const adsVatAsCost = taxCfg?.adsVatAsCost ?? true;
     const platformAds = seesFinancials
-      ? await platformAdsSpend(scope, range, adsChargedRowsOf(totals))
+      ? await platformAdsSpend(scope, range, adsChargedRowsOf(totals), adsVatAsCost)
       : null;
-    const platformAdsTotal = platformAds?.total ?? 0;
+    // Gồm cả thuế GTGT sàn cộng thêm trên tiền quảng cáo (26/11/2026) — cùng số với Báo cáo
+    // dòng tiền (dòng Ads + dòng Thuế GTGT quảng cáo). Phần thuế trả riêng ở platformAdsVat.
+    const platformAdsVat = platformAds?.vat ?? 0;
+    const platformAdsTotal = (platformAds?.total ?? 0) + platformAdsVat;
 
     // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — cùng số với
     // Báo cáo dòng tiền, kỳ ghi nhận = NGÀY KHO BÁO HỎNG (20/11/2026).
@@ -411,8 +415,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
       if (seesFinancials) {
-        const trendAds = await platformAdsSpend(scope, trendRange, adsChargedRowsOf(trendTotals));
+        const trendAds = await platformAdsSpend(
+          scope,
+          trendRange,
+          adsChargedRowsOf(trendTotals),
+          adsVatAsCost
+        );
         for (const [day, amount] of trendAds.byDay) bump(tCost, day, amount);
+        for (const [day, amount] of trendAds.vatByDay) bump(tCost, day, amount);
         // Cùng công thức chi phí/ngày với costMap phía trên
         for (const [day, d] of trendTotals.byDay) bump(tCost, day, d.costSnapshot + d.platformDeduction);
       }
@@ -576,6 +586,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       additionalTax,
       // Phần quảng cáo sàn tự đồng bộ ĐÃ nằm trong totalOperatingExpense + nhóm ADS.
       platformAdsSpend: platformAdsTotal,
+      // Trong đó: thuế GTGT sàn cộng thêm trên tiền quảng cáo (0 khi shop tắt).
+      platformAdsVat,
       missingCost, // đơn chưa có giá vốn — đang tính với giá vốn 0, UI ghi rõ số đơn để nhắc nhập
       expensesByCategory,
       revenueByDay,

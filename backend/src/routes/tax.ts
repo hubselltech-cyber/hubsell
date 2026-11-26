@@ -113,11 +113,14 @@ function serializeSettings(s: {
   customTaxRate: number;
   calculationBase: TaxCalculationBase;
   filterPeriod: TaxFilterPeriod;
+  adsVatAsCost: boolean;
 }) {
   return {
     customTaxPercent: s.customTaxRate * 100,
     calculationBase: s.calculationBase,
     filterPeriod: s.filterPeriod,
+    // Tính thuế GTGT quảng cáo sàn thu thêm vào chi phí của báo cáo (docs/TAI-CHINH-VAT-QUANG-CAO.md).
+    adsVatAsCost: s.adsVatAsCost,
     platformTaxPercent: PLATFORM_TAX_RATE * 100,
   };
 }
@@ -133,11 +136,16 @@ router.get("/settings", async (req: AuthRequest, res, next) => {
 });
 
 // PUT /api/tax/settings — lưu cấu hình.
-// Body: { customTaxPercent, calculationBase, filterPeriod }
+// Body: { customTaxPercent, calculationBase, filterPeriod, adsVatAsCost? }
+// adsVatAsCost bỏ trống = giữ nguyên (bản web / app cũ không gửi trường này).
 router.put("/settings", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
-    const { customTaxPercent, calculationBase, filterPeriod } = req.body ?? {};
+    const { customTaxPercent, calculationBase, filterPeriod, adsVatAsCost } = req.body ?? {};
+    if (adsVatAsCost !== undefined && typeof adsVatAsCost !== "boolean") {
+      res.status(400).json({ error: "Lựa chọn thuế GTGT quảng cáo không hợp lệ" });
+      return;
+    }
 
     if (!CALCULATION_BASES.includes(calculationBase)) {
       res.status(400).json({ error: "Cơ sở tính thuế không hợp lệ" });
@@ -160,8 +168,19 @@ router.put("/settings", async (req: AuthRequest, res, next) => {
 
     const saved = await prisma.shopTaxSetting.upsert({
       where: { ownerId },
-      create: { ownerId, customTaxRate, calculationBase, filterPeriod },
-      update: { customTaxRate, calculationBase, filterPeriod },
+      create: {
+        ownerId,
+        customTaxRate,
+        calculationBase,
+        filterPeriod,
+        ...(adsVatAsCost !== undefined ? { adsVatAsCost } : {}),
+      },
+      update: {
+        customTaxRate,
+        calculationBase,
+        filterPeriod,
+        ...(adsVatAsCost !== undefined ? { adsVatAsCost } : {}),
+      },
     });
 
     res.json({
@@ -169,6 +188,7 @@ router.put("/settings", async (req: AuthRequest, res, next) => {
         customTaxRate: Number(saved.customTaxRate),
         calculationBase: saved.calculationBase,
         filterPeriod: saved.filterPeriod,
+        adsVatAsCost: saved.adsVatAsCost,
       }),
     });
   } catch (err) {

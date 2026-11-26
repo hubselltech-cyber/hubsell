@@ -120,6 +120,7 @@ hubsell/
 │       │                                #   plan-overage (phí vượt trần đơn "tính thẳng": một câu SQL cho tạm tính + chốt tháng) +
 │       │                                #   plan-overage-payment (thu / miễn phiếu) — docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, order-list + order-lookup (danh sách đơn / tra mã quét theo từng gian), sync-schedule,
+│       │                                #   ads-spend (gộp chi phí quảng cáo sàn + thuế GTGT quảng cáo theo config/ads-vat.ts — docs/TAI-CHINH-VAT-QUANG-CAO.md),
 │       │                                #   recurring-expense (chi phí định kỳ: một câu SQL ghi các khoản tới hạn) + expense-input (kiểm nguồn tiền
 │       │                                #   dùng chung cho thu chi nhập tay và luật định kỳ) — docs/THU-CHI-VAN-HANH-CHI-PHI-DINH-KY.md,
 │       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·

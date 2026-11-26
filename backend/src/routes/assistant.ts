@@ -43,6 +43,7 @@ import { ledgerDamagedLoss } from "../services/order-ledger";
 import { DAMAGED_LOSS_LABEL } from "../lib/damaged-loss";
 import { adsChargedRowsOf, type OverviewTotals } from "../lib/overview-totals";
 import { platformAdsSpend } from "../services/ads-spend";
+import { getShopTaxConfig } from "../config/tax-config";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -289,9 +290,11 @@ export async function buildPeriodReport(
   // tiền (anh Trung chốt 30/09/2026), áp cho cả kỳ trước để % so sánh cùng thước.
   const curTotals = curData.totals;
   const prevTotals = prevData.totals;
+  // Thuế GTGT quảng cáo tính vào chi phí theo cấu hình thuế của shop (26/11/2026).
+  const { adsVatAsCost } = await getShopTaxConfig(ownerId);
   const [curAds, prevAds, curDamaged, prevDamaged] = await Promise.all([
-    platformAdsSpend(scope, range, adsChargedRowsOf(curTotals)),
-    platformAdsSpend(scope, prevRange, adsChargedRowsOf(prevTotals)),
+    platformAdsSpend(scope, range, adsChargedRowsOf(curTotals), adsVatAsCost),
+    platformAdsSpend(scope, prevRange, adsChargedRowsOf(prevTotals), adsVatAsCost),
     ledgerDamagedLoss(scope, range),
     ledgerDamagedLoss(scope, prevRange),
   ]);
@@ -299,13 +302,13 @@ export async function buildPeriodReport(
   const cur = netOf(
     curTotals,
     Number(opexAgg._sum.amount ?? 0),
-    curAds.total,
+    curAds.total + curAds.vat,
     curDamaged.outside
   );
   const prev = netOf(
     prevTotals,
     Number(prevOpexAgg._sum.amount ?? 0),
-    prevAds.total,
+    prevAds.total + prevAds.vat,
     prevDamaged.outside
   );
   const cancelled = curTotals.cancelledCount;
@@ -459,7 +462,15 @@ const INTENTS: IntentDef[] = [
       // Đơn chưa có giá vốn tính như giá vốn 0 (04/11/2026) — chỉ đếm để nhắc nhập.
       const missing = totals.active.missingCostCount;
       // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
-      const ads = (await platformAdsSpend(scope, period.range, adsChargedRowsOf(totals))).total;
+      const { adsVatAsCost } = await getShopTaxConfig(ownerId);
+      const adsSummary = await platformAdsSpend(
+        scope,
+        period.range,
+        adsChargedRowsOf(totals),
+        adsVatAsCost
+      );
+      const adsVat = adsSummary.vat;
+      const ads = adsSummary.total + adsVat;
       // Thất thu hàng mất/hỏng — cùng số với Tổng quan / Báo cáo dòng tiền (13/11/2026).
       const damaged = await ledgerDamagedLoss(scope, period.range);
       const net = revenue - cost - fee - opex - ads - damaged.outside;
@@ -485,7 +496,14 @@ const INTENTS: IntentDef[] = [
                   : []),
                 { label: "Sàn khấu trừ (phí + thuế + voucher)", value: fmtMoney(fee) },
                 { label: "Chi phí vận hành", value: fmtMoney(opex) },
-                ...(ads > 0 ? [{ label: "Quảng cáo sàn", value: fmtMoney(ads) }] : []),
+                ...(ads > 0
+                  ? [
+                      {
+                        label: adsVat > 0 ? "Quảng cáo sàn (gồm thuế GTGT)" : "Quảng cáo sàn",
+                        value: fmtMoney(ads),
+                      },
+                    ]
+                  : []),
                 ...(missing > 0
                   ? [{ label: `${missing} đơn chưa có giá vốn (giá vốn tạm 0 đ)`, value: "Nhập giá vốn" }]
                   : []),

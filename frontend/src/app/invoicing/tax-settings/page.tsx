@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
+  Megaphone,
   Percent,
   Save,
   ShieldCheck,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   ApiError,
   fetchTaxSettings,
@@ -74,6 +76,16 @@ export default function TaxSettingsPage() {
     useState<TaxCalculationBase>("PROFIT");
   const [filterPeriod, setFilterPeriod] = useState<TaxFilterPeriod>("MONTH");
   const [platformTaxPercent, setPlatformTaxPercent] = useState(1.5);
+  // Thuế GTGT quảng cáo tính vào chi phí — lưu ngay khi gạt (không chờ nút Lưu của khối trên).
+  const [adsVatAsCost, setAdsVatAsCost] = useState(true);
+  const [savingAdsVat, setSavingAdsVat] = useState(false);
+  // Cấu hình ĐÃ LƯU gần nhất của khối "Thuế bổ sung" — công tắc bên dưới gửi kèm đúng các số
+  // này (API lưu cả bộ), để gạt công tắc không vô tình lưu luôn số đang gõ dở ở khối trên.
+  const [savedCore, setSavedCore] = useState<{
+    customTaxPercent: number;
+    calculationBase: TaxCalculationBase;
+    filterPeriod: TaxFilterPeriod;
+  }>({ customTaxPercent: 0, calculationBase: "PROFIT", filterPeriod: "MONTH" });
 
   useEffect(() => {
     fetchTaxSettings()
@@ -82,6 +94,12 @@ export default function TaxSettingsPage() {
         setCalculationBase(r.settings.calculationBase);
         setFilterPeriod(r.settings.filterPeriod);
         setPlatformTaxPercent(r.settings.platformTaxPercent);
+        setAdsVatAsCost(r.settings.adsVatAsCost ?? true);
+        setSavedCore({
+          customTaxPercent: r.settings.customTaxPercent,
+          calculationBase: r.settings.calculationBase,
+          filterPeriod: r.settings.filterPeriod,
+        });
       })
       .catch((err) => {
         if (!(err instanceof ApiError && err.status === 401)) {
@@ -108,6 +126,11 @@ export default function TaxSettingsPage() {
         filterPeriod,
       });
       setCustomPercentInput(String(r.settings.customTaxPercent));
+      setSavedCore({
+        customTaxPercent: r.settings.customTaxPercent,
+        calculationBase: r.settings.calculationBase,
+        filterPeriod: r.settings.filterPeriod,
+      });
       toast.success(
         "Đã lưu cấu hình thuế — Báo cáo dòng tiền và Lãi/Lỗ Thực Hiện sẽ dùng số mới"
       );
@@ -117,6 +140,25 @@ export default function TaxSettingsPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleToggleAdsVat(next: boolean) {
+    const prev = adsVatAsCost;
+    setAdsVatAsCost(next);
+    setSavingAdsVat(true);
+    try {
+      await saveTaxSettings({ ...savedCore, adsVatAsCost: next });
+      toast.success(
+        next
+          ? "Đã bật — báo cáo cộng thuế GTGT quảng cáo vào chi phí"
+          : "Đã tắt — báo cáo không cộng thuế GTGT quảng cáo"
+      );
+    } catch (err) {
+      setAdsVatAsCost(prev);
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được lựa chọn");
+    } finally {
+      setSavingAdsVat(false);
     }
   }
 
@@ -255,6 +297,38 @@ export default function TaxSettingsPage() {
                   Lưu xong, Báo cáo dòng tiền &amp; Lãi/Lỗ Thực Hiện tự trích
                   theo số mới.
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ===== THUẾ GTGT QUẢNG CÁO (26/11/2026) — sàn cộng thêm lúc nạp tiền quảng cáo ===== */}
+          <Card className="max-w-2xl shadow-sm">
+            <CardHeader className="border-b pb-3">
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <Megaphone className="size-5 text-slate-500" />
+                Thuế GTGT quảng cáo
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="ads-vat-as-cost">Tính thuế GTGT quảng cáo vào chi phí</Label>
+                  <p className={TEXT_SUB}>
+                    Khi bạn nạp tiền quảng cáo, sàn cộng thêm thuế GTGT (TikTok 10%, Shopee 8%)
+                    ngoài số tiền quảng cáo. Bật: Báo cáo dòng tiền, Tổng quan và Lãi/Lỗ cộng
+                    thêm khoản thuế này vào chi phí — đúng với tiền thật bạn bỏ ra.
+                  </p>
+                  <p className={TEXT_SUB}>
+                    Shop là công ty kê khai khấu trừ thuế GTGT (thuế này được trừ lại khi kê
+                    khai) thì tắt.
+                  </p>
+                </div>
+                <Switch
+                  id="ads-vat-as-cost"
+                  checked={adsVatAsCost}
+                  disabled={savingAdsVat}
+                  onCheckedChange={handleToggleAdsVat}
+                />
               </div>
             </CardContent>
           </Card>

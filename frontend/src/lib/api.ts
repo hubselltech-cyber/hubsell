@@ -1142,7 +1142,10 @@ export interface PnlProfitBridge {
   /** Phần lãi của đơn hủy + đơn đang hoàn (Lãi/Lỗ cộng, Dòng tiền không) — thường nhỏ, có thể âm. */
   nonRevenueOrdersProfit: number;
   activeOrderProfit: number;
+  /** Quảng cáo sàn trừ vào lợi nhuận — ĐÃ gồm thuế GTGT sàn cộng thêm (adsVat). */
   adsSpend: number;
+  /** Trong đó: thuế GTGT quảng cáo (0 khi shop tắt; bản backend cũ không trả). */
+  adsVat?: number;
   adsNotes: string[];
   operatingExpense: number;
   operatingIncome: number;
@@ -1375,6 +1378,8 @@ export interface AnalyticsResponse {
   additionalTax?: number;
   /** Quảng cáo sàn tự đồng bộ — ĐÃ nằm trong totalOperatingExpense và nhóm ADS. */
   platformAdsSpend?: number;
+  /** Trong platformAdsSpend: thuế GTGT sàn cộng thêm trên tiền quảng cáo (0 khi shop tắt). */
+  platformAdsVat?: number;
   /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ; số đơn để nhắc nhập. */
   missingCost?: MissingCostSummary;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
@@ -5955,6 +5960,8 @@ export interface TaxSettingsDTO {
   calculationBase: TaxCalculationBase;
   filterPeriod: TaxFilterPeriod;
   platformTaxPercent: number; // thuế sàn TMĐT — hằng số luật 1.5, chỉ đọc
+  /** Tính thuế GTGT sàn cộng thêm trên tiền quảng cáo vào chi phí của báo cáo (mặc định bật). */
+  adsVatAsCost: boolean;
 }
 
 export function fetchTaxSettings() {
@@ -5965,6 +5972,7 @@ export function saveTaxSettings(input: {
   customTaxPercent: number;
   calculationBase: TaxCalculationBase;
   filterPeriod: TaxFilterPeriod;
+  adsVatAsCost?: boolean;
 }) {
   return apiFetch<{ settings: TaxSettingsDTO }>("/api/tax/settings", {
     method: "PUT",

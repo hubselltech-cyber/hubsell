@@ -726,6 +726,8 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
       nonRevenueOrdersProfit: number;
       activeOrderProfit: number;
       adsSpend: number;
+      /** Trong đó: thuế GTGT sàn cộng thêm trên tiền quảng cáo (đã nằm trong adsSpend). */
+      adsVat: number;
       adsNotes: string[];
       operatingExpense: number;
       operatingIncome: number;
@@ -734,7 +736,9 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
     } = null;
     if (cash && offOrder) {
       const t = cash.totals;
-      const ads = offOrder.adsSummary(t.adsChargedByChannelId);
+      const ads = offOrder.adsSummary(t.adsChargedByChannelId, taxCfg.adsVatAsCost);
+      // Quảng cáo trừ vào lợi nhuận = số sàn báo (phần ngoài đơn) + thuế GTGT sàn cộng thêm.
+      const adsWithVat = ads.total + ads.vat;
       const gd = computeGrossDeductionsFromTotals(t.active);
       const activeOrderProfit = t.settled.profitAfterTax + t.pending.profitAfterTax;
       const operatingExpense = offOrder.fixedExpenseTotal + offOrder.variableExpenseTotal;
@@ -745,7 +749,7 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
       const damaged = await ledgerDamagedLoss(scope, range);
       const np = cashFlowNetProfit({
         orderProfit: activeOrderProfit,
-        adsSpend: ads.total,
+        adsSpend: adsWithVat,
         operatingExpense,
         operatingIncome: offOrder.operatingIncomeTotal,
         damagedLossOutside: damaged.outside,
@@ -757,7 +761,8 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
         // đơn tính doanh thu → phần chênh là của hai nhóm đó (thường nhỏ, có thể âm).
         nonRevenueOrdersProfit: current.profit - activeOrderProfit + damaged.outside,
         activeOrderProfit,
-        adsSpend: ads.total,
+        adsSpend: adsWithVat,
+        adsVat: ads.vat,
         adsNotes: ads.notes,
         operatingExpense,
         operatingIncome: offOrder.operatingIncomeTotal,
@@ -2831,11 +2836,20 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // tay). Gian bị sàn thu tiền quảng cáo ngay trong đơn (TikTok GMV Max, Shopee
     // nạp ví quảng cáo — đã nằm trong cột Khấu trừ) thì chỉ cộng phần AdSpend vượt
     // khoản đó — không trừ hai lần (lib/finance-definitions.ts adsChargedInOrder).
-    const adsSpend = offOrder.adsSummary(totals.adsChargedByChannelId);
+    const adsSpend = offOrder.adsSummary(totals.adsChargedByChannelId, taxCfg.adsVatAsCost);
     const adsSpendTotal = adsSpend.total;
     const adsByDay = adsSpend.byDay;
+    // + THUẾ GTGT sàn cộng thêm lúc nạp tiền quảng cáo (26/11/2026, config/ads-vat.ts) — dòng
+    // riêng ngay dưới Ads để dòng Ads vẫn khớp số Seller Center; 0 khi shop tắt.
+    const adsVatTotal = adsSpend.vat;
+    const adsVatByDay = adsSpend.vatByDay;
     const totalCostColumn =
-      cogsAll + damagedLossTotal + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
+      cogsAll +
+      damagedLossTotal +
+      variableExpenseTotal +
+      fixedExpenseTotal +
+      adsSpendTotal +
+      adsVatTotal;
 
     // BÓC CHI TIẾT TỪNG KHOẢN CHI PHÍ (anh Trung 22/08 — donut Cơ cấu chi phí
     // trên app cần "chi tiết các loại"): giá vốn + Ads bóc theo SÀN, chi phí
@@ -2903,6 +2917,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       variableExpenseTotal -
       fixedExpenseTotal -
       adsSpendTotal -
+      adsVatTotal -
       damaged.outside;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
@@ -2916,7 +2931,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // (lib/net-profit.ts cashFlowNetProfit): thuế bổ sung tính trên LN trước thuế.
     const netBridge = cashFlowNetProfit({
       orderProfit: settled.profitAfterTax + pending.profitAfterTax,
-      adsSpend: adsSpendTotal,
+      adsSpend: adsSpendTotal + adsVatTotal,
       operatingExpense: variableExpenseTotal + fixedExpenseTotal,
       operatingIncome: operatingIncomeTotal,
       damagedLossOutside: damaged.outside,
@@ -2998,7 +3013,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           (cogsByDay.get(key) ?? 0) +
           (damaged.outsideByDay.get(key) ?? 0) +
           (expenseByDay.get(key) ?? 0) +
-          (adsByDay.get(key) ?? 0),
+          (adsByDay.get(key) ?? 0) +
+          (adsVatByDay.get(key) ?? 0),
       });
     }
 
@@ -3096,6 +3112,23 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(adsSpendTotal, totalCostColumn),
               items: breakdownOf(adsByChannel, channelLabelOf, adsSpendTotal),
             },
+            // Thuế GTGT quảng cáo — chỉ hiện khi có số (shop không chạy quảng cáo / đã tắt thì ẩn).
+            ...(adsVatTotal > 0
+              ? [
+                  {
+                    key: "adsVat",
+                    label: "Thuế GTGT quảng cáo",
+                    hint: [
+                      "Thuế sàn cộng thêm khi bạn nạp tiền quảng cáo (TikTok 10%, Shopee 8%). Hubsell ước theo chi phí quảng cáo sàn báo × thuế suất.",
+                      "• Phần quảng cáo sàn trừ thẳng trong đơn đã gồm thuế, không cộng lại ở đây",
+                      "• Shop là công ty được khấu trừ thuế: tắt ở Hóa đơn & Thuế › Cấu hình thuế",
+                    ].join("\n"),
+                    amount: adsVatTotal,
+                    percent: pct(adsVatTotal, totalCostColumn),
+                    items: breakdownOf(adsSpend.vatByChannel, channelLabelOf, adsVatTotal),
+                  },
+                ]
+              : []),
             {
               key: "variable",
               label: "Chi phí biến đổi",

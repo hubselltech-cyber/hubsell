@@ -131,7 +131,15 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
     // thác vẫn cộng ra đúng Lãi ròng.
     { key: "fee", label: "Chi phí sàn (phí dịch vụ, thanh toán, vận chuyển; voucher tách riêng)", short: "Chi phí", amount: analytics.totalPlatformFee - analytics.totalPlatformTax - promo, hue: "rose" },
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
-    { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
+    {
+      key: "ads",
+      // Từ 26/11/2026 số quảng cáo sàn gồm cả thuế GTGT sàn cộng thêm lúc nạp tiền.
+      label:
+        (analytics.platformAdsVat ?? 0) > 0 ? "Chi phí quảng cáo (gồm thuế GTGT)" : "Chi phí quảng cáo",
+      short: "Ads",
+      amount: adsExpense,
+      hue: "amber",
+    },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
     { key: "damaged", label: "Thất thu hàng mất/hỏng (hàng hoàn kho đã báo hỏng)", short: "Thất thu", amount: damagedLoss, hue: "amber" },
     // Đơn chưa có giá vốn tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11):
@@ -344,7 +352,13 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee.other, color: "#94a3b8" },
     // ---- Ngoài sàn ----
     { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: analytics.totalCost - damagedInCost, color: "#3b82f6" },
-    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense, color: "#8b5cf6" },
+    {
+      key: "ads",
+      label:
+        (analytics.platformAdsVat ?? 0) > 0 ? "Chi phí quảng cáo (gồm thuế GTGT)" : "Chi phí quảng cáo",
+      amount: adsExpense,
+      color: "#8b5cf6",
+    },
     { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: analytics.operatingVariableExpense, color: "#10b981" },
     { key: "fixops", label: "Chi phí Cố định Vận hành", amount: analytics.operatingFixedExpense, color: "#a16207" },
     { key: "damaged", label: "Thất thu hàng mất/hỏng", amount: damagedLoss, color: "#be123c" },
