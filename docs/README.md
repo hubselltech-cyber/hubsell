@@ -24,6 +24,7 @@
 - [GOI-NGU-DONG-GIAN-HET-HAN.md](GOI-NGU-DONG-GIAN-HET-HAN.md) — ngủ đông gian khi hết gói quá ân hạn (15/10/2026)
 - [HQ-CONG-TAC-VIEN-DAC-BIET.md](HQ-CONG-TAC-VIEN-DAC-BIET.md) — tab Cộng tác viên đặc biệt trên HQ Marketing: % hoa hồng riêng + thời hạn cho tài khoản đã đăng ký, khách thường giữ 10% vĩnh viễn (07/11/2026)
 - [HQ-CRM-TU-CHUYEN-TRANG-THAI.md](HQ-CRM-TU-CHUYEN-TRANG-THAI.md) — CRM HQ tự chuyển trạng thái chăm sóc theo thuê bao: thanh toán → Đang dùng ổn định, hết gói quá ân hạn → Đã rời bỏ (22/10/2026)
+- [HQ-HUY-GHI-NHAN-THANH-TOAN.md](HQ-HUY-GHI-NHAN-THANH-TOAN.md) — 26/11/2026 HQ ghi tay trùng khoản payOS đã tự ghi: nút "Hủy ghi nhận" ở Sổ quỹ (gỡ bút toán + tờ nháp hóa đơn + trả hạn gói + thu hồi hoa hồng), bảng ca máy từ chối, cảnh báo ghi trùng 48 giờ
 - [PAYOS-KENH-THANH-TOAN.md](PAYOS-KENH-THANH-TOAN.md) — cổng thanh toán payOS
 - [APPLE-IAP-MUA-GOI-TRONG-APP.md](APPLE-IAP-MUA-GOI-TRONG-APP.md) — mua gói trong app iOS
 

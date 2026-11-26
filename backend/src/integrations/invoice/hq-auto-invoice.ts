@@ -443,6 +443,39 @@ export async function cleanupHqWebDraft(entryId: string): Promise<void> {
   }
 }
 
+/** Tờ của một bút toán trên meinvoice.vn: không dùng tờ nháp web / không có tờ / còn nháp / đã ký. */
+export type HqWebDraftState = "NOT_USED" | "NO_DRAFT" | "DRAFT" | "DELETED" | "SIGNED";
+
+/**
+ * Bản CHẶT của cleanupHqWebDraft cho việc HỦY GHI NHẬN một khoản thu
+ * (services/void-package-payment.ts): hỏi thẳng meinvoice.vn tờ của bút toán đang ở
+ * đâu, `remove` thì xóa tờ nháp. Khác bản best-effort: lỗi MISA NÉM RA — người gọi
+ * phải dừng, vì gỡ bút toán khi chưa chắc tờ nháp đã mất là để lại một tờ mồ côi
+ * chờ anh ký nhầm. Tờ đã ký trả "SIGNED" (không đụng) — kể cả khi vòng lấy số của
+ * máy chưa kịp ghi số về bút toán.
+ */
+export async function inspectHqWebDraft(
+  entryId: string,
+  opts: { remove: boolean }
+): Promise<HqWebDraftState> {
+  const cfgRow = await getPlatformInvoiceConfigRow();
+  const cfg = hqStandardConfig(cfgRow);
+  if (!usesWebDraft(cfg.signMethod) || standardConfigMissing(cfg).length > 0) return "NOT_USED";
+  const refId = webRefIdFor(`HQLEDGER-${entryId}`);
+  const [found] = await getWebInvoices([refId], cfg);
+  if (!found) return "NO_DRAFT";
+  if (found.transactionId) return "SIGNED";
+  if (!opts.remove) return "DRAFT";
+  await deleteWebDraft(refId, cfg);
+  // deleteWebDraft trả thành công không chắc là tờ đã mất (tùy phiên bản MISA) → hỏi lại.
+  const [still] = await getWebInvoices([refId], cfg);
+  if (still) {
+    throw new Error("meinvoice.vn báo đã xóa nhưng tờ nháp vẫn còn — xóa tay tờ nháp rồi bấm lại");
+  }
+  console.log(`[HQ invoice] Hủy ghi nhận: đã xóa tờ nháp chờ ký của bút toán ${entryId} trên meinvoice.vn`);
+  return "DELETED";
+}
+
 /**
  * meInvoice đang giữ tờ NHÁP chưa ký cho khoản thu (lần gọi trước ký hỏng nhưng
  * tờ đã được tạo; MISA báo trùng RefID ở lần gọi sau). Cũng là trạng thái chờ:

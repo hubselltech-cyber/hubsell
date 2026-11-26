@@ -39,6 +39,11 @@ import {
   DEFAULT_COMMISSION_PERCENT,
   isPartnerRateActive,
 } from "../services/referral-wallet";
+import {
+  previewVoidPackagePayment,
+  voidPackagePayment,
+  VoidPaymentError,
+} from "../services/void-package-payment";
 import { notifyCustomerSupportUpdate } from "./support";
 import { createSignedUrls } from "../lib/supabase-storage";
 import {
@@ -1408,7 +1413,10 @@ router.get(
         prisma.platformLedgerEntry.findMany({
           where: { occurredAt: range },
           orderBy: { occurredAt: "desc" },
-          select: { ...LEDGER_SELECT, packagePayment: { select: { method: true } } },
+          select: {
+            ...LEDGER_SELECT,
+            packagePayment: { select: { method: true, kind: true, confirmedById: true } },
+          },
         }),
         month
           ? prisma.platformRecurringExpense.findMany({
@@ -1501,6 +1509,16 @@ router.get(
             appleSale: isAppleSale(probe),
             awaitingApple,
             applePayout: awaitingApple ? estimateApplePayout(e.occurredAt) : null,
+            // Khoản thu gói do HQ TỰ BẤM xác nhận (không phải payOS / Apple tự ghi) và
+            // chưa có hóa đơn → hiện nút "Hủy ghi nhận" (services/void-package-payment.ts
+            // kiểm lại đầy đủ khi bấm).
+            voidablePayment:
+              packagePayment?.method === "BANK_TRANSFER" &&
+              packagePayment.kind === "PLAN" &&
+              Boolean(packagePayment.confirmedById) &&
+              e.invoiceStatus !== LedgerInvoiceStatus.ISSUED &&
+              !e.einvoiceTransactionId &&
+              !e.invoiceNo,
           };
         }),
       });
@@ -1868,6 +1886,53 @@ router.delete(
       });
       res.json({ ok: true });
     } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /api/admin/finance/ledger/:id/void-payment — XEM TRƯỚC việc hủy ghi nhận một
+// khoản thu gói do HQ bấm xác nhận tay (ghi trùng với payOS / ghi nhầm): hạn gói
+// của khách trước → sau, tờ nháp hóa đơn, hoa hồng giới thiệu. Không đổi gì.
+router.get(
+  "/finance/ledger/:id/void-payment",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      res.json({ preview: await previewVoidPackagePayment(String(req.params.id)) });
+    } catch (err) {
+      if (err instanceof VoidPaymentError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/ledger/:id/void-payment — HỦY GHI NHẬN: xóa tờ nháp trên
+// meinvoice.vn + trả hạn gói + xóa bút toán và chứng từ + thu hồi hoa hồng. Toàn bộ
+// khoản bị gỡ được chép vào nhật ký thao tác (chứng từ đã xóa không còn chỗ nào khác).
+router.post(
+  "/finance/ledger/:id/void-payment",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const done = await voidPackagePayment(String(req.params.id));
+      await writeAuditLog(req, {
+        action: "subscription.payment.void",
+        targetUserId: done.customer?.id ?? null,
+        targetLabel: done.customer
+          ? `${done.customer.fullName} (${done.customer.email ?? done.customer.id})`
+          : null,
+        detail: JSON.parse(JSON.stringify(done)),
+      });
+      res.json({ ok: true, done });
+    } catch (err) {
+      if (err instanceof VoidPaymentError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
       next(err);
     }
   }

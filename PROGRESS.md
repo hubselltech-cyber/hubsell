@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~13:00–13:40 — HQ: hủy ghi nhận khoản thu gói bấm tay + cảnh báo ghi trùng (CHƯA commit, CHƯA lên prod)
+
+Anh báo không xóa được một dòng thu ở Sổ quỹ: khách tự chuyển qua payOS (máy đã ghi), anh bấm "Xác nhận đã nhận tiền" thêm một lần. Chi tiết: `docs/HQ-HUY-GHI-NHAN-THANH-TOAN.md`.
+
+- **Gốc:** dòng thu sinh từ "Xác nhận đã nhận tiền" mang `packagePaymentId` → backend chặn xóa, giao diện không vẽ thùng rác. Xóa lẻ cũng sai: lần ghi trùng còn gia hạn gói gấp đôi (6 tháng), sinh tờ nháp hóa đơn thứ hai, cộng hoa hồng lần hai.
+- **Làm gì:** `services/void-package-payment.ts` + nút ↶ "Hủy ghi nhận" ở Sổ quỹ (hộp xem trước hạn gói trước → sau, tờ nháp, hoa hồng); xóa tờ nháp meinvoice.vn TRƯỚC, hỏng thì dừng; máy không dựng lại chắc chắn được hạn gói thì từ chối kèm lý do. Hộp "Ghi nhận thanh toán": khách có khoản mua gói trong 48 giờ → hộp vàng + "Vẫn ghi nhận".
+- **Test:** 12 ca mới + bộ thanh toán gói cũ xanh; kiểm kiểu web + backend sạch; màn local đã nhìn cả hai hộp (sáng + tối), tệp seed tạm đã xóa (dữ liệu thử còn trong DB local).
+- **Chưa kiểm:** xóa tờ nháp thật trên meinvoice.vn qua đường mới — lần bấm đầu trên prod là lần kiểm thật.
+- **⏳ Anh:** KHOAN ký cả hai tờ nháp của khách này trên meinvoice.vn; duyệt → commit + push; sau deploy bấm ↶ ở dòng "Hiếu Hubsell" 12:00, rồi mới ký tờ còn lại. Khách đã nhận hai thư "gói đã kích hoạt" (thư sau ghi hạn 6 tháng) — anh quyết có nhắn lại khách không.
+
 ## Phiên 26/11 ~11:00–11:20 — VAT quảng cáo: chuông báo khách ĐÃ GỬI (157 chủ shop)
 
 Anh duyệt câu chữ rồi "Gửi chuông". Chi tiết + nguyên văn câu đã gửi: `docs/TAI-CHINH-VAT-QUANG-CAO.md` **mục 9**.

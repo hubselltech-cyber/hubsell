@@ -92,6 +92,7 @@ import {
 } from "./hq-invoice";
 import { StatCard, formatCount, formatMoney } from "./shared";
 import { AppleSettlementDialog } from "./apple-settlement-dialog";
+import { VoidPaymentDialog } from "./void-payment-dialog";
 
 const SOURCE_LABEL: Record<string, string> = {
   SUBSCRIPTION: "Thu phí gói dịch vụ",
@@ -1131,6 +1132,8 @@ export function LedgerSection({
   /** Bút toán phiếu thu của đợt Apple chuyển đang hỏi hủy. */
   const [cancelApple, setCancelApple] = useState<PlatformLedgerEntry | null>(null);
   const [cancellingApple, setCancellingApple] = useState(false);
+  /** Khoản thu gói HQ bấm tay đang hỏi hủy ghi nhận (ghi trùng / ghi nhầm). */
+  const [voidEntry, setVoidEntry] = useState<PlatformLedgerEntry | null>(null);
   // Tìm theo gói / email khách — lọc ngay trên dữ liệu kỳ đang xem (sổ vài
   // chục dòng/tháng, không cần gọi lại máy chủ). Đổi kỳ vẫn giữ từ khóa.
   const [query, setQuery] = useState("");
@@ -1595,6 +1598,19 @@ export function LedgerSection({
                             <Pencil className="size-4" />
                           </Button>
                         )}
+                        {e.voidablePayment && (
+                          // Khoản thu gói HQ tự bấm xác nhận: không xóa lẻ dòng sổ được (còn hạn
+                          // gói, tờ nháp hóa đơn, hoa hồng) → hủy ghi nhận gỡ đủ cả cụm.
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            title="Hủy ghi nhận (anh bấm xác nhận nhầm / trùng khoản máy đã ghi)"
+                            className="text-muted-foreground hover:text-red-500"
+                            onClick={() => setVoidEntry(e)}
+                          >
+                            <Undo2 className="size-4" />
+                          </Button>
+                        )}
                         {e.withdrawalRequestId === null && e.packagePaymentId === null && !e.appleSettlementId && (
                           <Button
                             variant="outline"
@@ -1651,6 +1667,10 @@ export function LedgerSection({
 
       {appleOpen && (
         <AppleSettlementDialog onClose={() => setAppleOpen(false)} onSaved={onChanged} />
+      )}
+
+      {voidEntry && (
+        <VoidPaymentDialog entry={voidEntry} onClose={() => setVoidEntry(null)} onDone={onChanged} />
       )}
 
       {cancelApple && (

@@ -603,6 +603,9 @@ function PaymentDialog({
   const [occurredAt, setOccurredAt] = useState(toDateInput(new Date()));
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Khách vừa có một khoản mua gói (thường là payOS máy đã tự ghi) → backend hỏi lại
+  // trước khi ghi thêm. Hiện câu cảnh báo, nút đổi thành "Vẫn ghi nhận".
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   const selectedPlan = selectable.find((p) => p.id === planId) ?? null;
   const listPrice = selectedPlan ? planPriceFor(selectedPlan, cycle) : 0;
@@ -634,6 +637,7 @@ function PaymentDialog({
         amount: value,
         occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
         note: note.trim() || undefined,
+        confirmDuplicate: duplicateWarning !== null || undefined,
       });
       const end = result.subscription.currentPeriodEnd;
       toast.success(
@@ -642,6 +646,10 @@ function PaymentDialog({
       onClose();
       onSaved();
     } catch (err) {
+      if (err instanceof ApiError && err.code === "RECENT_PAYMENT") {
+        setDuplicateWarning(err.message);
+        return;
+      }
       toast.error(err instanceof ApiError ? err.message : "Không ghi nhận được thanh toán");
     } finally {
       setSubmitting(false);
@@ -742,13 +750,24 @@ function PaymentDialog({
           không mất ngày); đổi gói hoặc đã quá hạn → kỳ mới tính từ ngày thu tiền.
         </p>
 
+        {duplicateWarning && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <p className="font-medium">Có thể anh đang ghi trùng</p>
+            <p className="mt-1">{duplicateWarning}</p>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Huỷ
+            {duplicateWarning ? "Thôi, không ghi" : "Huỷ"}
           </Button>
-          <Button onClick={handleSave} disabled={submitting || !selectedPlan}>
+          <Button
+            variant={duplicateWarning ? "destructive" : "default"}
+            onClick={handleSave}
+            disabled={submitting || !selectedPlan}
+          >
             {submitting && <Loader2 className="size-4 animate-spin" />}
-            Xác nhận đã nhận tiền
+            {duplicateWarning ? "Vẫn ghi nhận" : "Xác nhận đã nhận tiền"}
           </Button>
         </div>
       </DialogContent>

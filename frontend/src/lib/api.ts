@@ -6878,6 +6878,39 @@ export interface PlatformLedgerEntry {
   appleSettlementId?: string | null;
   /** Ngày Apple chuyển dự kiến (ƯỚC, yyyy-mm-dd) — null khi ngoài bảng lịch tài chính. */
   applePayout?: { fiscalMonthEnd: string; expected: string; deadline: string } | null;
+  /** Khoản thu gói do HQ tự bấm xác nhận, chưa có hóa đơn → có nút "Hủy ghi nhận". */
+  voidablePayment?: boolean;
+}
+
+/** Hủy ghi nhận một khoản thu gói HQ bấm tay: gỡ thì đổi những gì (xem trước) / đã đổi gì. */
+export interface VoidPaymentSummary {
+  entryId: string;
+  customer: { id: string; email: string | null; fullName: string } | null;
+  amount: number;
+  note: string | null;
+  occurredAt: string;
+  planName: string;
+  cycle: BillingCycle;
+  periodEndBefore: string | null;
+  periodEndAfter: string;
+  /** Số khoản thanh toán ghi sau phải dời kỳ theo. */
+  shiftedPayments: number;
+  /** Tờ của dòng trên meinvoice.vn; UNKNOWN = chưa hỏi được MISA (chỉ ở bản xem trước). */
+  invoiceDraft: "NOT_USED" | "NO_DRAFT" | "DRAFT" | "DELETED" | "SIGNED" | "UNKNOWN";
+  commission: { amount: number; referrerLabel: string; recoverable: boolean } | null;
+}
+
+export function previewVoidLedgerPayment(ledgerEntryId: string) {
+  return apiFetch<{ preview: VoidPaymentSummary }>(
+    `/api/admin/finance/ledger/${ledgerEntryId}/void-payment`
+  );
+}
+
+export function voidLedgerPayment(ledgerEntryId: string) {
+  return apiFetch<{ ok: true; done: VoidPaymentSummary }>(
+    `/api/admin/finance/ledger/${ledgerEntryId}/void-payment`,
+    { method: "POST" }
+  );
 }
 
 /** Khoản bán qua App Store còn chờ Apple chuyển (hộp ghi nhận đợt Apple chuyển). */
@@ -7650,6 +7683,8 @@ export function recordSubscriptionPayment(
     amount?: number;
     occurredAt?: string;
     note?: string;
+    /** Khách vừa có khoản mua gói trong 48 giờ (lỗi 409 code RECENT_PAYMENT) mà HQ vẫn ghi. */
+    confirmDuplicate?: boolean;
   }
 ) {
   return apiFetch<{

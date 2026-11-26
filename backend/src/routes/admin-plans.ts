@@ -313,6 +313,8 @@ router.delete("/plans/:id", requirePlatformAdmin, async (req: AuthRequest, res, 
 });
 
 const EXPIRING_SOON_DAYS = 7;
+/** Cửa sổ hỏi lại "khách vừa có khoản mua gói" khi HQ ghi tay — xem POST /subscriptions/:userId/payment. */
+const RECENT_PAYMENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 // GET /api/admin/subscriptions?filter=all|expiring|expired&q=<email/tên>&page=1&pageSize=20
 // Danh sách thuê bao (kèm khách + gói, phân trang) + thẻ số + thanh toán gần đây.
@@ -770,7 +772,7 @@ router.post(
 );
 
 // POST /api/admin/subscriptions/:userId/payment — KẾ TOÁN XÁC NHẬN đã nhận
-// chuyển khoản: { planId, cycle, amount?, occurredAt?, note? }. Một lệnh tự
+// chuyển khoản: { planId, cycle, amount?, occurredAt?, note?, confirmDuplicate? }. Một lệnh tự
 // sinh đủ: gia hạn thuê bao + chứng từ + bút toán THU (chờ hóa đơn) + hoa hồng.
 router.post(
   "/subscriptions/:userId/payment",
@@ -812,6 +814,57 @@ router.post(
         when = new Date(occurredAt);
         if (Number.isNaN(when.getTime())) {
           res.status(400).json({ error: "Ngày thu tiền không hợp lệ" });
+          return;
+        }
+      }
+
+      // Chống GHI TRÙNG (26/11/2026): khách tự chuyển qua payOS, máy đã ghi, HQ thấy
+      // tiền về lại bấm xác nhận thêm lần nữa → hai khoản thu + gia hạn gấp đôi. Khách
+      // vừa có một khoản mua gói trong cửa sổ gần đây thì HỎI LẠI, không khóa cứng —
+      // gửi kèm confirmDuplicate=true là ghi. 48 giờ là mặc định tự chọn: đủ trùm ca
+      // "tiền về hôm qua, hôm nay mới ghi", và không ai mua cùng một gói hai lần trong hai ngày.
+      if (req.body?.confirmDuplicate !== true) {
+        const recent = await prisma.packagePayment.findFirst({
+          where: {
+            userId: customer.id,
+            kind: "PLAN",
+            createdAt: { gte: new Date(Date.now() - RECENT_PAYMENT_WINDOW_MS) },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            amount: true,
+            planName: true,
+            method: true,
+            createdAt: true,
+            confirmedByName: true,
+          },
+        });
+        if (recent) {
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Asia/Ho_Chi_Minh",
+              hour: "2-digit",
+              minute: "2-digit",
+              day: "2-digit",
+              month: "2-digit",
+              hour12: false,
+            })
+              .formatToParts(recent.createdAt)
+              .map((p) => [p.type, p.value])
+          );
+          const at = `${parts.hour}:${parts.minute} ngày ${parts.day}/${parts.month}`;
+          const by =
+            recent.method === PackagePaymentMethod.GATEWAY
+              ? "máy tự ghi từ payOS"
+              : recent.method === PackagePaymentMethod.APPLE_IAP
+                ? "máy tự ghi từ App Store"
+                : recent.method === PackagePaymentMethod.WALLET
+                  ? "khách trả bằng Ví Hubsell"
+                  : `${recent.confirmedByName} ghi tay`;
+          res.status(409).json({
+            code: "RECENT_PAYMENT",
+            error: `Khách này vừa có một khoản mua gói ${recent.planName} ${toNumber(recent.amount).toLocaleString("vi-VN")}₫ lúc ${at} (${by}). Nếu đây là CÙNG lần chuyển khoản đó thì đừng ghi nữa — ghi thêm là gia hạn gấp đôi và sinh thêm một tờ hóa đơn.`,
+          });
           return;
         }
       }
