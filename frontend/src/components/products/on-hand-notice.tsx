@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Info, X } from "lucide-react";
 
+import { fetchNotBackYet, type RestockOnReturn } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery } from "@/lib/use-api-query";
 
 /**
  * HAI DẢI THÔNG BÁO của bảng Tổng kho cho shop chạy cách "hàng trong kho" (kho chuẩn quốc tế, 20/11/2026,
@@ -15,11 +18,19 @@ import { formatNumber } from "@/lib/format";
  *    (luật: bỏ qua là không hiện lại), nhớ theo trình duyệt.
  * 2. Dải "CHƯA VỀ KHO": shop còn để "cộng tồn ngay khi sàn báo hủy" thì Tồn kho đang tính cả hàng của
  *    các đơn hủy sau giao mà kho chưa nhận kiện — là ngoại lệ so với chuẩn nên luôn có nhãn. Chỉ một
- *    dòng, không gạt được (số về 0 thì tự mất).
+ *    dòng, không gạt được (số về 0 thì tự mất). Con số lấy bằng đường gọi RIÊNG, một lần lúc mở
+ *    trang rồi nhớ 5 phút (26/11/2026) — không tính lại theo từng lượt lật trang / tìm kiếm của bảng;
+ *    khóa truy vấn nằm dưới "products" nên sửa tồn / nhập kho hàng hoàn xong là tự lấy lại.
  */
 const DISMISS_KEY = "hubsell_on_hand_notice_dismissed";
 
-export function OnHandNotice({ notBackYet }: { notBackYet?: { units: number; orders: number; days?: number } }) {
+export function OnHandNotice({ restockOnReturn }: { restockOnReturn?: RestockOnReturn }) {
+  const notBackYet = useApiQuery({
+    queryKey: qk.products({ notBackYet: true }),
+    queryFn: fetchNotBackYet,
+    enabled: restockOnReturn === "ON_CANCEL",
+    staleTime: 5 * 60 * 1000,
+  }).data;
   // null = chưa đọc trình duyệt (SSR + lượt vẽ đầu) → chưa vẽ, tránh nháy.
   const [dismissed, setDismissed] = useState<boolean | null>(null);
   useEffect(() => {

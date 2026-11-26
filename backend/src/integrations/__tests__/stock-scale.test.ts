@@ -20,7 +20,7 @@ import { createApp } from "../../app";
 import { signToken } from "../../middleware/auth";
 import { deductStockTx, restoreStockTx, shipStockTx } from "../order-stock";
 import { LOG_COUNT_CAP } from "../../routes/inventory";
-import { looseLookupIds, LOOKUP_LOOSE_DAYS } from "../../routes/orders";
+import { looseLookupIds, LOOKUP_LOOSE_DAYS } from "../../services/order-lookup";
 import { NOT_BACK_WINDOW_DAYS, restockedNotBackYet } from "../../services/stock-awaiting-ship";
 import { createStockFixture, setStockSettings, type StockFixture } from "./fixtures";
 

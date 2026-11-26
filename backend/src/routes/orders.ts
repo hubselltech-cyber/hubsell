@@ -26,6 +26,7 @@ import {
   restOrderIdsPage,
   restOrderWhere,
 } from "../services/order-list";
+import { exactLookupWheres, lookupChannelIds, looseLookupIds } from "../services/order-lookup";
 import { getLabelArchiveSpool, getLabelStore, loadSavedLabel, LABEL_ARCHIVE_DAYS } from "../services/label-archive";
 import { summarizePickLines } from "../lib/pick-summary";
 import { groupQueue, parseQueueStage } from "../lib/process-queue";
@@ -1573,51 +1574,6 @@ router.post("/bulk/mark-printed", async (req: AuthRequest, res, next) => {
  * tiếp nhiều mã lạ (mã hỏng, tem đơn vị khác).
  */
 const LOOKUP_SYNC_COOLDOWN_MS = 90 * 1000;
-/**
- * Khớp lỏng chỉ tìm trong đơn tạo trong chừng này ngày. 60 là số TỰ CHỌN (26/11/2026): kiện hoàn
- * về kho trong khoảng hạn trả hàng của sàn + hai chiều vận chuyển, em ước dưới 45 ngày, lấy dư.
- */
-export const LOOKUP_LOOSE_DAYS = 60;
-/** Trần số đơn mới nhất của MỖI gian mà khớp lỏng được đọc — trần chi phí, số tự chọn. */
-export const LOOKUP_LOOSE_ROWS = 20_000;
-
-/** Gian trong phạm vi tra của người gọi (cả gian đã ngắt: đơn cũ vẫn tra được như trước). */
-async function lookupChannelIds(ownerId: string, allowed: string[] | null): Promise<string[]> {
-  const rows = await prisma.channel.findMany({
-    where: { userId: ownerId, ...(allowed ? { id: { in: allowed } } : {}) },
-    select: { id: true },
-  });
-  return rows.map((r) => r.id);
-}
-
-/**
- * Tối đa 5 đơn có mã vận đơn (hai chiều) hoặc mã đơn CHỨA chuỗi quét được, không phân biệt hoa
- * thường. Mỗi gian chỉ đọc đơn gần đây qua chỉ mục (channelId, createdAt) — LATERAL để kế hoạch
- * chạy không phụ thuộc thống kê (cùng khuôn services/order-list.ts). Ký tự % _ \ trong mã quét
- * được thoát (Prisma `contains` không thoát).
- */
-export async function looseLookupIds(
-  channelIds: string[],
-  code: string,
-  opts: { days?: number; rows?: number } = {}
-): Promise<string[]> {
-  if (channelIds.length === 0) return [];
-  const since = new Date(Date.now() - (opts.days ?? LOOKUP_LOOSE_DAYS) * 86_400_000);
-  const like = `%${code.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT s."id"
-    FROM unnest(${channelIds}::text[]) AS ch(id)
-    CROSS JOIN LATERAL (
-      SELECT o."id", o."trackingCode", o."returnTrackingCode", o."orderCode"
-      FROM "Order" o
-      WHERE o."channelId" = ch.id AND o."createdAt" >= ${since}
-      ORDER BY o."createdAt" DESC
-      LIMIT ${opts.rows ?? LOOKUP_LOOSE_ROWS}::int
-    ) s
-    WHERE s."trackingCode" ILIKE ${like} OR s."returnTrackingCode" ILIKE ${like} OR s."orderCode" ILIKE ${like}
-    LIMIT 5`;
-  return rows.map((r) => r.id);
-}
 /** ownerId → lần đồng bộ cứu quét gần nhất (in-memory, mất khi restart là vô hại). */
 const lastLookupSyncAt = new Map<string, number>();
 
@@ -1655,25 +1611,14 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
       },
     };
 
-    /**
-     * Một lượt tra trọn vẹn: khớp chính xác → khớp lỏng.
-     *
-     * QUY MÔ (viết lại 26/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 20 lỗ 4): bản trước gộp
-     * ba mã vào một `OR` + lọc gian qua quan hệ → Postgres đọc MỌI đơn của gian rồi mới so mã
-     * (shop 136.724 đơn = đọc cả 136.724 đơn mỗi lần quét trượt), và khớp lỏng `contains` không
-     * có chỉ mục nào. Bản này:
-     *   · khớp chính xác = BA câu riêng, mỗi câu đi đúng một chỉ mục (mã vận đơn chiều đi, mã đơn
-     *     theo gian, mã vận đơn chiều hoàn), câu nào trúng thì dừng;
-     *   · khớp lỏng chỉ tìm trong đơn GẦN ĐÂY của từng gian (LOOKUP_LOOSE_DAYS ngày, tối đa
-     *     LOOKUP_LOOSE_ROWS đơn mới nhất mỗi gian) → chi phí có trần, không lớn theo tuổi shop.
-     */
+    /** Một lượt tra trọn vẹn: khớp chính xác → khớp lỏng. Phần đọc database ở services/order-lookup.ts. */
     const findByCode = async () => {
       const channelIds = await lookupChannelIds(req.ownerId!, req.allowedChannelIds ?? null);
       if (channelIds.length === 0) return { order: null, ambiguous: null };
       const inScope = { channelId: { in: channelIds } };
 
       // 1) Khớp chính xác — mã vận đơn chiều đi → mã đơn → mã vận đơn chiều hoàn
-      for (const where of [{ trackingCode: code }, { orderCode: code }, { returnTrackingCode: code }]) {
+      for (const where of exactLookupWheres(code)) {
         const exact = await prisma.order.findFirst({ where: { ...inScope, ...where }, include });
         if (exact) return { order: exact, ambiguous: null };
       }

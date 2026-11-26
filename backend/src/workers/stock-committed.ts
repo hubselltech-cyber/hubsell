@@ -48,7 +48,6 @@ const CHECK_POLL_MS = 10 * 60 * 1000;
  */
 const CHECK_EARLY_MS = 5 * 60 * 1000;
 
-export { SWEEP_JOB_KEY };
 
 function envInt(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];

@@ -12,9 +12,10 @@
 //   • cutoverCommittedStep    ngày chuyển: đưa các đơn đang chờ giao vào bộ đếm (một lần)
 //   • clearShippedMarks       một lần khi chuyển từ bản hai cột sang một cột: gỡ dấu giữ còn sót
 //   • checkCommitted          đối chiếu hằng đêm — lệch thì BÁO, không tự sửa
+//   • collectStockCounterHealth + stockCounterSignal   đèn báo "Bộ đếm kho" của HQ Sức khỏe
 //
-// CHẠY BÓNG: chưa màn nào đọc bộ đếm, số đẩy sàn không dùng. Không hàm nào ở đây đụng
-// Product.quantityInStock.
+// Từ 26/11/2026 bộ đếm KHÔNG còn chạy bóng: mọi shop chạy cách "hàng trong kho" cộng thẳng nó vào
+// cột Tồn kho (số đẩy sàn vẫn không dùng). Không hàm nào ở đây đụng Product.quantityInStock.
 //
 // ⚠️ BA LUẬT VIẾT CÂU ĐỌC TẬP "ĐANG GIỮ" (mục 14.3 — đo bằng scripts/stock-committed-plan-probe.ts):
 //   1. Vị từ duy nhất là HELD_ORDER, khớp từng chữ với chỉ mục một phần "Order_stock_held_idx".

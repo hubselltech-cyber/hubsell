@@ -10,6 +10,9 @@
 // 3 sàn, quét bù, hủy tay, mẻ chuẩn bị hàng…), sót một chỗ cộng / trừ là lệch vĩnh viễn.
 // Số lượng lấy từ dòng TRỪ trong nhật ký kho của đơn (số đã trừ thật, có sẵn vị trí) — dòng đơn
 // chưa nối SKU không có nhật ký nên tự không tính.
+//
+// Tệp này còn giữ con số "ĐÃ CỘNG SỔ MÀ KHO CHƯA NHẬN KIỆN" (restockedNotBackYet) của shop cách mới
+// còn để "cộng tồn khi sàn báo hủy" — cùng là số đọc từ đơn + nhật ký để giải thích cột Tồn kho.
 // ============================================================
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
@@ -36,11 +39,6 @@ export interface AwaitingShip {
   orders: number;
 }
 
-/**
- * Hàng chờ giao của một nhóm mã (một trang bảng Tổng kho). Mã không có đơn chờ giao thì không có
- * trong Map. Đi TỪ tập đơn chờ giao (nhỏ, có chỉ mục) sang nhật ký theo orderId — CTE MATERIALIZED
- * ép hướng này: đi ngược từ nhật ký của mã bán chạy là hàng chục nghìn dòng mỗi mã.
- */
 /**
  * Cửa sổ của dòng "chưa về kho": chỉ tính đơn được cộng lại sổ trong N ngày gần nhất. 30 là số TỰ
  * CHỌN (26/11/2026, chưa có căn cứ đo): kiện hoàn quá một tháng chưa về thì gần như không về nữa,
@@ -87,6 +85,12 @@ export async function restockedNotBackYet(
   return { units: rows[0]?.units ?? 0, orders: rows[0]?.orders ?? 0, days };
 }
 
+/**
+ * Hàng chờ giao của một nhóm mã (một trang bảng Tổng kho của shop còn ở cách cũ). Mã không có đơn
+ * chờ giao thì không có trong Map. Đi TỪ tập đơn chờ giao (nhỏ, có chỉ mục) sang nhật ký theo
+ * orderId — CTE MATERIALIZED ép hướng này: đi ngược từ nhật ký của mã bán chạy là hàng chục nghìn
+ * dòng mỗi mã. Shop cách mới (ON_HAND) KHÔNG gọi hàm này: "Đang giữ" đọc từ bộ đếm trên sản phẩm.
+ */
 export async function awaitingShipByProduct(
   db: Db,
   ownerId: string,
