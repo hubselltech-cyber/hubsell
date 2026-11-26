@@ -198,7 +198,11 @@ export default function AdminHealthPage() {
               <StatCard
                 label="Database"
                 value={m.infra.dbSizeMb != null ? `${m.infra.dbSizeMb} MB` : "—"}
-                hint={m.infra.dbPct != null ? `${m.infra.dbPct}% gói ${m.infra.plan.dbPlan}` : "không đọc được dung lượng"}
+                hint={
+                  m.infra.dbPct != null
+                    ? `${m.infra.dbPct}% ổ đã cấp${m.infra.walMb != null ? ` (kèm WAL ${m.infra.walMb} MB)` : ""} · ${m.infra.plan.dbPlan}`
+                    : "không đọc được dung lượng"
+                }
               />
               <StatCard
                 label="RAM đang dùng"

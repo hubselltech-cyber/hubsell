@@ -24,6 +24,7 @@ import {
   CURRENT_INFRA,
   HEALTH_THRESHOLDS as T,
   METRIC_LABEL,
+  dbDiskPct,
   levelFor,
   ramLevel,
   isMilestoneReached,
@@ -178,6 +179,8 @@ export interface InfraLayer {
   /** Kho ảnh sản phẩm "Tạo mới" (Supabase Storage, lát C 30/10/2026) — null khi không đọc được. */
   productImages: { count: number; mb: number; owners: number; orphans: number } | null;
   dbSizeMb: number | null;
+  /** WAL trên ổ (MB) — cộng vào tử số % ổ. null = không đọc được; vắng mặt ở ảnh chụp trước 26/11/2026. */
+  walMb?: number | null;
   dbTopTables: { table: string; mb: number }[];
   dbConnections: number | null;
   dbMaxConnections: number | null;
@@ -454,6 +457,14 @@ export async function collectInfra(): Promise<InfraLayer> {
   let dbTopTables: { table: string; mb: number }[] = [];
   let dbConnections: number | null = null;
   let dbMaxConnections: number | null = null;
+  let walMb: number | null = null;
+  try {
+    // Liệt kê thư mục WAL (vài chục tệp) — cần vai pg_monitor; prod vai postgres đọc được (thử 26/11/2026).
+    const wal = await prisma.$queryRaw<{ mb: number | null }[]>`SELECT (sum(size) / 1048576.0)::float AS mb FROM pg_ls_waldir()`;
+    walMb = wal[0]?.mb != null ? Math.round(Number(wal[0].mb)) : null;
+  } catch {
+    // vai DB không có quyền → % ổ chỉ tính database
+  }
   try {
     const size = await prisma.$queryRaw<{ mb: number }[]>`SELECT (pg_database_size(current_database()) / 1048576.0)::float AS mb`;
     dbSizeMb = Math.round(Number(size[0]?.mb ?? 0));
@@ -491,6 +502,7 @@ export async function collectInfra(): Promise<InfraLayer> {
   return {
     productImages: productImagesStat,
     dbSizeMb,
+    walMb,
     dbTopTables,
     dbConnections,
     dbMaxConnections,
@@ -503,7 +515,7 @@ export async function collectInfra(): Promise<InfraLayer> {
     nodeVersion: process.version,
     gitSha: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? null,
     plan,
-    dbPct: dbSizeMb != null ? Math.round((dbSizeMb / plan.dbSizeMb) * 100) : null,
+    dbPct: dbDiskPct(dbSizeMb, walMb, plan.dbSizeMb),
     ramPct: Math.round((ramMb / ramCap) * 100),
     connPct: dbConnections != null && connCap ? Math.round((dbConnections / connCap) * 100) : null,
   };
@@ -602,7 +614,7 @@ export async function buildTimeline(m: HealthMetrics): Promise<TimelineView> {
     channels: slopePerDay(trends.channels),
     owners: slopePerDay(trends.owners),
     ordersPerDay: slopePerDay(trends.ordersPerDay),
-    // % DB tăng theo MB/ngày ÷ dung lượng gói.
+    // % DB tăng theo MB/ngày ÷ ổ đã cấp (WAL coi như đứng yên).
     dbPct: dbSlopeMb != null ? (dbSlopeMb / CURRENT_INFRA.dbSizeMb) * 100 : null,
     ramPct: null,
     connPct: null,
@@ -705,9 +717,11 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "infra.db",
     "Dung lượng DB",
-    i.dbSizeMb != null ? `${i.dbSizeMb} MB / ${i.plan.dbSizeMb} MB (${i.dbPct}%)` : "không đọc được",
+    i.dbSizeMb != null
+      ? `${i.dbSizeMb} MB${i.walMb != null ? ` + WAL ${i.walMb} MB` : ""} / ổ ${i.plan.dbSizeMb} MB (${i.dbPct}%)`
+      : "không đọc được",
     i.dbPct != null ? levelFor(i.dbPct, T.dbPctWarn, T.dbPctCrit) : "ok",
-    "Nâng gói Supabase hoặc bật retention/rollup"
+    "Ổ tự nở ×1,5 khi Supabase báo dùng 90 % (tiền ổ 0,125 USD/GB/tháng phần trên 8 GB) — nở xong sửa CURRENT_INFRA.dbSizeMb; muốn nhỏ lại: retention/rollup (giai đoạn 4). Nâng compute KHÔNG thêm ổ"
   );
   push(
     "infra.ram",

@@ -214,6 +214,29 @@ Số HQ 15:50: 221 gian (TikTok 116 · Shopee 102 · Lazada 3), 272 chủ shop (
 
 **4. ✅ Spend Cap ĐÃ TẮT 20/11 tối (anh: "Nếu tắt spend không vấn đề gì thì em cứ tắt đi" → em dừng ở Confirm vì hộp thoại ghi sẽ ra hóa đơn ngay, không báo số tiền → anh: "Bấm xác nhận đi").** Đường vào: Billing → Cost Control → Change spend cap → "Spend cap disabled" → Confirm. Sau khi bấm, đã kiểm: Billing ghi "Spend cap is disabled"; hết nhãn "EXCEEDING USAGE LIMITS"; trang Infrastructure hết dòng "Spend cap limits disk size to 8 GB", ổ vẫn đặt tự nở 12 → 18 GB khi dùng tới 90 %. Tác dụng phụ: Supabase chốt kỳ dùng tại 20/11 — kỳ hiện tại thành 20/11 → 27/11, Egress đếm lại 0 / 250 GB (mối lo vượt Egress trước 27/11 ở mục 2 không còn). Hóa đơn sắp tới hiện Pro 25,00, dự kiến 25,10 USD. CHƯA thấy hóa đơn mới trong Past Invoices sau ~1 phút → chưa biết số tiền tính cho phần 27/10 → 20/11 (compute vượt tín dụng 1,97 USD + ổ vượt ước 0,26). Từ nay vượt hạn mức là bị tính tiền, không còn trần: ổ 0,125 USD / GB / tháng, Egress 0,09 USD / GB. `CURRENT_INFRA.dbSizeMb` vẫn 8.192 (HQ để nguyên) → thẻ Dung lượng DB sẽ tiếp tục đỏ dù ổ còn chỗ.
 
+## 26/11/2026 chiều — HQ đỏ "Dung lượng DB 90 %": anh hỏi "sao lại 90 % rồi" (CHỈ ĐO bằng SQL chỉ đọc + trang Infrastructure, chưa sửa gì)
+
+**1. Số đo (~17 giờ 26/11).**
+- Database **7.412 MB** / 8.192 (mẫu số HQ = 8 GB kèm gói) = **90 %**. Ổ THẬT 12 GB: thẻ Supabase ghi **Disk 72 %** (database 7 GB + WAL 1 GB + hệ thống 0,2 GB); Spend Cap đã tắt từ 20/11 nên ổ tự nở 12 → 18 GB khi tới 90 % (10,8 GB).
+- Đà tăng theo `platform_health_snapshots` (số cuối ngày): 20/11 6.585 → 21/11 6.617 → 22/11 6.708 → 23/11 6.884 → 24/11 6.967 → 25/11 7.227 → 26/11 7.353 (snapshot) / 7.412 (lúc đo) = **+827 MB / 6 ngày ≈ 138 MB / ngày** (20/11 đo là 55–79).
+- Cùng kỳ: gian hoạt động 279 → 340 (snapshot) / 352 (HQ lúc đo); đơn / ngày TB 7 ngày 5.688 → 7.062.
+
+**2. Gốc: gian mới nối nạp đơn lịch sử — KHÔNG phải rò, không phải bảng rác.**
+- ĐÃ ĐO: **93 gian tạo từ 20/11** (theo ngày VN: 9 · 5 · 10 · **25** (23/11) · 6 · 11 · **27** (26/11)) mang về **176.466 đơn**; 8 gian lớn nhất 6.732 → 18.509 đơn / gian. ƯỚC ≈ 80 % số đơn chèn thêm trong 6 ngày (bảng Order + chỉ mục 966 → 1.189 MB, +23 %; ~7.000 đơn / ngày × 6 của gian cũ ≈ 42.000). Cùng cơ chế đã đo 06/11 (65 % đơn chèn là lịch sử gian mới), chỉ khác là tốc độ nối gian gấp đôi: 88 gian / 15 ngày → 93 gian / 7 ngày.
+- Bảng lớn nhất (MB, cả chỉ mục): Order 1.189 · OrderItem 1.090 · `webhook_events` 706 (đứng yên 700–735 từ 15/11 → lưu giữ 7 ngày chạy đúng) · sổ dòng T10 502 · sổ đơn T10 458 · `tiktok_order_settlements` 354 · sổ dòng T11 334 · sổ dòng T9 317 · ChannelProduct 312 · sổ đơn T9 287 · sổ đơn T11 268 · AdsCampaignDailyPerf 249 · sổ đơn T8 221 · `tiktok_ads_video_watches` 219 · sổ dòng T8 213 · InventoryLog 114 · hàng đợi `evt.order` 84. Sổ cái mọi tháng ≈ 2.843 MB ≈ 38 %; Order + OrderItem 2.279 MB ≈ 31 %.
+- Không có bảng `_bak_*` nào trên 8 MB. Dòng chết: Order 91.811 / 1.168.805 (8 %), OrderItem 106.366 / 1.703.671 (6 %) — không có bảng nào phình bất thường.
+- Phần một lần: chỉ mục `Order_trackingCode_idx` dựng 25/11 = 29 MB. Ngày 25/11 bảng Order (cả chỉ mục) +103 MB trong khi OrderItem +33 — trừ 29 MB chỉ mục và ~25 MB đơn mới còn ~45 MB CHƯA giải thích (chưa đào).
+- Ghi nhận thêm: `Order_returnTrackingCode_idx` vẫn `indisvalid = false` (REINDEX hẹn 03:30 27/11, đúng kế hoạch). Trang Infrastructure: CPU live 23 %, điểm ngày cuối trên biểu đồ tuần 93 %; Disk IO balance 98 %; kết nối 28 / 90.
+
+**3. Đọc số này thế nào.** Thẻ đỏ = "đã dùng 90 % phần ổ KÈM GÓI", không phải "ổ sắp đầy". ƯỚC theo đà 138 MB / ngày: thẻ HQ chạm 100 % khoảng **01–02/12**; ổ thật chạm 90 % (còn ~2,2 GB) khoảng **giữa tháng 12** rồi tự nở lên 18 GB — tiền ổ 0,125 USD / GB / tháng cho phần trên 8 GB (12 GB ≈ 0,5 USD; 18 GB ≈ 1,25 USD / tháng). Không cần nâng compute vì chuyện này (compute không thêm ổ). Việc còn mở từ 06/11, nay là gốc chính: số ngày nạp lịch sử cho gian mới (90 ngày) — quyết định sản phẩm của anh.
+
+**4. ✅ Anh chốt 26/11 ~17:20 "Đổi sang ổ thật" — ĐÃ CODE + commit (chưa lên prod lúc ghi, chờ anh push).**
+- `CURRENT_INFRA.dbSizeMb` 8.192 → **12.288** (ổ đã cấp); `dbPlan` ghi "ổ 12GB". **SỬA TAY sau mỗi lần ổ tự nở** (12 → 18 GB…): đọc ở Supabase → Settings → Infrastructure → Disk. SQL không đọc được cỡ ổ.
+- Tử số = **database + WAL** (`pg_ls_waldir()`, hàm thuần `dbDiskPct` trong `config/capacity-plan.ts`) cho khớp thẻ Disk của Supabase; phần "System" ~0,2 GB không đọc được bằng SQL nên HQ thấp hơn thẻ Supabase ~2–3 điểm. Đã thử trên prod (chỉ đọc): WAL 1.024 MB, vai `postgres` (vai app đang nối, 15 kết nối) có quyền gọi → (7.412 + 1.024) / 12.288 = **69 %**, trùng biểu đồ Disk của Supabase. Vai không có quyền (DB local) → tự lùi về chỉ tính database, không lỗi.
+- Ngưỡng GIỮ 60 / 80 (không vá số). Nghĩa mới: vàng = ổ quá nửa; đỏ 80 % = ổ sắp tự nở ở 90 % → chuẩn bị sửa `CURRENT_INFRA`. Lời gợi ý của thẻ đổi từ "Nâng gói Supabase…" sang nói rõ ổ tự nở + nâng compute không thêm ổ.
+- **Hệ quả nhìn thấy sau khi lên prod:** thẻ từ đỏ 90 % về **vàng ~69 %**; điều kiện "% dung lượng DB" của M3 thành 69 / 70 → M3 có thể tụt về "Kế tiếp" khoảng một ngày rồi chạm lại (ước 70 % ≈ 27–28/11; `reachedAt` 04/11 giữ nguyên). Đà % / ngày trong dự báo cũng chia theo 12.288.
+- Kiểm: `capacity-plan.test.ts` 25 ca xanh (5 ca mới cho `dbDiskPct`), 4 tệp test sức khỏe khác 30 ca xanh, kiểm kiểu backend + web sạch; màn HQ local đã nhìn: "2247 MB / ổ 12288 MB (18%)", thẻ KPI "18% ổ đã cấp · Supabase Pro (ổ 12GB…)". CHƯA nhìn nhánh có WAL trên màn (DB local không cho đọc WAL) — lần mở HQ prod đầu tiên sau khi lên là lần kiểm thật.
+
 ## 5. Giao diện `/admin/health` (lá quyền mới `hq.health`, sidebar "Sức khỏe")
 
 1. **Hàng KPI** (StatCard sẵn): Gian hoạt động (chip theo sàn) · Chủ shop hoạt động ·

@@ -4,7 +4,9 @@ import {
   ADS_QUOTA_MILESTONES,
   ALL_MILESTONES,
   CAPACITY_MILESTONES,
+  CURRENT_INFRA,
   daysToReach,
+  dbDiskPct,
   isMilestoneReached,
   levelFor,
   locateOnTimeline,
@@ -139,5 +141,26 @@ describe("ramLevel", () => {
   it("không đọc được trần heap → chỉ xét RSS", () => {
     expect(ramLevel(null, 73)).toBe("ok");
     expect(ramLevel(null, 90)).toBe("crit");
+  });
+});
+
+describe("% ổ DB đã dùng (26/11/2026: mẫu số = ổ đã cấp, tử số = database + WAL)", () => {
+  it("số prod 26/11: 7.412 MB + WAL 1.024 MB trên ổ 12.288 MB = 69 % (khớp biểu đồ Disk của Supabase), không còn 90 %", () => {
+    expect(dbDiskPct(7412, 1024, 12288)).toBe(69);
+    expect(dbDiskPct(7412, 1024, CURRENT_INFRA.dbSizeMb)).toBe(69);
+  });
+  it("không đọc được WAL → chỉ tính database", () => {
+    expect(dbDiskPct(7412, null, 12288)).toBe(60);
+  });
+  it("không đọc được database hoặc ổ khai 0 → null (thẻ hiện 'không đọc được', không đỏ oan)", () => {
+    expect(dbDiskPct(null, 1024, 12288)).toBeNull();
+    expect(dbDiskPct(7412, 1024, 0)).toBeNull();
+  });
+  it("WAL âm (dữ liệu hỏng) không làm giảm số", () => {
+    expect(dbDiskPct(6000, -500, 12000)).toBe(50);
+  });
+  it("vượt ổ khai (ổ đã nở mà chưa sửa CURRENT_INFRA) → trên 100, vẫn đỏ", () => {
+    expect(dbDiskPct(12000, 1024, 12288)).toBe(106);
+    expect(levelFor(dbDiskPct(12000, 1024, 12288)!, 60, 80)).toBe("crit");
   });
 });

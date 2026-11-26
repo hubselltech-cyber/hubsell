@@ -19,7 +19,11 @@ export interface InfraPlan {
   webRamMb: number;
   /** RAM worker (MB); 0 = chưa tách worker (chạy chung web). */
   workerRamMb: number;
-  /** Dung lượng DB gói (MB). Supabase Free 500MB, Pro 8GB. */
+  /**
+   * Ổ đĩa DB ĐÃ CẤP (MB) — mẫu số thẻ "Dung lượng DB" (đọc ở Supabase → Settings →
+   * Infrastructure → Disk). KHÔNG phải 8 GB kèm gói Pro: Spend Cap tắt từ 20/11/2026
+   * nên ổ tự nở ×1,5 (12 → 18 GB…) khi dùng tới 90 %. SỬA TAY sau mỗi lần ổ nở.
+   */
   dbSizeMb: number;
   /** Trần kết nối DB (Supabase Free: ~60 direct, pooler session 200). */
   dbMaxConnections: number;
@@ -35,10 +39,10 @@ export interface InfraPlan {
 export const CURRENT_INFRA: InfraPlan = {
   webPlan: "Render Starter (512MB, 0.5 CPU, không ngủ, HUBSELL_ROLE=web)",
   workerPlan: "Render Background Worker Standard (2GB, 1 CPU, hubsell-worker-sg — anh nâng 21/10/2026, Render ghi 1c-2g)",
-  dbPlan: "Supabase Pro (8GB, compute Small 2GB)",
+  dbPlan: "Supabase Pro (ổ 12GB, compute Small 2GB)",
   webRamMb: 512,
   workerRamMb: 2048,
-  dbSizeMb: 8192,
+  dbSizeMb: 12288, // 26/11/2026 anh chốt đổi từ 8.192 (8 GB kèm gói) sang ổ thật 12 GB — docs/HQ-SUC-KHOE.md mục 26/11
   dbMaxConnections: 90,
   monthlyUsd: 62, // web 7 + worker Standard 25 + Supabase Pro 25 + compute Small ~5 (08/11/2026)
 };
@@ -54,7 +58,10 @@ export const HEALTH_THRESHOLDS = {
   /** Hàng đợi webhook: số job chờ / tuổi job cũ nhất (phút). */
   webhookPending: 200,
   webhookOldestMin: 30,
-  /** % gói DB / kết nối → vàng, đỏ. */
+  /**
+   * % ổ DB đã cấp (database + WAL) / % kết nối → vàng, đỏ. 60/80 là MẶC ĐỊNH TỰ CHỌN từ
+   * 12/09; với ổ tự nở ở 90 % thì đỏ 80 % đọc là "ổ sắp nở — chuẩn bị sửa CURRENT_INFRA".
+   */
   dbPctWarn: 60,
   dbPctCrit: 80,
   /**
@@ -109,7 +116,7 @@ export interface GrowthMetrics {
   channels: number; // gian ACTIVE (Shopee+Lazada+TikTok, không tính Offline)
   owners: number; // chủ shop
   ordersPerDay: number; // TB 7 ngày
-  dbPct: number; // % gói DB
+  dbPct: number; // % ổ DB đã cấp (database + WAL)
   ramPct: number; // % RAM gói
   connPct: number; // % kết nối gói
   /** Gian Shopee ACTIVE nối app Hubsell Ads — mẫu số quota Ads API (quota tính theo app). 19/10/2026. */
@@ -408,6 +415,16 @@ export const METRIC_LABEL: Record<MetricKey, string> = {
 };
 
 export type SignalLevel = "ok" | "warn" | "crit";
+
+/**
+ * % ổ DB đã dùng = (database + WAL) / ổ đã cấp — cùng cách Supabase vẽ thẻ Disk (thiếu phần
+ * "System" ~0,2 GB không đọc được bằng SQL). WAL null (vai DB không được gọi pg_ls_waldir)
+ * → chỉ tính database. Ổ ≤ 0 → null.
+ */
+export function dbDiskPct(dbMb: number | null, walMb: number | null, diskMb: number): number | null {
+  if (dbMb == null || !(diskMb > 0)) return null;
+  return Math.round(((dbMb + Math.max(0, walMb ?? 0)) / diskMb) * 100);
+}
 
 /** Xếp mức theo 2 ngưỡng vàng/đỏ. */
 export function levelFor(value: number, warn: number, crit: number): SignalLevel {

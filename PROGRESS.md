@@ -5,9 +5,21 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~17:00 — HQ đỏ "Dung lượng DB 90 %": tìm gốc (CHỈ ĐO, chưa sửa gì)
+
+Anh gửi ảnh HQ Sức khỏe, hỏi "sao lại 90 % DB rồi". Chi tiết + bảng số: `docs/HQ-SUC-KHOE.md` mục 26/11.
+
+- **Số:** database 7.412 / 8.192 MB (mẫu số = 8 GB kèm gói) = 90 %; ổ thật 12 GB mới dùng 72 %, Spend Cap đã tắt nên tự nở 18 GB khi tới 90 %. Đà 20/11 → 26/11: +827 MB = ~138 MB / ngày (20/11 đo 55–79).
+- **Gốc (đã đo):** 93 gian mới nối từ 20/11 (25 gian ngày 23/11, 27 gian ngày 26/11) nạp 176.466 đơn lịch sử, ước ~80 % số đơn chèn thêm. Không rò, không bảng rác (`_bak_*` đều dưới 8 MB), `webhook_events` đứng yên ~706 MB.
+- **Chưa giải thích:** ~45 MB bảng Order tăng ngày 25/11 ngoài đơn mới + chỉ mục mã vận đơn 29 MB.
+- **Ước:** thẻ HQ chạm 100 % khoảng 01–02/12; ổ thật chạm 90 % khoảng giữa tháng 12 rồi tự nở (≈ 1,25 USD / tháng ở 18 GB).
+- **✅ Anh chốt "Đổi sang ổ thật" (~17:20) — đã code + commit, CHƯA lên prod (chờ anh push):** mẫu số 8.192 → 12.288 MB (`CURRENT_INFRA.dbSizeMb`, sửa tay mỗi lần ổ nở), tử số = database + WAL (`dbDiskPct`, đọc `pg_ls_waldir()`; vai không có quyền thì chỉ tính database). Số prod theo cách mới: 69 % (vàng), trùng biểu đồ Disk Supabase. Ngưỡng 60 / 80 giữ. Test 25 + 30 ca xanh, kiểm kiểu sạch, màn local đã nhìn (nhánh không WAL). Hệ quả: M3 có thể tụt về "Kế tiếp" ~1 ngày (69 / 70).
+- **⏳ Sau khi lên prod:** mở HQ xem thẻ có dòng "+ WAL … MB" và ~69 %.
+- **⏳ Anh quyết:** số ngày nạp lịch sử gian mới (90 ngày, mở từ 06/11).
+
 ## Phiên 26/11 ~13:00–13:40 — HQ: hủy ghi nhận khoản thu gói bấm tay + cảnh báo ghi trùng — LÊN PROD `0ecf3591`
 
-- **Prod:** anh bảo "commit và push"; backend lên 13:31 (`/health` đúng commit), web `app.hubsell.vn` 13:32 đã có lời gọi `void-payment` trong tệp JS của trang Kế toán. Không có migration. Chưa đăng nhập tài khoản thật để nhìn nút; chưa ai bấm hủy trên prod.
+- **Prod:** anh bảo "commit và push"; backend lên 13:31 (`/health` đúng commit), web `app.hubsell.vn` 13:32 đã có lời gọi `void-payment` trong tệp JS của trang Kế toán. Không có migration. Sau đó anh bấm hủy thật: màn HQ Khách hàng của khách còn 1 lần thanh toán 1.129.000₫, gói Pro đến 26/2/2027 (đúng 3 tháng từ 26/11; trước khi hủy là 26/5/2027). Anh xác nhận meinvoice.vn chỉ còn một tờ nháp của khách này (tờ của dòng ghi trùng đã bị xóa), anh ký cuối ngày.
 
 Anh báo không xóa được một dòng thu ở Sổ quỹ: khách tự chuyển qua payOS (máy đã ghi), anh bấm "Xác nhận đã nhận tiền" thêm một lần. Chi tiết: `docs/HQ-HUY-GHI-NHAN-THANH-TOAN.md`.
 

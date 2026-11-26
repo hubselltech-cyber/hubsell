@@ -8225,6 +8225,8 @@ export interface PlatformHealthResponse {
     };
     infra: {
       dbSizeMb: number | null;
+      /** WAL trên ổ (MB); vắng mặt ở ảnh chụp cũ. */
+      walMb?: number | null;
       dbTopTables: { table: string; mb: number }[];
       /** Kho ảnh sản phẩm "Tạo mới" (lát C) — thiếu/null ở backend cũ. */
       productImages?: { count: number; mb: number; owners: number; orphans: number } | null;
