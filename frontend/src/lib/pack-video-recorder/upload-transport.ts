@@ -158,7 +158,8 @@ export function classifyUploadError(err: unknown, online: boolean): UploadVerdic
     if (err.status === 401) return { kind: "fatal", text: "Phiên đăng nhập đã hết — đăng nhập lại rồi bấm Thử lại" };
     if (err.status === 0) return { kind: "retry", text: online ? "chưa tới được máy chủ Hubsell" : "mất mạng" };
     if (err.status === 408 || err.status === 429 || err.status >= 500) {
-      return { kind: "retry", text: `máy chủ Hubsell đang bận (mã ${err.status})` };
+      // Máy chủ bảo chờ bao lâu (Retry-After) thì hàng chờ chờ ít nhất chừng đó (M2.6).
+      return { kind: "retry", text: `máy chủ Hubsell đang bận (mã ${err.status})`, retryAfterMs: err.retryAfterMs ?? null };
     }
     if (err.code && RETRYABLE_CODES.has(err.code)) return { kind: "retry", text: err.message };
     return { kind: "fatal", text: err.message };

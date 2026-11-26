@@ -24,19 +24,22 @@ export interface OrderMatch {
 
 const MATCH_SELECT = { id: true, orderCode: true, channelId: true } satisfies Prisma.OrderSelect;
 
-/** null = không đơn nào; "AMBIGUOUS" = hơn một đơn cùng mã. */
-async function findExact(
+/**
+ * LUẬT KHỚP — một chỗ cho mọi người gọi: đọc tối đa 2 dòng theo mã chiều đi; ra đúng MỘT thì lấy, ra hơn một thì coi
+ * như không khớp; không ra dòng nào và đang quay KHUI thì thử mã chiều hoàn theo cùng luật. `find` quyết định đọc
+ * những cột nào (bước tải lên chỉ cần 3 cột, màn quay cần thêm gian + tình trạng hoàn + món hàng).
+ */
+async function exactOne<T>(
+  find: (where: Prisma.OrderWhereInput) => Promise<T[]>,
   ownerId: string,
-  where: Prisma.OrderWhereInput
-): Promise<OrderMatch | "AMBIGUOUS" | null> {
-  const rows = await prisma.order.findMany({
-    where: { channel: { userId: ownerId }, ...where },
-    select: MATCH_SELECT,
-    take: 2,
-  });
-  if (rows.length === 0) return null;
-  if (rows.length > 1) return "AMBIGUOUS";
-  return { orderId: rows[0].id, orderCode: rows[0].orderCode, channelId: rows[0].channelId };
+  trackingCode: string,
+  kind: PackVideoKind
+): Promise<T | null> {
+  const outbound = await find({ channel: { userId: ownerId }, trackingCode });
+  if (outbound.length > 1) return null;
+  if (outbound.length === 1 || kind !== "UNBOX") return outbound[0] ?? null;
+  const inbound = await find({ channel: { userId: ownerId }, returnTrackingCode: trackingCode });
+  return inbound.length === 1 ? inbound[0] : null;
 }
 
 export async function matchOrderByTrackingCode(
@@ -44,9 +47,41 @@ export async function matchOrderByTrackingCode(
   trackingCode: string,
   kind: PackVideoKind
 ): Promise<OrderMatch | null> {
-  const outbound = await findExact(ownerId, { trackingCode });
-  if (outbound === "AMBIGUOUS") return null;
-  if (outbound || kind !== "UNBOX") return outbound;
-  const inbound = await findExact(ownerId, { returnTrackingCode: trackingCode });
-  return inbound === "AMBIGUOUS" ? null : inbound;
+  const row = await exactOne(
+    (where) => prisma.order.findMany({ where, select: MATCH_SELECT, take: 2 }),
+    ownerId,
+    trackingCode,
+    kind
+  );
+  return row ? { orderId: row.id, orderCode: row.orderCode, channelId: row.channelId } : null;
+}
+
+/** Cột của món hàng mà màn quay / hồ sơ đơn cần để vẽ dòng "tên · phân loại · số lượng · ảnh". */
+export const TEM_ITEM_SELECT = {
+  productName: true,
+  quantity: true,
+  imageUrl: true,
+  channelSku: true,
+  externalId: true,
+  variantName: true,
+  product: { select: { imageUrl: true, variantName: true } },
+} satisfies Prisma.OrderItemSelect;
+
+const TEM_SELECT = {
+  id: true,
+  orderCode: true,
+  channelId: true,
+  returnStatus: true,
+  channel: { select: { channelName: true, shopName: true } },
+  items: { select: TEM_ITEM_SELECT },
+} satisfies Prisma.OrderSelect;
+
+export type TemOrderRow = Prisma.OrderGetPayload<{ select: typeof TEM_SELECT }>;
+
+/**
+ * Bản cho MÀN QUAY (M2.5, 26/11/2026): cùng luật khớp, nhưng MỘT câu mang về luôn gian, tình trạng hoàn và món hàng —
+ * trước đó là 4 câu nối nhau (khớp → gian → tình trạng hoàn → món hàng).
+ */
+export function matchOrderForTem(ownerId: string, trackingCode: string, kind: PackVideoKind): Promise<TemOrderRow | null> {
+  return exactOne((where) => prisma.order.findMany({ where, select: TEM_SELECT, take: 2 }), ownerId, trackingCode, kind);
 }

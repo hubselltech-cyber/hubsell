@@ -2836,7 +2836,14 @@ chọn 10^9 vì ra tiền cao hơn (lệch ≈ 7 %). Lượt đọc (Class B) ch
 - ❌ Chưa lên prod → chưa có số thật của prod; chưa so với số trang R2 của Cloudflare. Lượt dọn đầu sau khi worker lên bản mới 10 phút
   mới ghi số.
 
-## 37. Tách bucket prod khỏi dev (26/11/2026 tối) — PHƯƠNG ÁN, ⏳ chờ anh chọn A / B; chưa đụng Cloudflare, chưa đổi biến nào
+## 37. Tách bucket prod khỏi dev (26/11/2026 tối) — PHƯƠNG ÁN; ★ anh 26/11 ~21:00: "anh nghĩ là không cần đâu. Không đổi thì cũng có sao đâu" → GÁC, không làm
+
+> **GÁC 26/11/2026.** Em đồng ý: không tách thì không có gì hỏng, không tốn thêm tiền, HQ vẫn đếm đúng (HQ đếm theo sổ, không theo
+> bucket). Thứ duy nhất còn lại là: `backend/.env` trên máy dev đang cầm ĐÚNG khóa R2 của prod (database local là riêng, kho video thì
+> chung) → ai có tệp đó là đọc / xóa được video của khách. ⛔ Đừng tự đề xuất tách lại, trừ khi: (a) hồ sơ pentest Shopee (hạn 31/12)
+> hoặc một bên rà bảo mật đòi tách khóa prod / dev; (b) có người thứ hai cầm máy dev hoặc tệp `.env`; (c) anh tự hỏi lại. Khi đó làm
+> cách B bên dưới (≈ 15 phút, prod không đụng). Trong lúc chưa tách: ⛔ không "Empty bucket", không đặt luật vòng đời thử trên
+> `hubsell-video-thu`, script seed giữ nguyên rào "DATABASE_URL localhost".
 
 Hiện trạng [C, đọc 26/11]: một bucket `hubsell-video-thu`, MỘT khóa R2 (quyền đọc / ghi tệp trên đúng bucket đó) nằm ở cả Render
 (web + nhóm biến `hubsell-r2-video` của worker) lẫn `backend/.env` trên máy dev. Mục tiêu thật của việc tách: **máy dev không còn cầm
@@ -2932,3 +2939,53 @@ Số "sau" là em ĐẾM TỪ MÃ; chưa bật log đếm câu, chưa đo trên 
 M2.5 (EXPLAIN câu tra mã vận đơn trên prod — chỉ mục `Order(trackingCode)` đã dựng 25/11, chỉ mục chiều hoàn chờ dựng lại 03:30 27/11
 → đo sau mốc đó; gộp 4 câu của `matchTem`) · M2.4 (vé không ghi + ghi gộp — có migration, đổi hợp đồng, đi cùng bản app kế) · M2.6
 (chặn gọi dồn + `Retry-After`) · M4 đo · M2.7 khi số đo đòi.
+
+
+## 39. M2.1–M2.3 LÊN PROD `beba1794` + M2.5 (gộp câu tra tem) + M2.6 (chặn gọi dồn, chạy bóng) CODE LOCAL — 26/11/2026 ~20:30–21:00
+
+### 39.1 Lên prod (anh: "Em push đi")
+
+- Push `beba1794` ~20:26. `/health` backend prod trả đúng `beba1794` lúc 20:30; tệp JS công khai của trang quay trên
+  `app.hubsell.vn` có chuỗi `X-Pack-Session` (soi tệp tĩnh, không đăng nhập). Không có migration.
+- ❌ Chưa xem worker `hubsell-worker-sg` đã lên bản mới chưa (bản này có mã worker: bước 5 của lượt dọn) → chưa biết thẻ R2 trên HQ
+  đã có số chưa. Kiểm: mở HQ Sức khỏe sau khi worker lên ≥ 10 phút; hoặc SQL chỉ đọc `SELECT "cursor", "updatedAt" FROM
+  "maintenance_jobs" WHERE "key" = 'pack-storage-health'`.
+- ❌ Chưa ai quay thật bằng webcam trên bản mới.
+
+### 39.2 M2.5 — phần mã: một câu cho "tem này của đơn nào" (anh: "em làm phần tiếp luôn đi")
+
+- `order-match.ts`: luật khớp gom về một hàm `exactOne` (đọc tối đa 2 dòng theo mã chiều đi; hơn một thì coi như không khớp; quay
+  KHUI thì thử mã chiều hoàn). Bước tải lên vẫn đọc 3 cột; màn quay dùng `matchOrderForTem` — MỘT câu mang về đơn + gian + tình
+  trạng hoàn + món hàng.
+- `matchTem`: trước là khớp → gian → tình trạng hoàn → video đã có → món hàng (5 câu, chưa kể tên phân loại); nay 1 câu + hai lượt
+  song song (video đã có theo chỉ mục `orderId`, tên phân loại). Kết quả trả về không đổi (bài test `match-db` giữ nguyên, đều đạt).
+- ❌ CHƯA đo trên prod (Q-3): chờ dựng lại `Order_returnTrackingCode_idx` (lịch 03:30 27/11) rồi EXPLAIN chỉ đọc câu tra mã ở shop
+  lớn nhất — SQL đưa anh xem trước.
+
+### 39.3 M2.6 — chặn gọi dồn trên bốn đường nóng
+
+- `lib/pack-rate-limit.ts` (GCRA) + `router.use` đầu `routes/pack-videos.ts`. Đếm theo TÀI KHOẢN đang đăng nhập trên máy quay,
+  trong từng tiến trình web (cố ý, mục 29.4: nhiều máy web thì trần thật = trần × số máy; chỉ để chống vòng lặp lỗi, không tính tiền).
+- Hạn mức `PACK_HOT_RATE` = đều 5 lượt / giây, dồn 50 — **SỐ TỰ CHỌN**. Ước lượng: một bàn 3 lượt / 40 giây; 20 bàn chung một tài
+  khoản ≈ 1,5 lượt / giây; hàng chờ 200 clip gửi lại ≈ 2 lượt / giây; vòng lặp lỗi thì hàng trăm lượt / giây.
+- **Mặc định CHẠY BÓNG** (`PACK_RATE_LIMIT` trống / `shadow`): không chặn ai, chỉ ghi tối đa một dòng nhật ký / phút
+  `[PackVideo] gọi dồn: N lượt vượt hạn mức…` kèm tài khoản vượt nhiều nhất. Bật chặn thật: `PACK_RATE_LIMIT=on` trên web → 429 +
+  `Retry-After` + mã `TOO_MANY_REQUESTS`. Tắt hẳn: `off`.
+- Web: `ApiError.retryAfterMs` đọc tiêu đề `Retry-After` (CORS đã lộ tiêu đề này); hàng chờ tải lên chờ ít nhất chừng đó (chỗ nhận
+  có sẵn từ M1). 429 là "thử lại sau", video không mất; màn quay hỏi tem bị 429 thì chỉ thiếu dòng tên đơn.
+- Không chặn được lượt đọc `User` của xác thực thường ở máy không có vé (bộ đếm đứng sau xác thực) — máy có vé thì lượt bị chặn không
+  chạm database.
+- ⏳ Điều kiện bật `on`: sau ≥ 7 ngày có khách quay thật mà nhật ký worker / web không có dòng "gọi dồn" nào của máy bình thường
+  (số 7 ngày tự chọn). Chưa đưa số đếm lên HQ.
+
+### 39.4 Đã kiểm / chưa kiểm
+
+- ✅ Test mới: `lib/__tests__/pack-rate-limit.test.ts` 6 ca (dồn đúng 50, đều 5 / giây không bao giờ chặn, 20 bàn chung tài khoản
+  trong 1 giờ không chạm, nhật ký một dòng / phút, chế độ) · thêm 1 ca HTTP (chạy bóng 80 lượt dồn vẫn 200; `on` → 429 + Retry-After;
+  đường khác và tài khoản khác không dính). Bộ rộng backend **1.388 đạt / 0 đỏ**; bộ quay phía web 54 / 54; kiểm kiểu hai phía sạch.
+- ❌ M2.5 + M2.6 chưa commit / push. ❌ Chưa mở màn quay trên local sau hai lát này (hợp đồng API không đổi; bài test HTTP chạy app thật).
+
+### 39.5 Còn lại của M2
+
+M2.5 phần đo trên prod · **M2.4** (vé không ghi + ghi gộp lúc xong — có migration, đổi hợp đồng API, phải đi cùng bản app kế; chưa làm,
+cần anh chốt lúc ra bản app) · M4 đo tải · M2.7 khi số đo đòi.

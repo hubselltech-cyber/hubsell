@@ -61,6 +61,8 @@ export class ApiError extends Error {
    */
   reason?: string;
   suggestion?: string;
+  /** Máy chủ bảo chờ ít nhất ngần này trước khi thử lại (tiêu đề Retry-After của 429 / 503); không có thì bỏ trống. */
+  retryAfterMs?: number;
   constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
@@ -177,6 +179,8 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       window.dispatchEvent(new CustomEvent("hubsell:permission-denied"));
     }
     const apiError = new ApiError(res.status, message, code);
+    const retryAfterSec = Number(res.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) apiError.retryAfterMs = retryAfterSec * 1000;
     if (typeof detail.reason === "string") apiError.reason = detail.reason;
     if (typeof detail.suggestion === "string") apiError.suggestion = detail.suggestion;
     throw apiError;

@@ -39,7 +39,9 @@
 import { Router, type NextFunction, type Response } from "express";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import type { PackVideoRequest } from "../middleware/require-pack-video";
-import { packSessionEnabled } from "../config/pack-video";
+import { PACK_HOT_RATE, packSessionEnabled } from "../config/pack-video";
+import { createPackRateLimiter, packRateLimitMode } from "../lib/pack-rate-limit";
+import { isPackHotPath } from "../middleware/pack-session";
 import { PACK_SESSION_MAX_CHANNELS, signPackSessionTicket } from "../lib/pack-session-ticket";
 import { NO_PACK_VIDEO_CAPS, isPackVideoPilot, type PackVideoCaps } from "../services/pack-video/access";
 import { ownerEmailOf } from "../services/pack-video/subject";
@@ -79,6 +81,29 @@ import {
 } from "../services/pack-video/upload";
 
 const router = Router();
+
+// ───────── Chặn gọi dồn trên đường nóng (M2.6) ─────────
+// Đếm theo tài khoản đang đăng nhập, trong tiến trình này (lib/pack-rate-limit.ts). Mặc định CHẠY BÓNG: chỉ ghi nhật
+// ký "ai vượt hạn mức", không chặn. PACK_RATE_LIMIT=on → trả 429 + Retry-After; màn quay coi 429 là "thử lại sau" và
+// chờ đúng số giây máy chủ bảo, video không mất. Đặt TRƯỚC mọi đường để lượt bị chặn không chạm database / R2.
+const hotLimiter = createPackRateLimiter(PACK_HOT_RATE);
+router.use((req: AuthRequest, res: Response, next: NextFunction) => {
+  const mode = packRateLimitMode();
+  if (mode === "off" || !req.userId || !isPackHotPath(req.method, req.path)) {
+    next();
+    return;
+  }
+  const verdict = hotLimiter.take(req.userId);
+  if (verdict.ok || mode === "shadow") {
+    next();
+    return;
+  }
+  res.setHeader("Retry-After", String(Math.max(1, Math.ceil(verdict.retryAfterMs / 1000))));
+  res.status(429).json({
+    error: "Máy quay đang gọi máy chủ quá dồn — tự thử lại sau ít giây",
+    code: "TOO_MANY_REQUESTS",
+  });
+});
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ORDER_FLAGS_MAX = 100;

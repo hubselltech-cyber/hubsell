@@ -25,7 +25,7 @@ import { loadVariantNames } from "../../lib/order-line-names";
 import { keyBelongsToOwner, packVideoDownloadName } from "../../lib/pack-video-key";
 import { escapeLikePrefix, type PackVideoKind, type PackVideoStatus } from "../../lib/pack-video-rules";
 import { prisma } from "../../lib/prisma";
-import { matchOrderByTrackingCode } from "./order-match";
+import { TEM_ITEM_SELECT, matchOrderForTem } from "./order-match";
 import { PackVideoError, type PackVideoDeps } from "./upload";
 
 export interface PackVideoScope {
@@ -471,39 +471,32 @@ export async function videosByOrder(scope: PackVideoScope, orderId: string): Pro
   };
 }
 
-async function orderItems(scope: PackVideoScope, orderId: string): Promise<OrderLineView[]> {
-  const o = await prisma.order.findFirst({
-    where: { id: orderId, channel: { userId: scope.ownerId } },
-    select: {
-      channelId: true,
-      items: {
-        select: {
-          productName: true,
-          quantity: true,
-          imageUrl: true,
-          channelSku: true,
-          externalId: true,
-          variantName: true,
-          product: { select: { imageUrl: true, variantName: true } },
-        },
-      },
-    },
-  });
-  if (!o) return [];
-  const lines = o.items.map((i) => ({
-    channelId: o.channelId,
+type OrderItemRow = Prisma.OrderItemGetPayload<{ select: typeof TEM_ITEM_SELECT }>;
+
+/** Món hàng đã đọc sẵn → dòng hiển thị (tên phân loại đi cùng một nguồn với danh sách đơn). */
+async function toLineViews(channelId: string, items: OrderItemRow[]): Promise<OrderLineView[]> {
+  const lines = items.map((i) => ({
+    channelId,
     externalId: i.externalId,
     channelSku: i.channelSku,
     productVariantName: i.product?.variantName ?? null,
     variantName: i.variantName,
   }));
   const variantOf = await loadVariantNames(lines);
-  return o.items.map((i, idx) => ({
+  return items.map((i, idx) => ({
     name: i.productName,
     variantName: variantOf(lines[idx]) || null,
     quantity: i.quantity,
     imageUrl: i.imageUrl ?? i.product?.imageUrl ?? null,
   }));
+}
+
+async function orderItems(scope: PackVideoScope, orderId: string): Promise<OrderLineView[]> {
+  const o = await prisma.order.findFirst({
+    where: { id: orderId, channel: { userId: scope.ownerId } },
+    select: { channelId: true, items: { select: TEM_ITEM_SELECT } },
+  });
+  return o ? toLineViews(o.channelId, o.items) : [];
 }
 
 export interface TemMatch {
@@ -530,36 +523,32 @@ export interface TemMatch {
  * Trả kèm ba dấu hiệu để màn quay CHỐNG CHỌN NHẦM CHẾ ĐỘ (anh Trung 16/11/2026: "phải làm sao để khi quay
  * video khui hàng không bị trùng mã đơn hàng với video đóng hàng" — kiện hoàn về vẫn dán đúng tem cũ nên
  * camera đọc ra cùng một mã): đơn có hoàn không, đã có video đóng / video khui trên kho chưa.
- * Hai lượt đọc thêm đều theo khóa: Order theo id, pack_videos theo chỉ mục orderId.
+ * M2.5 (26/11/2026): MỘT câu mang về đơn + gian + tình trạng hoàn + món hàng (order-match.ts matchOrderForTem), rồi
+ * hai lượt đọc song song: pack_videos theo chỉ mục orderId, tên phân loại của món hàng. Trước đó là 5 câu nối nhau.
  */
 export async function matchTem(
   scope: PackVideoScope,
   trackingCode: string,
   kind: PackVideoKind = "PACK"
 ): Promise<{ order: TemMatch | null }> {
-  const match = await matchOrderByTrackingCode(scope.ownerId, trackingCode, kind);
-  if (!match) return { order: null };
-  if (scope.allowedChannelIds && !scope.allowedChannelIds.includes(match.channelId)) return { order: null };
-  const [channel, order, kinds] = await Promise.all([
-    prisma.channel.findFirst({
-      where: { id: match.channelId, userId: scope.ownerId },
-      select: { channelName: true, shopName: true },
-    }),
-    prisma.order.findUnique({ where: { id: match.orderId }, select: { returnStatus: true } }),
+  const order = await matchOrderForTem(scope.ownerId, trackingCode, kind);
+  if (!order) return { order: null };
+  if (scope.allowedChannelIds && !scope.allowedChannelIds.includes(order.channelId)) return { order: null };
+  const [kinds, items] = await Promise.all([
     prisma.packVideo.findMany({
-      where: { orderId: match.orderId, ownerId: scope.ownerId, status: "STORED" },
+      where: { orderId: order.id, ownerId: scope.ownerId, status: "STORED" },
       select: { kind: true },
       distinct: ["kind"],
     }),
+    toLineViews(order.channelId, order.items),
   ]);
-  if (!channel || !order) return { order: null };
   return {
     order: {
-      orderId: match.orderId,
-      orderCode: match.orderCode,
-      channelPlatform: channel.channelName,
-      shopName: channel.shopName,
-      items: await orderItems(scope, match.orderId),
+      orderId: order.id,
+      orderCode: order.orderCode,
+      channelPlatform: order.channel.channelName,
+      shopName: order.channel.shopName,
+      items,
       hasReturn: order.returnStatus !== ReturnStatus.NONE,
       returnStatus: order.returnStatus,
       hasPackVideo: kinds.some((k) => k.kind === "PACK"),

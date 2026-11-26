@@ -229,5 +229,14 @@ export function packSessionEnabled(env: NodeJS.ProcessEnv = process.env): boolea
  * luật 14/11 cho phép quay lố ("phần lố trừ lần mua sau"). Đệm báo HẾT giờ thì luôn đọc lại database trước khi chặn.
  */
 export const PACK_HOURS_CACHE_TTL_MS = 15_000;
+/**
+ * HẠN MỨC GỌI các đường nóng của màn quay, theo TÀI KHOẢN đang đăng nhập, trong từng tiến trình web (M2.6,
+ * lib/pack-rate-limit.ts): đều 5 lượt / giây, cho dồn 50 lượt. SỐ TỰ CHỌN. Căn cứ ước lượng: một bàn ra một clip /
+ * ≈ 40 giây (số đo 20/11, mục 25.13) = 3 lượt gọi / 40 giây; một tài khoản dùng chung cho 20 bàn ≈ 1,5 lượt / giây; hàng
+ * chờ 200 clip gửi lại sau khi mất mạng đi tuần tự ≈ 2 lượt / giây. Một vòng lặp lỗi thì hàng trăm lượt / giây.
+ * Chưa có số của khách thật → mặc định CHẠY BÓNG (chỉ ghi nhật ký), bật chặn thật bằng env PACK_RATE_LIMIT=on.
+ */
+export const PACK_HOT_RATE = { perSec: 5, burst: 50 } as const;
+
 /** Trần số chủ shop nằm trong đệm của một tiến trình (đầy thì xóa sạch, đọc lại dần). SỐ TỰ CHỌN. */
 export const PACK_HOURS_CACHE_MAX = 50_000;

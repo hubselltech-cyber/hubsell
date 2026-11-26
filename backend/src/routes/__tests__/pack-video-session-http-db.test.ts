@@ -190,6 +190,30 @@ describe.skipIf(!ready)("Video đóng hàng — vé phiên quay ở tầng HTTP"
     }
   });
 
+  it("chặn gọi dồn (M2.6): mặc định CHẠY BÓNG không chặn ai; PACK_RATE_LIMIT=on → 429 + Retry-After, đường khác không dính", async () => {
+    const savedMode = process.env.PACK_RATE_LIMIT;
+    const hit = () => fetch(`${baseUrl}${MATCH}`, { headers: { [PACK_SESSION_HEADER]: ownerTicket } });
+    try {
+      // Chạy bóng: 80 lượt dồn (vượt mức dồn 50) vẫn 200 hết — chỉ ghi nhật ký.
+      delete process.env.PACK_RATE_LIMIT;
+      const shadow = await Promise.all(Array.from({ length: 80 }, hit));
+      expect(shadow.every((r) => r.status === 200)).toBe(true);
+      // Bật chặn thật: sổ đếm của tài khoản này đã cạn → lượt kế bị 429 kèm số giây phải chờ.
+      process.env.PACK_RATE_LIMIT = "on";
+      const on = await Promise.all(Array.from({ length: 30 }, hit));
+      const limited = on.filter((r) => r.status === 429);
+      expect(limited.length).toBeGreaterThan(0);
+      expect(Number(limited[0].headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+      expect(((await limited[0].json()) as { code?: string }).code).toBe("TOO_MANY_REQUESTS");
+      // Đường KHÔNG nóng (xin vé, xem số giờ) không bị đếm; tài khoản khác không bị vạ lây.
+      expect((await call("GET", "/api/pack-videos/hours", { login: ownerId })).status).toBe(200);
+      expect((await call("GET", MATCH, { ticket: staffTicket })).status).toBe(200);
+    } finally {
+      if (savedMode === undefined) delete process.env.PACK_RATE_LIMIT;
+      else process.env.PACK_RATE_LIMIT = savedMode;
+    }
+  });
+
   it("đường nóng có vé KHÔNG đọc bảng User: tài khoản vừa xóa vẫn đi tới khi vé hết hạn; đường thường chặn ngay", async () => {
     await prisma.user.update({ where: { id: staffId }, data: { deletedAt: new Date() } });
     try {

@@ -137,7 +137,8 @@ export function createApp() {
       },
       // Header tóm tắt in vận đơn (đơn nào thiếu phiếu) phải lộ ra cho frontend
       // đọc — mặc định CORS chỉ cho đọc vài header chuẩn.
-      exposedHeaders: ["X-Hubsell-Labels", "X-Hubsell-Saved-Label", "Content-Disposition"],
+      // Retry-After: màn quay video đọc số giây máy chủ bảo chờ khi nhận 429 / 503 (M2.6).
+      exposedHeaders: ["X-Hubsell-Labels", "X-Hubsell-Saved-Label", "Content-Disposition", "Retry-After"],
     })
   );
   // NÉN GZIP/BROTLI mọi phản hồi (JSON dashboard/tài chính nặng vài trăm KB; Render
