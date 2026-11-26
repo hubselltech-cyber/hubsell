@@ -2736,3 +2736,45 @@ bucket `hubsell-video-thu`, đang Enabled (bên cạnh luật mặc định hủ
 **Test:** ca "HẾT GIỜ" của `upload-db.test.ts` lúc 00:22 đỏ cả khi chạy RIÊNG (00:10 chạy riêng thì đạt). Em không đụng phần giờ / tải
 lên; nghi do lệch vài mili giây giữa đồng hồ Node và Postgres local trong luật "video đang quay dở lúc hết giờ" — CHƯA chứng minh,
 cần một lát riêng. Các test còn lại của pack-video + luật + thông báo: 165 / 165; thư mục `workers`: 135 / 135.
+
+## 35. MỞ CHO KHÁCH bản web + xóa thật chạy được (26/11/2026 ~00:45–01:15, anh: "Bây giờ bật xóa thật và mở ra cho khách hàng dùng bản web luôn")
+
+### 35.1 Xóa thật — gỡ điểm chặn "worker thiếu khóa R2" mà không chạm vào khóa
+
+- Render cho tạo **nhóm biến môi trường** từ biến sẵn có của một dịch vụ (giá trị vẫn che). Em tạo nhóm **`hubsell-r2-video`** từ web
+  `hubsell-backend-sg`, bỏ hết chỉ giữ 4 biến `R2_*` (bỏ cả tệp bí mật `.env` mà trang tự chép theo), rồi **gắn nhóm vào worker
+  `hubsell-worker-sg`** ("Link, rebuild, and deploy"). Em không đọc, không gõ giá trị khóa nào. Web vẫn giữ 4 biến riêng của nó (59 biến như cũ).
+- Nhật ký worker sau lượt đó: `[pack-video-janitor] BẬT — … XÓA THẬT video tới hạn` (trước là "CHẠY BÓNG"). Lượt dọn chạy 10 phút sau
+  mỗi lần worker khởi động.
+- `PACK_VIDEO_ACCOUNT_PURGE=1` đã thêm vào WEB (lệnh xóa tài khoản chạy ở web) — Chính sách bảo mật mục 8 hứa "xóa cùng tài khoản".
+
+### 35.2 Cổng mở cho ai (em chọn theo đề nghị Q1 / Q4 ở mục 30.5 — anh chưa nói khác)
+
+- `PACK_VIDEO_GATE` (env trên WEB, mặc định `all`): **mọi chủ shop còn hạn gói** — kể cả dùng thử, kể cả đang trong 7 ngày ân hạn, kể cả
+  tài khoản cũ chưa có thuê bao — và nhân viên của họ theo quyền có sẵn. Gói hết hạn quá ân hạn → khóa (cùng nguồn `getOwnerPlanState`
+  với các tính năng nâng cao khác). `pilot` = quay về chỉ tài khoản thí điểm; `off` = tắt gấp với mọi người. Đổi biến là xong, không cần ra bản.
+- **Bước đồng ý lần đầu** (`services/pack-video/consent.ts`, `POST /api/pack-videos/consent`): chủ shop bấm "Đồng ý và bắt đầu" một
+  lần; ghi một dòng vào sổ đồng ý sẵn có `TermsAcceptance` (nguồn `pack_video`, kèm bản Chính sách, IP, trình duyệt, giờ) — không
+  migration (khác đề nghị "một dòng sổ giờ" ở Q4: sổ đồng ý là chỗ đúng hơn và không phụ thuộc việc tặng giờ). Chưa đồng ý thì mọi
+  đường `/api/pack-videos` trả 403 `CONSENT_REQUIRED`, chưa tặng 2 giờ. Nhân viên không bật thay được. Tài khoản thí điểm coi như đã đồng ý.
+- `features.packVideo` thêm trạng thái `consent`: mục menu hết mờ, trang hiện thẻ bật tính năng (4 ý: video có thông tin người mua ·
+  lưu ở R2 ngoài Việt Nam · tự xóa qua hạn khiếu nại 3 ngày, tối đa 60 ngày, tự xóa tay được · tặng 2 giờ, sau đó 2.000 đ / giờ).
+- Chữ: trang không còn nói "app điện thoại"; ô app ghi "đang thử nghiệm, sắp có"; landing `/quay-video-dong-hang` chuyển `AVAILABILITY`
+  sang `open` (nút chính về "Dùng thử", bỏ dòng "Đang mở dần").
+- Commit `ab743625` (repo chính) + `35e48c3` (landing), push 01:05.
+
+### 35.3 Đã kiểm / chưa kiểm
+
+- ✅ Test: cổng + đồng ý (thuần 30 ca, HTTP thật: chưa đồng ý 403 ở mọi đường → đồng ý → một dòng sổ, cổng mở, có giờ tặng). Bộ rộng
+  `services routes lib workers middleware` **1.273 đạt / 0 đỏ**.
+- ✅ Tìm ra gốc ca "HẾT GIỜ" chập chờn từ 19/11 (`upload-db.test.ts`): dòng trừ giờ mang giờ DATABASE, clip mới mang giờ Node; Postgres
+  local nhanh hơn ~3 ms nên clip "bắt đầu" trước dòng trừ giờ → luật "đang quay dở lúc hết giờ" cho qua. Lỗi bài test (chờ một nhịp), không
+  phải sản phẩm.
+- ✅ Local 1366 với một chủ shop thử (đã xóa sau khi soi): mở trang → thẻ đồng ý → bấm → trang mở, "Còn 2 giờ / 2 giờ", màn trống hai lối.
+- ❌ CHƯA đo câu danh sách video + câu đếm thẻ tab Đơn hoàn trên shop lớn (việc B2 mục 30.2). Câu danh sách đi theo chỉ mục chủ shop nên
+  em không lo; câu đếm thẻ Đơn hoàn cùng kiểu với trang Đối soát đơn hoàn đang chạy cho mọi khách, thêm phần dò sổ video theo chỉ mục
+  `orderId` — em ĐOÁN là ổn, chưa có số.
+- ❌ Chưa ai ngoài tài khoản thí điểm quay webcam thật; chưa mua thử ở giá 2.000 đ; app điện thoại của khách chưa có màn quay.
+- ⚠️ Rủi ro đã biết khi mở: máy chủ tin giờ bắt đầu / thời lượng do trình duyệt báo (mục 30.4) — khách sửa mã trình duyệt có thể quay
+  không trừ giờ trong tối đa ~25 giờ sau khi hết giờ. Giá giờ quay chưa có ở Điều khoản / trang Bảng giá (31.6). Bucket prod vẫn chung với dev.
+- Tắt gấp: đặt `PACK_VIDEO_GATE=pilot` (hoặc `off`) trên web `hubsell-backend-sg` rồi deploy.
