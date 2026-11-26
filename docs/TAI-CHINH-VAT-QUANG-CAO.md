@@ -1,7 +1,7 @@
 # VAT QUẢNG CÁO TRONG BÁO CÁO TÀI CHÍNH / DÒNG TIỀN — KHẢO SÁT + PHƯƠNG ÁN + BẢN ĐÃ CODE
 
 > 26/11/2026. Anh Trung: "lên phương án xem thêm VAT quảng cáo, anh muốn đưa vào báo cáo tài chính, báo cáo dòng tiền. Anh nhớ không nhầm là 10% đối với TikTok và 8% với Shopee thì phải".
-> Hiện trạng: anh bấm "Làm theo đề xuất" ~10:33 26/11 → **lát 1 (báo cáo) + công tắc ĐÃ CODE trên máy, đã commit, CHƯA PUSH** — xem **mục 8** (cái đã làm, bảng trước / sau, việc còn lại). Mục 1–7 là khảo sát + đề xuất gốc. Ba ảnh K1–K3 ở mục 5 vẫn cần.
+> Hiện trạng: anh bấm "Làm theo đề xuất" ~10:33 26/11 → **lát 1 (báo cáo) + công tắc ĐÃ CODE và LÊN PROD `67995ff1` 10:56 26/11 (anh: "Push luôn")** — xem **mục 8** (cái đã làm, bảng trước / sau, việc còn lại). Mục 1–7 là khảo sát + đề xuất gốc. Ba ảnh K1–K3 ở mục 5 vẫn cần.
 > Đây là chuyện thuế: mỗi ý ghi mức chắc; chưa phải ý kiến của cơ quan thuế hay kế toán.
 
 ## 1. Kết luận ngắn
@@ -116,7 +116,7 @@ Còn mở từ trước, liên quan: Shopee chưa trả lời ticket 20/11 (ti�
 5. Lát 3 (hòa vốn có VAT): cho em mô phỏng trước rồi trình, hay tạm chưa đụng? (em đề xuất: mô phỏng ngay sau lát 1)
 6. Anh giúp 3 ảnh K1–K3 (mục 5).
 
-## 8. ĐÃ CODE 26/11/2026 (anh: "Làm theo đề xuất") — đã commit, CHƯA push
+## 8. ĐÃ CODE 26/11/2026 (anh: "Làm theo đề xuất" → "Push luôn") — LÊN PROD `67995ff1` 10:56
 
 Làm theo các mặc định ở mục 7: ước theo ngày tiêu, dòng riêng, bật mặc định cho mọi shop, có công tắc cho công ty khấu trừ. Lát 3 (hòa vốn có VAT) CHƯA đụng.
 
@@ -150,7 +150,8 @@ Dòng "Chi phí quảng cáo sàn (Ads)" GIỮ số sàn báo (chưa thuế) đ�
 
 ### 8.4 Chưa làm / chưa kiểm
 
-- **Chưa push** — đổi số lợi nhuận của ~158 chủ shop ngay khi lên, em chờ anh xem bảng 8.2 rồi cho lệnh.
+- **Đã push 10:54, lên prod 10:56 26/11:** `/health` đúng commit `67995ff1`; SQL chỉ đọc: migration `20261126160000` xong, 3 dòng cấu hình thuế đều đang bật (shop chưa có dòng cấu hình cũng coi như bật); tệp JS của trang Thuế bổ sung trên `app.hubsell.vn` đã có trường mới. CHƯA đăng nhập tài khoản thật để nhìn màn prod và CHƯA so số một shop thật trước / sau trên màn.
+- Lùi gấp nếu cần: đặt `ADS_VAT_OFF=1` trên dịch vụ web Render (không cần deploy lại mã, không đụng dữ liệu).
 - **Thông báo cho khách** (một dòng trong app / bài hướng dẫn) về việc báo cáo có thêm dòng thuế: chưa viết — câu chữ gửi khách để anh duyệt.
 - Chữ "chưa gồm thuế GTGT" ở màn Trợ lý quảng cáo / chi tiết chiến dịch: chưa thêm.
 - K1–K3 (mục 5) chưa có ảnh: TikTok trừ trong đơn đang coi là chưa gồm thuế; Lazada 0 %.
