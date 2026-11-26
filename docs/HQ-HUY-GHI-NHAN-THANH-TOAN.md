@@ -73,6 +73,9 @@ hiện hộp vàng, nút đổi thành **Vẫn ghi nhận** (gửi lại kèm `c
 
 ## 4. Đã kiểm / chưa kiểm
 
+- **Prod 26/11:** commit `0ecf3591`, backend lên 13:31 (`/health` đúng commit), web `app.hubsell.vn` 13:32 có lời
+  gọi `void-payment` trong tệp JS trang Kế toán. Không có migration. Chưa ai bấm hủy trên prod lúc ghi dòng này.
+
 - Test `backend/src/integrations/__tests__/void-package-payment.test.ts`: 12 ca (6 ca dựng lại hạn gói, 2 ca gỡ
   thật trên DB dev theo hai thứ tự ghi, 4 ca từ chối) — xanh; bộ `subscription-payment.test.ts` cũ vẫn xanh.
 - Màn local (tài khoản HQ thử, seed đúng ca): nút chỉ hiện ở dòng HQ ghi; hộp xem trước ra "26/05/2027 →
