@@ -34,7 +34,9 @@ import { resolveSupplier, supplierRouter } from "./inventory-suppliers";
 import { canSeeFinancials } from "../middleware/auth";
 import {
   applyStockDelta,
+  DEFAULT_STOCK_MODEL,
   getStockSettings,
+  resolveStockSettings,
   lockStockCompartments,
   setLevelAbsolute,
   setOnHandAbsolute,
@@ -987,8 +989,16 @@ router.post("/stocktake", async (req: AuthRequest, res, next) => {
 // Query: productId? · from? · to? (ISO) · type? (IMPORT | EXPORT | SYNC | ADJUST)
 // · q? (mã/tên SKU) · page · pageSize (20/50/100).
 // Mỗi dòng kèm SKU, ai làm (null = hệ thống), mã đơn + gian nếu do đơn gây ra.
+//
+// QUY MÔ (26/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 20 + 21): lọc theo cột CHỦ SHOP của chính
+// bảng nhật ký ("InventoryLog"."ownerId", trigger tự điền) qua chỉ mục (ownerId, createdAt, id).
+// KHÔNG lọc qua quan hệ `product: { userId }`: kèm orderBy createdAt + take thì Postgres đi lùi chỉ
+// mục ngày của CẢ bảng (mọi shop) rồi mới lọc — đo prod 26/11: 22.453 dòng / 37.879 khối cho 20 dòng.
+// Đếm có TRẦN: bảng chỉ lật tới LOG_COUNT_CAP dòng gần nhất của bộ lọc; cần cũ hơn thì chọn khoảng
+// ngày. Trần hiện rõ trên màn ("10.000+ dòng"), không phải trần im lặng.
 const LOG_PAGE_SIZES = [20, 50, 100];
 const LOG_TYPES = new Set<string>(Object.values(InventoryLogType));
+export const LOG_COUNT_CAP = 10_000;
 
 router.get("/logs", async (req: AuthRequest, res, next) => {
   try {
@@ -1003,9 +1013,10 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Khoảng ngày không hợp lệ" });
       return;
     }
-    const page = Math.max(1, Number(q.page) || 1);
     const sizeRaw = Number(q.pageSize) || 20;
     const pageSize = LOG_PAGE_SIZES.includes(sizeRaw) ? sizeRaw : 20;
+    // Không lật quá trần đếm (trang cuối cùng còn nằm trong LOG_COUNT_CAP dòng gần nhất).
+    const page = Math.min(Math.max(1, Number(q.page) || 1), Math.ceil(LOG_COUNT_CAP / pageSize));
 
     if (productId) {
       const product = await prisma.product.findFirst({
@@ -1019,18 +1030,18 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
     }
 
     const where: Prisma.InventoryLogWhereInput = {
-      product: {
-        userId: req.ownerId!,
-        ...(search
-          ? {
+      ownerId: req.ownerId!,
+      ...(search
+        ? {
+            product: {
               OR: [
                 { skuCode: { contains: search, mode: "insensitive" } },
                 { barcode: { contains: search, mode: "insensitive" } },
                 { productName: { contains: search, mode: "insensitive" } },
               ],
-            }
-          : {}),
-      },
+            },
+          }
+        : {}),
       ...(productId ? { productId } : {}),
       ...(type ? { type } : {}),
       ...(from || to
@@ -1043,8 +1054,9 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
     const { stockModel: logStockModel } = await getStockSettings(prisma, req.ownerId!);
     if (logStockModel !== "ON_HAND") where.NOT = { changeQuantity: 0 };
 
-    const [total, rows] = await Promise.all([
-      prisma.inventoryLog.count({ where }),
+    const [counted, rows] = await Promise.all([
+      // Đếm tới trần + 1 để biết "còn nhiều hơn trần" mà không phải đếm hết nhật ký của shop.
+      prisma.inventoryLog.count({ where, take: LOG_COUNT_CAP + 1 }),
       prisma.inventoryLog.findMany({
         where,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -1076,6 +1088,7 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
       }),
     ]);
 
+    const total = Math.min(counted, LOG_COUNT_CAP);
     res.json({
       items: rows.map((r) => ({
         id: r.id,
@@ -1104,6 +1117,7 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
           : null,
       })),
       total,
+      totalCapped: counted > LOG_COUNT_CAP,
       page,
       pageSize,
       pageCount: Math.ceil(total / pageSize),
@@ -1124,9 +1138,10 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
 // Giá trị = số lượng × giá vốn HIỆN TẠI của SKU (nhật ký không lưu giá vốn lúc ghi) — chỉ trả cho
 // người thấy tài chính. Bán ngoài sàn và Nhập hàng không nằm trong báo cáo.
 //
-// QUY MÔ: "InventoryLog" không có cột chủ shop → đi từ SKU của shop, mỗi SKU một lượt dò chỉ mục bán
-// phần "InventoryLog_manual_idx" (productId, createdAt) WHERE orderId IS NULL. Dòng của đơn sàn (phần
-// lớn bảng) không nằm trong chỉ mục nên shop vài nghìn đơn / ngày vẫn chỉ đọc đúng các dòng tay.
+// QUY MÔ (sửa 26/11/2026): đi thẳng từ nhật ký của CHỦ SHOP trong kỳ qua chỉ mục bán phần
+// "InventoryLog_owner_manual_idx" (ownerId, createdAt) WHERE orderId IS NULL — chi phí theo số dòng
+// TAY của shop trong kỳ, không theo số mã của shop (bản trước dò từng mã: shop 43.912 mã tốn
+// 172.107 khối dù chỉ có vài dòng tay) và không theo đơn sàn (dòng của đơn không nằm trong chỉ mục).
 // ============================================================
 const LOSS_MAX_DAYS = 366;
 
@@ -1155,9 +1170,9 @@ router.get("/loss-report", async (req: AuthRequest, res, next) => {
                WHEN il."kind" IS NULL AND il."type" = 'ADJUST' THEN 'ADJUST_OLD'
                WHEN il."kind" IS NULL AND il."type" = 'EXPORT' THEN 'EXPORT_NO_REASON'
              END AS "grp"
-        FROM "Product" p
-        JOIN "InventoryLog" il ON il."productId" = p."id"
-       WHERE p."userId" = ${ownerId}
+        FROM "InventoryLog" il
+        JOIN "Product" p ON p."id" = il."productId"
+       WHERE il."ownerId" = ${ownerId}
          AND il."orderId" IS NULL
          AND il."createdAt" >= ${from} AND il."createdAt" < ${to}
          AND il."changeQuantity" <> 0`;
@@ -1581,8 +1596,7 @@ router.get("/sync-settings", async (req: AuthRequest, res, next) => {
       safetyStockDefault: setting?.safetyStockDefault ?? 0,
       initialStockMode: (setting?.initialStockMode ?? "SUM") as InitialStockMode,
       lowStockDefault: setting?.lowStockDefault ?? 0,
-      stockModel: setting?.stockModel === "ON_HAND" ? "ON_HAND" : "LEGACY",
-      restockOnReturn: setting?.restockOnReturn === "ON_RECEIVE" ? "ON_RECEIVE" : "ON_CANCEL",
+      ...resolveStockSettings(setting),
       updatedAt: setting?.updatedAt ?? null,
       pendingJobs,
     });
@@ -1649,6 +1663,9 @@ router.put("/sync-settings", async (req: AuthRequest, res, next) => {
         safetyStockDefault: safety ?? 0,
         initialStockMode: mode ?? "SUM",
         lowStockDefault: lowStock ?? 0,
+        // Dòng mới sinh ra vì khách lưu cài đặt khác — cách hiển thị giữ đúng mặc định đang áp,
+        // không để mặc định của cột database lặng lẽ đổi cách của shop.
+        stockModel: DEFAULT_STOCK_MODEL,
         ...(restockOnReturn !== undefined ? { restockOnReturn } : {}),
       },
     });
@@ -1673,8 +1690,7 @@ router.put("/sync-settings", async (req: AuthRequest, res, next) => {
       safetyStockDefault: updated.safetyStockDefault,
       initialStockMode: updated.initialStockMode as InitialStockMode,
       lowStockDefault: updated.lowStockDefault,
-      stockModel: updated.stockModel === "ON_HAND" ? "ON_HAND" : "LEGACY",
-      restockOnReturn: updated.restockOnReturn === "ON_RECEIVE" ? "ON_RECEIVE" : "ON_CANCEL",
+      ...resolveStockSettings(updated),
       queued,
     });
   } catch (err) {

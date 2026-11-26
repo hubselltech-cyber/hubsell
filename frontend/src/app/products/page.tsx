@@ -98,6 +98,7 @@ import {
 import {
   fetchChannelProducts,
   fetchChannels,
+  fetchNotBackYet,
   fetchProducts,
   fetchStockLocations,
   getStoredUser,
@@ -436,7 +437,15 @@ export default function ProductsHubPage() {
   // "Đang giữ" đứng TRƯỚC Có thể bán (Tồn kho − Đang giữ − an toàn = Có thể bán, đọc từ trái sang là
   // một phép trừ). Shop LEGACY giữ nguyên bảng cũ (Tồn kho · Có thể bán · Chờ giao).
   const onHandModel = productsQ.data?.stockModel === "ON_HAND";
-  const notBackYet = productsQ.data?.notBackYet;
+  // Dòng "chưa về kho": đường gọi RIÊNG, một lần lúc mở trang (26/11/2026) — không tính lại theo từng
+  // lượt lật trang / tìm kiếm. Chỉ shop cách mới còn để "cộng tồn khi sàn báo hủy" mới hỏi.
+  const notBackYetQ = useApiQuery({
+    queryKey: qk.products({ notBackYet: true }),
+    queryFn: fetchNotBackYet,
+    enabled: onHandModel && productsQ.data?.restockOnReturn === "ON_CANCEL",
+    staleTime: 5 * 60 * 1000,
+  });
+  const notBackYet = notBackYetQ.data;
   const invalidate = useInvalidate();
   const items = useMemo(() => productsQ.data?.items ?? [], [productsQ.data]);
   // Gom dòng theo khóa cha–con backend đã xếp liền nhau: mẫu có ≥ 2 phân loại

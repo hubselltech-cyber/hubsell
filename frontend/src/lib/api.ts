@@ -420,11 +420,21 @@ export interface ProductListResponse {
   /** Cách hiển thị tồn + cách cộng tồn hàng hoàn của shop (kho chuẩn quốc tế, 20/11/2026). */
   stockModel?: StockModel;
   restockOnReturn?: RestockOnReturn;
-  /**
-   * Shop ON_HAND còn "cộng khi sàn báo hủy": hàng của các đơn hủy sau giao đã cộng vào Tồn kho mà kho
-   * CHƯA nhận kiện. Chỉ có khi gọi với `awaiting: true`.
-   */
-  notBackYet?: { units: number; orders: number };
+}
+
+/**
+ * Shop ON_HAND còn "cộng khi sàn báo hủy": hàng của các đơn hủy sau giao đã cộng vào Tồn kho mà kho
+ * CHƯA nhận kiện, tính trong `days` ngày gần nhất. Đường gọi riêng (26/11/2026) — bảng Tổng kho gọi
+ * một lần lúc mở trang, không kèm theo từng lượt lật trang.
+ */
+export interface NotBackYet {
+  units: number;
+  orders: number;
+  days: number;
+}
+
+export function fetchNotBackYet() {
+  return apiFetch<NotBackYet>("/api/products/not-back-yet");
 }
 
 /** LEGACY = Tồn kho là sổ tồn bán (cách cũ); ON_HAND = Tồn kho là hàng trong kho (chuẩn quốc tế). */
@@ -483,6 +493,8 @@ export interface InventoryLogEntry extends InventoryLog {
 export interface InventoryLogListResponse {
   items: InventoryLogEntry[];
   total: number;
+  /** true = shop có nhiều hơn `total` dòng khớp bộ lọc; bảng chỉ lật tới `total` dòng gần nhất (trần đếm của máy chủ). */
+  totalCapped?: boolean;
   page: number;
   pageSize: number;
   pageCount: number;

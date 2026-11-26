@@ -42,23 +42,49 @@ export interface AwaitingShip {
  * ép hướng này: đi ngược từ nhật ký của mã bán chạy là hàng chục nghìn dòng mỗi mã.
  */
 /**
+ * Cửa sổ của dòng "chưa về kho": chỉ tính đơn được cộng lại sổ trong N ngày gần nhất. 30 là số TỰ
+ * CHỌN (26/11/2026, chưa có căn cứ đo): kiện hoàn quá một tháng chưa về thì gần như không về nữa,
+ * và con số cộng dồn vô hạn không giúp chủ shop quyết định gì. Đổi số này thì câu chữ trên màn
+ * (frontend on-hand-notice.tsx đọc `days` từ API) tự đổi theo.
+ */
+export const NOT_BACK_WINDOW_DAYS = 30;
+
+/**
+ * Dòng nhật ký CỘNG LẠI của đơn hủy sau khi rời kho. PHẢI khớp từng chữ với vị từ của chỉ mục một
+ * phần "InventoryLog_owner_restore_idx" (migration 20261126120000). `kind IS NULL` = dòng ghi trước
+ * 20/11/2026 (chưa có cột kind) — sau 20/12/2026 không còn dòng nào như vậy trong cửa sổ 30 ngày.
+ */
+const RESTORE_LOG = Prisma.sql`il."orderId" IS NOT NULL AND il."changeQuantity" > 0 AND (il."kind" IS NULL OR il."kind" = 'RETURN')`;
+
+/**
  * HÀNG ĐÃ CỘNG SỔ MÀ KHO CHƯA NHẬN KIỆN (kho chuẩn quốc tế lát 2, mục 5.2.1): đơn hủy / giao thất
  * bại sau khi rời kho của shop ở chế độ "cộng khi sàn báo hủy" — đã cộng lại sổ (stockRestoredAt)
  * nhưng còn "Chờ hàng về". Màn Tổng kho của shop ON_HAND dùng số này để nói rõ "Tồn kho đang tính
- * cả N sản phẩm chưa về kho". Đi từ các gian của chủ shop qua chỉ mục một phần
- * "Order_return_awaiting_idx" (channelId) WHERE returnStatus = 'AWAITING'; không LIMIT.
+ * cả N sản phẩm chưa về kho".
+ *
+ * QUY MÔ (viết lại 26/11/2026, docs mục 20 lỗ 2): bản trước đi từ MỌI đơn "Chờ hàng về" của shop —
+ * tập đó không bao giờ nhỏ lại ở shop không quét nhận hoàn (prod 26/11: 19.772 đơn, +400 / ngày;
+ * shop 3.206 đơn tốn 2.518 khối để ra kết quả 0). Bản này đi từ các dòng CỘNG LẠI của chính shop
+ * trong `days` ngày qua chỉ mục một phần theo chủ shop, rồi mới tra đơn theo khóa chính. Chi phí
+ * theo số lần cộng lại của shop trong cửa sổ, không theo tuổi dữ liệu và không theo shop khác.
  */
 export async function restockedNotBackYet(
   db: Pick<typeof prisma, "$queryRaw">,
-  ownerId: string
-): Promise<{ units: number; orders: number }> {
+  ownerId: string,
+  days: number = NOT_BACK_WINDOW_DAYS
+): Promise<{ units: number; orders: number; days: number }> {
+  const since = new Date(Date.now() - days * 86_400_000);
   const rows = await db.$queryRaw<{ units: number; orders: number }[]>`
-    SELECT COALESCE(SUM(-il."changeQuantity"), 0)::int AS units, COUNT(DISTINCT o."id")::int AS orders
-    FROM "Channel" c
-    JOIN "Order" o ON o."channelId" = c."id" AND o."returnStatus" = 'AWAITING' AND o."stockRestoredAt" IS NOT NULL
-    JOIN "InventoryLog" il ON il."orderId" = o."id" AND il."changeQuantity" < 0
-    WHERE c."userId" = ${ownerId}`;
-  return rows[0] ?? { units: 0, orders: 0 };
+    WITH r AS MATERIALIZED (
+      SELECT il."orderId" AS oid, SUM(il."changeQuantity")::int AS qty
+      FROM "InventoryLog" il
+      WHERE il."ownerId" = ${ownerId} AND il."createdAt" >= ${since} AND ${RESTORE_LOG}
+      GROUP BY 1
+    )
+    SELECT COALESCE(SUM(r.qty), 0)::int AS units, COUNT(*)::int AS orders
+    FROM r JOIN "Order" o ON o."id" = r.oid
+    WHERE o."returnStatus" = 'AWAITING' AND o."stockRestoredAt" IS NOT NULL`;
+  return { units: rows[0]?.units ?? 0, orders: rows[0]?.orders ?? 0, days };
 }
 
 export async function awaitingShipByProduct(

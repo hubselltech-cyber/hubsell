@@ -502,6 +502,112 @@ export async function checkCommitted(): Promise<CommittedCheck> {
   return { ...byProduct, levelMismatch: byLevel.levelMismatch, ...orders };
 }
 
+// ---------- ĐÈN BÁO (HQ → Sức khỏe) ----------
+//
+// 26/11/2026 (docs mục 20.2 + 21): shop chạy cách ON_HAND cộng thẳng bộ đếm "đang giữ" vào cột Tồn
+// kho → bộ đếm lệch = khách thấy Tồn kho sai. Trước đây lệch chỉ nằm ở một dòng maintenance_jobs,
+// không ai được báo (lỗi quét bù 12–15/11 chạy ba ngày không đèn nào đỏ). Phần này đọc đúng HAI
+// dòng theo khóa chính và đổi thành một dấu hiệu của trang HQ Sức khỏe (anh Trung 12/09: không
+// email, không chuông — vượt ngưỡng thì trang tự đỏ).
+
+/** Khóa của dòng sổ nhịp bảo trì (worker ghi mỗi nhịp quét bù). */
+export const SWEEP_JOB_KEY = "stock-committed-sweep";
+
+/** Đối chiếu quá chừng này giờ chưa chạy = đỏ. Nhịp 24 giờ + 2 giờ dư — cùng luật với chuỗi (nextStreak). */
+export const CHECK_STALE_HOURS = 26;
+/** Quét bù lỗi liên tiếp từ chừng này nhịp = vàng — cùng quy ước "lỗi ≥ 3 lượt" của các dấu hiệu khác. */
+export const SWEEP_FAIL_WARN = 3;
+
+export interface StockCounterHealth {
+  /** Công tắc khẩn STOCK_COMMITTED_OFF đang bật ở tiến trình này. */
+  off: boolean;
+  /** Lần đối chiếu gần nhất (ISO) — null = chưa từng chạy. */
+  checkAt: string | null;
+  checkAgeHours: number | null;
+  /** Số chỗ lệch cứng của lần đối chiếu gần nhất. */
+  hard: number;
+  streak: number | null;
+  lastMismatchAt: string | null;
+  committedOrders: number | null;
+  counterTotal: number | null;
+  /** Nhịp quét bù gần nhất. */
+  sweepAt: string | null;
+  sweepMs: number | null;
+  sweepFailStreak: number;
+  sweepLastError: string | null;
+  /** Cộng dồn số đơn "sàn đã giao" mà quét bù phải bắt (> 0 = còn đường ghi chưa gọi rời kho). */
+  sweepCaught: number;
+}
+
+function parseCursor<T>(cursor: string | null | undefined): Partial<T> {
+  try {
+    return cursor ? (JSON.parse(cursor) as Partial<T>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Đọc hai dòng sổ của bộ đếm giữ (theo khóa chính, không đụng bảng đơn). */
+export async function collectStockCounterHealth(now: Date = new Date()): Promise<StockCounterHealth> {
+  const [check, sweep] = await Promise.all([
+    prisma.maintenanceJob.findUnique({ where: { key: CHECK_JOB_KEY }, select: { cursor: true, processed: true, updatedAt: true } }),
+    prisma.maintenanceJob.findUnique({ where: { key: SWEEP_JOB_KEY }, select: { cursor: true, processed: true, updatedAt: true } }),
+  ]);
+  const c = parseCursor<CommittedCheckRecord>(check?.cursor);
+  const s = parseCursor<{ at: string; ms: number; failStreak: number; lastError: string | null }>(sweep?.cursor);
+  return {
+    off: !stockCommittedOn(),
+    checkAt: check ? check.updatedAt.toISOString() : null,
+    checkAgeHours: check ? Math.round(((now.getTime() - check.updatedAt.getTime()) / 3_600_000) * 10) / 10 : null,
+    hard: Number(check?.processed ?? 0),
+    streak: typeof c.streak === "number" ? c.streak : null,
+    lastMismatchAt: c.lastMismatchAt ?? null,
+    committedOrders: typeof c.committedOrders === "number" ? c.committedOrders : null,
+    counterTotal: typeof c.counterTotal === "number" ? c.counterTotal : null,
+    sweepAt: sweep ? sweep.updatedAt.toISOString() : null,
+    sweepMs: typeof s.ms === "number" ? s.ms : null,
+    sweepFailStreak: typeof s.failStreak === "number" ? s.failStreak : 0,
+    sweepLastError: s.lastError ?? null,
+    sweepCaught: Number(sweep?.processed ?? 0),
+  };
+}
+
+/**
+ * Dấu hiệu "Bộ đếm kho" của HQ Sức khỏe. Thuần, để test được.
+ *   ĐỎ  : lần đối chiếu gần nhất có lệch cứng · đối chiếu quá CHECK_STALE_HOURS chưa chạy / chưa
+ *         từng chạy · công tắc khẩn đang tắt bộ đếm (shop ON_HAND đang đọc số đứng yên);
+ *   VÀNG: quét bù lỗi ≥ SWEEP_FAIL_WARN nhịp liền;
+ *   XANH: còn lại.
+ */
+export function stockCounterSignal(
+  h: StockCounterHealth | null
+): [value: string, level: "ok" | "warn" | "crit", hint: string] {
+  const fixHint =
+    "Tồn kho của shop cách mới = sổ + bộ đếm này. Lệch thì KHÔNG tự sửa số: đọc log worker [stock-committed], tìm mã lệch; cần gấp thì đặt STOCK_MODEL_FORCE=LEGACY trên web để mọi shop về cách hiển thị cũ";
+  if (!h) return ["không đọc được", "warn", "Bảng maintenance_jobs không đọc được — xem log [Health]"];
+  if (h.off) {
+    return ["ĐANG TẮT (STOCK_COMMITTED_OFF=1)", "crit", "Bộ đếm đứng yên trong khi shop cách mới vẫn cộng nó vào Tồn kho — bật lại phải dựng lại bộ đếm (resetCommitted)"];
+  }
+  const sweepPart =
+    h.sweepFailStreak > 0
+      ? `quét bù LỖI ${h.sweepFailStreak} nhịp liền${h.sweepLastError ? ` (${h.sweepLastError.slice(0, 120)})` : ""}`
+      : `quét bù chạy đều${h.sweepMs != null ? ` (${h.sweepMs} ms)` : ""}${h.sweepCaught > 0 ? `, đã bắt ${h.sweepCaught} đơn lọt` : ""}`;
+  if (h.checkAt == null || h.checkAgeHours == null) {
+    return [`chưa có lần đối chiếu nào · ${sweepPart}`, "crit", fixHint];
+  }
+  const checkPart =
+    `đối chiếu ${h.checkAgeHours} giờ trước: lệch cứng ${h.hard}` +
+    (h.committedOrders != null ? `, ${h.committedOrders} đơn giữ` : "") +
+    (h.streak != null ? `, chuỗi lệch 0 liên tiếp ${h.streak}` : "");
+  const value = `${checkPart} · ${sweepPart}`;
+  if (h.hard > 0) return [value, "crit", fixHint];
+  if (h.checkAgeHours > CHECK_STALE_HOURS) {
+    return [value, "crit", `Đối chiếu quá ${CHECK_STALE_HOURS} giờ chưa chạy — worker [stock-committed] đang lỗi hoặc không chạy; trong lúc này không ai kiểm bộ đếm`];
+  }
+  if (h.sweepFailStreak >= SWEEP_FAIL_WARN) return [value, "warn", "Quét bù lỗi lặp — đọc log worker [stock-committed] dòng 'lỗi một nhịp'"];
+  return [value, "ok", fixHint];
+}
+
 /** Nội dung cột cursor của dòng đối chiếu: kết quả lần cuối + chuỗi tự đếm (mục 14.5). */
 export interface CommittedCheckRecord extends CommittedCheck {
   at: string;

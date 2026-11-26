@@ -26,7 +26,7 @@ import {
   saveProductGroup,
 } from "../services/product-group-edit";
 import { loadInventoryStats } from "../services/inventory-stats";
-import { awaitingShipByProduct, restockedNotBackYet } from "../services/stock-awaiting-ship";
+import { awaitingShipByProduct, NOT_BACK_WINDOW_DAYS, restockedNotBackYet } from "../services/stock-awaiting-ship";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
 import { parseBarcodeInput } from "../lib/product-barcode";
@@ -372,9 +372,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }
     }
 
-    const awaiting = withAwaiting
-      ? await awaitingShipByProduct(prisma, req.ownerId!, items.map((p) => p.id))
-      : null;
+    // Shop ON_HAND đọc "Đang giữ" từ BỘ ĐẾM trên sản phẩm (heldQuantity bên dưới) → không chạy câu tính
+    // lại từ đơn nữa (26/11/2026: câu này tốn theo số đơn chờ giao của shop, mỗi lượt tải bảng một lần).
+    const awaiting =
+      withAwaiting && !onHandModel
+        ? await awaitingShipByProduct(prisma, req.ownerId!, items.map((p) => p.id))
+        : null;
 
     // Ô "không bán" của shop (ngăn Unavailable) — để tính hàng TRONG KHO của từng mã. Chỉ đọc khi
     // trang có mã nằm ở vị trí nào đó.
@@ -388,13 +391,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
           ).map((l) => l.id)
         )
       : new Set<string>();
-    // Shop ON_HAND còn ở chế độ "cộng khi sàn báo hủy": Tồn kho đang tính cả hàng của các đơn hủy
-    // sau giao mà kho CHƯA nhận kiện → trả con số để màn Tổng kho nói rõ (mục 5.2.1).
-    const notBackYet =
-      withAwaiting && onHandModel && stockSettings.restockOnReturn === "ON_CANCEL"
-        ? await restockedNotBackYet(prisma, req.ownerId!)
-        : null;
-
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
@@ -493,8 +489,24 @@ router.get("/", async (req: AuthRequest, res, next) => {
       lowStockDefault,
       stockModel: stockSettings.stockModel,
       restockOnReturn: stockSettings.restockOnReturn,
-      ...(notBackYet ? { notBackYet } : {}),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/products/not-back-yet — dòng "Tồn kho đang tính cả N sản phẩm chưa về kho" của Tổng kho.
+// Shop ON_HAND còn ở chế độ "cộng khi sàn báo hủy": Tồn kho đang tính cả hàng của các đơn hủy sau
+// giao mà kho CHƯA nhận kiện (mục 5.2.1). TÁCH khỏi câu danh sách (26/11/2026): màn gọi MỘT lần lúc
+// mở trang, không phải mỗi lượt lật trang / tìm kiếm. Shop khác chế độ → trả 0 mà không đọc gì thêm.
+router.get("/not-back-yet", async (req: AuthRequest, res, next) => {
+  try {
+    const s = await getStockSettings(prisma, req.ownerId!);
+    if (s.stockModel !== "ON_HAND" || s.restockOnReturn !== "ON_CANCEL") {
+      res.json({ units: 0, orders: 0, days: NOT_BACK_WINDOW_DAYS });
+      return;
+    }
+    res.json(await restockedNotBackYet(prisma, req.ownerId!));
   } catch (err) {
     next(err);
   }

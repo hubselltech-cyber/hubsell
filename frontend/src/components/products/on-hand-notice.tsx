@@ -19,7 +19,7 @@ import { formatNumber } from "@/lib/format";
  */
 const DISMISS_KEY = "hubsell_on_hand_notice_dismissed";
 
-export function OnHandNotice({ notBackYet }: { notBackYet?: { units: number; orders: number } }) {
+export function OnHandNotice({ notBackYet }: { notBackYet?: { units: number; orders: number; days?: number } }) {
   // null = chưa đọc trình duyệt (SSR + lượt vẽ đầu) → chưa vẽ, tránh nháy.
   const [dismissed, setDismissed] = useState<boolean | null>(null);
   useEffect(() => {
@@ -64,7 +64,8 @@ export function OnHandNotice({ notBackYet }: { notBackYet?: { units: number; ord
       {showNotBack && notBackYet && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
           Tồn kho đang tính cả <span className="font-semibold">{formatNumber(notBackYet.units)} sản phẩm</span> của{" "}
-          {formatNumber(notBackYet.orders)} đơn hủy sau khi giao mà kho chưa nhận kiện.{" "}
+          {formatNumber(notBackYet.orders)} đơn hủy sau khi giao
+          {notBackYet.days ? ` trong ${notBackYet.days} ngày gần đây` : ""} mà kho chưa nhận kiện.{" "}
           <Link href="/warehouse/returns" className="font-medium underline underline-offset-2">
             Đối soát đơn hoàn
           </Link>

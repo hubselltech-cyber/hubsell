@@ -28,6 +28,7 @@ import { prisma } from "../lib/prisma";
 import { stockCommittedOn } from "../services/stock-ledger";
 import {
   CHECK_JOB_KEY,
+  SWEEP_JOB_KEY,
   hardMismatch,
   runCommittedCheck,
   runCutoverIfNeeded,
@@ -47,7 +48,7 @@ const CHECK_POLL_MS = 10 * 60 * 1000;
  */
 const CHECK_EARLY_MS = 5 * 60 * 1000;
 
-export const SWEEP_JOB_KEY = "stock-committed-sweep";
+export { SWEEP_JOB_KEY };
 
 function envInt(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];

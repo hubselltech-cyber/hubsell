@@ -15,6 +15,7 @@ import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
 import { collectInvoiceHealth, invoiceSignal, type InvoiceHealth } from "./invoice-health";
+import { collectStockCounterHealth, stockCounterSignal, type StockCounterHealth } from "./stock-committed";
 import { DELIVERY_FAIL_FEATURE } from "../integrations/shopee/delivery-fail";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import {
@@ -169,6 +170,8 @@ export interface WorkerLayer {
   invoice?: InvoiceHealth | null;
   /** Mốc nước quét đơn (lát 3.6). null = không đọc được; vắng mặt ở ảnh chụp trước 15/10/2026. */
   watermark?: WatermarkHealth | null;
+  /** Bộ đếm "đang giữ" của kho (26/11/2026). null = không đọc được; vắng mặt ở ảnh chụp trước ngày này. */
+  stockCounter?: StockCounterHealth | null;
 }
 
 export interface InfraLayer {
@@ -350,7 +353,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không tính là "trễ quét"
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, adsAuthDisconnected24h, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark, adsBackingOff] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, adsAuthDisconnected24h, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark, adsBackingOff, stockCounter] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -400,6 +403,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
       safe<InvoiceHealth | null>("invoice.health", collectInvoiceHealth(new Date(now)), null),
       safe<WatermarkHealth | null>("channel.watermark", collectWatermarkHealth(), null),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, adsBackoffUntil: { gt: new Date(now) } } }), 0),
+      safe<StockCounterHealth | null>("stock.counter", collectStockCounterHealth(new Date(now)), null),
     ]);
   const d24 = now - DAY_MS;
   // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
@@ -441,6 +445,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     inboxOldestMin: inbox[0]?.oldest ? Math.round((now - inbox[0].oldest.getTime()) / 60000) : null,
     invoice,
     watermark,
+    stockCounter,
   };
 }
 
@@ -662,6 +667,8 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   );
   push("worker.durableQueue", "Hàng đợi bền", ...durableQueueSignal(w));
   push("worker.invoice", "Hóa đơn", ...invoiceSignal(w.invoice ?? null));
+  // Ảnh chụp trước 26/11/2026 không có trường này → không vẽ dấu hiệu (tránh đỏ oan khi xem lịch sử).
+  if (w.stockCounter !== undefined) push("worker.stockCounter", "Bộ đếm kho (hàng đang giữ)", ...stockCounterSignal(w.stockCounter));
   push(
     "worker.breaker",
     "Cầu dao API sàn",

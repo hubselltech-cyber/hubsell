@@ -2146,6 +2146,10 @@ model InventoryLog {
   heldAfter      Int?
   /// "Tồn kho" (hàng trong kho) của SKU ngay sau bút toán = sổ + đang giữ cho đơn đã chốt + ô không bán.
   onHandAfter    Int?
+  /// CHỦ SHOP của dòng (= Product.userId), 26/11/2026. Trigger "inventory_log_owner_trg" tự điền lúc
+  /// INSERT nên nơi ghi KHÔNG phải truyền. Mọi câu "nhật ký của shop này" lọc theo cột này, không
+  /// lọc qua quan hệ product (bẫy đi lùi chỉ mục ngày của cả bảng — docs kho chuẩn quốc tế mục 20).
+  ownerId        String?
   createdAt      DateTime         @default(now())
 
   product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -2156,6 +2160,11 @@ model InventoryLog {
   @@index([productId])
   @@index([orderId])
   @@index([createdAt])
+  @@index([ownerId, createdAt, id], map: "InventoryLog_owner_created_idx")
+  // Hai chi muc BAN PHAN theo chu shop (migration 20261126120000_inventory_log_owner):
+  //   InventoryLog_owner_manual_idx  (ownerId, createdAt) WHERE orderId IS NULL
+  //   InventoryLog_owner_restore_idx (ownerId, createdAt) WHERE orderId IS NOT NULL
+  //                                  AND changeQuantity > 0 AND (kind IS NULL OR kind = 'RETURN')
   // Chi muc BAN PHAN "InventoryLog_manual_idx" (productId, createdAt) WHERE orderId IS NULL: dong
   // nhat ky TAY cho bao cao "Hang hong, mat & chenh kiem ke" (lat 4, 20/11/2026). Prisma khong khai
   // duoc chi muc ban phan nen nam trong migration 20261120100000_stock_on_hand_model.

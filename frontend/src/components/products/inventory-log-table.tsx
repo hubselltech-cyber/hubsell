@@ -422,7 +422,16 @@ export function InventoryLogTable({
               ))}
             </NativeSelect>
             <span className="text-sm text-muted-foreground">
-              dòng/trang · {formatNumber(data?.total ?? 0)} dòng · trang {page}/{Math.max(1, pageCount)}
+              dòng/trang ·{" "}
+              {data?.totalCapped ? (
+                // Máy chủ chỉ lật tới 10.000 dòng gần nhất của bộ lọc (trần đếm, 26/11/2026) — nói rõ cách xem cũ hơn.
+                <span title="Bảng lật tới 10.000 dòng gần nhất. Muốn xem cũ hơn, chọn khoảng ngày hoặc tìm theo mã.">
+                  {formatNumber(data.total)}+ dòng
+                </span>
+              ) : (
+                <>{formatNumber(data?.total ?? 0)} dòng</>
+              )}{" "}
+              · trang {page}/{Math.max(1, pageCount)}
             </span>
           </div>
           <div className="flex gap-2">

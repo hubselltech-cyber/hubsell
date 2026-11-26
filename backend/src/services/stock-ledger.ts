@@ -65,7 +65,24 @@ export interface StockSettings {
   restockOnReturn: RestockOnReturn;
 }
 
-/** Đọc cài đặt kho của một chủ shop. Giá trị lạ trong database → coi như mặc định cũ. */
+/**
+ * Cách hiển thị của shop CHƯA có dòng cài đặt (đa số shop). Dòng có sẵn thì theo đúng giá trị của
+ * dòng — muốn cho MỘT shop về cách cũ: đặt stockModel = 'LEGACY' ở dòng của shop đó.
+ */
+export const DEFAULT_STOCK_MODEL: StockModel = "LEGACY";
+
+/**
+ * CÔNG TẮC KHẨN cho cách hiển thị (26/11/2026): STOCK_MODEL_FORCE=LEGACY trên dịch vụ web → MỌI shop
+ * về cách cũ ngay sau khi tiến trình khởi động lại, không cần deploy mã, không đụng database. Dùng
+ * khi bộ đếm "đang giữ" bị lệch (HQ Sức khỏe đỏ dấu hiệu "Bộ đếm kho") và chưa kịp tìm nguyên nhân.
+ * Chỉ nhận đúng hai giá trị LEGACY | ON_HAND; giá trị khác coi như không đặt.
+ */
+export function forcedStockModel(): StockModel | null {
+  const v = process.env.STOCK_MODEL_FORCE;
+  return v === "LEGACY" || v === "ON_HAND" ? v : null;
+}
+
+/** Đọc cài đặt kho của một chủ shop. Giá trị lạ trong database → coi như cách cũ. */
 export async function getStockSettings(
   db: Pick<Tx, "shopSyncSetting">,
   userId: string
@@ -74,8 +91,19 @@ export async function getStockSettings(
     where: { userId },
     select: { stockModel: true, restockOnReturn: true },
   });
+  return resolveStockSettings(row);
+}
+
+/**
+ * Từ dòng cài đặt (hoặc null = shop chưa có dòng) ra hai cài đặt đang ÁP DỤNG. MỘT chỗ quyết định
+ * cho mọi nơi đọc — route nào đã có sẵn dòng cài đặt trong tay thì gọi thẳng hàm này, đừng tự so chuỗi.
+ */
+export function resolveStockSettings(
+  row: { stockModel?: string | null; restockOnReturn?: string | null } | null | undefined
+): StockSettings {
+  const own: StockModel = row ? (row.stockModel === "ON_HAND" ? "ON_HAND" : "LEGACY") : DEFAULT_STOCK_MODEL;
   return {
-    stockModel: row?.stockModel === "ON_HAND" ? "ON_HAND" : "LEGACY",
+    stockModel: forcedStockModel() ?? own,
     restockOnReturn: row?.restockOnReturn === "ON_RECEIVE" ? "ON_RECEIVE" : "ON_CANCEL",
   };
 }
