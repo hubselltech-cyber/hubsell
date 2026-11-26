@@ -5,6 +5,48 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 26/11 ~08:10–09:10 — Kho chuẩn quốc tế: bịt 4 lỗ quy mô + đèn báo (`f107cbb6`) rồi BẬT cho MỌI shop (`31585e23`)
+
+Anh: "Việc anh dùng thử mấy hôm anh thấy đã ok rồi nên bật cho tất cả các shop luôn. Chủ yếu phần kiểm soát các lỗi để tránh việc sập hệ thống như hôm qua là rất quan trọng… Làm và test cẩn thận". Chi tiết: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 21.
+
+- **Pha A lên prod 08:58:** `InventoryLog.ownerId` + trigger tự điền + 3 chỉ mục theo chủ shop (Nhật ký kho trang đầu 37.879 khối → 5 khối; báo cáo shop lớn nhất 172.107 → 6.720 khối); dòng "chưa về kho" đi từ dòng cộng lại của shop trong 30 ngày, tách thành `/api/products/not-back-yet` (2.518 → 8 khối); shop cách mới bỏ câu "Chờ giao"; tra mã quét 3 câu mỗi câu một chỉ mục + khớp lỏng có trần; HQ Sức khỏe thêm dấu hiệu "Bộ đếm kho"; công tắc khẩn `STOCK_MODEL_FORCE=LEGACY`.
+- **Prod chuẩn bị tay trước khi push:** thêm cột + trigger, điền 146.454 dòng cũ theo lô với `session_replication_role = replica` (không kích trigger sổ cái), 3 chỉ mục CONCURRENTLY đều hợp lệ.
+- **Bật 09:06:** mặc định trong mã + mặc định cột sang `ON_HAND`, 3 dòng `LEGACY` chuyển theo. Trước và sau khi bật bộ đếm khớp (683 = 683, 684 = 684, lệch 0).
+- **Test:** `stock-scale.test.ts` 19 ca, `stock-counter-health.test.ts` 10 ca; cả bộ 3.047 qua, 21 đỏ có sẵn (đã so với mã gốc), không ca đỏ mới. Màn local đã nhìn.
+- **⏳ Còn lại:** `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"` lúc 03:00–05:00 (chưa làm); app 1.4.3 chưa có cách hiển thị mới (không sai dữ liệu); pha C chưa làm; chưa nhìn màn prod / HQ (không đăng nhập); hai số tự chọn 30 ngày và 60 ngày / 20.000 đơn chờ anh xem.
+
+## Phiên 26/11 ~08:00 — Kho chuẩn quốc tế: rà lại trước khi MỞ cho shop khách (chỉ đọc mã + prod) — đã trình, anh chốt làm hết (mục trên)
+
+Anh: "có thể làm lát 2 được rồi. Em kiểm tra lại phương án rồi trình, đặc biệt mô hình lớn, tránh lặp lại lỗi nghẽn". Chi tiết + số đo: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 20. CHƯA code, không sửa gì trên prod.
+
+- Bốn lỗ phải bịt trước khi mở rộng: (1) Nhật ký kho đi lùi chỉ mục ngày của CẢ bảng rồi mới lọc shop (22.453 dòng / 37.879 khối cho 20 dòng; đúng dạng câu danh sách đơn 25/11) → cần cột chủ shop trên `InventoryLog`; (2) dòng "N sản phẩm chưa về kho" duyệt hết đơn Chờ hàng về của shop mỗi lượt tải Tổng kho (385 ms / 2.518 khối để ra 0; tập này chỉ tăng, 19.772 đơn); (3) shop `ON_HAND` vẫn chạy câu "Chờ giao" không dùng tới; (4) quét mã kiện hoàn đọc mọi đơn của gian vì `Order_returnTrackingCode_idx` còn hỏng + khớp lỏng không chỉ mục (mới EXPLAIN, chưa chạy).
+- Thiếu đèn báo khi bộ đếm lệch / đối chiếu ngừng: phải có trước khi khách nhìn thấy bộ đếm.
+- Đề xuất thứ tự: A bịt lỗ + đèn báo → B mobile ra bản rồi bật 2–3 shop tình nguyện, theo dõi 7 ngày → C lối thoát "kiện không về" rồi mời `ON_RECEIVE` → D mở mọi shop.
+- ⏳ Anh: duyệt thứ tự; N ngày (em tạm đề xuất 30, tự chọn); shop chạy thử; kênh đèn báo.
+
+## Phiên 26/11 ~07:45 — Kho chuẩn quốc tế: lịch soi đối chiếu tự chạy (chỉ đọc prod) — ĐẠT, chuỗi vẫn 7/7
+
+- Lịch `kho-chuan-quoc-te-soi-doi-chieu` chạy ngoài khoảng 13–19/11. Lần đối chiếu gần nhất vẫn là 25/11 21:12 (cách 11 giờ, đã ghi ở docs 19.3): lệch cứng 0, 371 = 371 = 371, 348 đơn giữ, hủy còn giữ 0. Chưa có lần mới (lần kế ~21:12 tối 26/11).
+- Số sống: 589 đơn đang giữ, bộ đếm 641, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0.
+- Đã ghi một dòng ở `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 13.12. Không sửa gì trên prod, không commit.
+- ⏳ Anh: tắt lịch này (em không tắt được bằng công cụ); việc chờ anh vẫn là mục 19.3 (bật ON_HAND 2–3 shop tình nguyện, mobile ra bản trước).
+
+## Phiên 26/11 ~00:45–01:15 — Video đóng hàng: MỞ CHO KHÁCH bản web (`ab743625`) + xóa thật đã có khóa R2 trên worker
+
+- Anh: "Bây giờ bật xóa thật và mở ra cho khách hàng dùng bản web luôn".
+- **Xóa thật:** tạo nhóm biến Render `hubsell-r2-video` (4 biến `R2_*` chép từ web, em không đọc / gõ giá trị) → gắn vào worker →
+  nhật ký worker: "XÓA THẬT video tới hạn". `PACK_VIDEO_ACCOUNT_PURGE=1` đã thêm vào web.
+- **Mở cổng:** `PACK_VIDEO_GATE` mặc định `all` = mọi chủ shop còn hạn gói (dùng thử, ân hạn, tài khoản cũ đều tính) + nhân viên theo
+  quyền; `pilot` / `off` để lùi / tắt gấp. Chủ shop bấm đồng ý một lần (sổ `TermsAcceptance`, nguồn `pack_video`, không migration);
+  chưa đồng ý thì API trả 403 `CONSENT_REQUIRED`. Landing chuyển sang "đã mở" (`35e48c3`).
+- Sửa gốc ca test "HẾT GIỜ" chập chờn từ 19/11 (lệch đồng hồ Node ↔ Postgres, lỗi bài test). Bộ rộng 1.273 đạt / 0 đỏ.
+- **⏳ Sáng 26/11 (anh dặn 01:20): làm phần HQ theo dõi R2** — anh lo "nếu vượt còn phải mua thêm dung lượng". Thiết kế sơ bộ ở docs mục 23
+  ghi chú việc 4 (R2 không có trần, vượt 10 GB miễn phí thì tự tính tiền vào thẻ Cloudflare; cần canh GB đang lưu → tiền tháng, thẻ còn
+  trừ được không, luật xóa có xóa thật không). Chưa thiết kế chi tiết, chưa code.
+- Chưa làm: đo câu tab Đơn hoàn trên shop lớn (B2); `indexnow.mjs`; `REINDEX` chỉ mục mã vận đơn chiều hoàn; tách bucket prod; giá giờ
+  quay vào Điều khoản / Bảng giá. Chi tiết docs/VIDEO-DONG-HANG-THIET-KE.md mục 35 (kết quả lượt xóa thật đầu tiên ghi ở 35.4).
+
+---
 ## Phiên 26/11 rạng sáng — Video đóng hàng, PHẦN XÓA: chủ shop tự xóa LÊN PROD · chuông ĐÃ GỠ · lưới R2 60 ngày · bật xóa thật MỚI MỘT NỬA (worker thiếu khóa R2)
 
 - Anh: "Tiếp tục làm phần còn dở và chưa làm" (sau khi hỏi phần xóa đang ở bước nào). Công tắc xóa thật VẪN TẮT.

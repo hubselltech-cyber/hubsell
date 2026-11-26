@@ -600,6 +600,7 @@ Bảng `maintenance_jobs` chỉ giữ lần đối chiếu cuối, nên mỗi ng
 | 17/11 (soi 16:10) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 71 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~44 giờ sau khi giãn nhịp 1 giờ/lần vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 276 đơn đang giữ, bộ đếm 210, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0. Còn 2 lượt (18, 19/11) mà cần thêm 4 lần → chuỗi 7/7 KHÔNG thể đủ trong lịch này. |
 | 18/11 (soi tối) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 99 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~3 ngày sau giãn nhịp vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 216 đơn đang giữ, bộ đếm 140, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0. Còn 1 lượt (19/11). |
 | 19/11 (soi ~18:00) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi DỪNG ở 3/7 — LƯỢT CUỐI của lịch: dòng đối chiếu vẫn là lần 14/11, cách 121 giờ (> 26). Đã biết (13.13 + 13.14), không phải tin mới; ~4 ngày sau giãn nhịp vẫn chưa có lần đối chiếu nào — CHƯA đọc log Render. Số sống lúc soi: 212 đơn đang giữ, bộ đếm 133, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0 → bộ đếm chưa có dấu hiệu sai. KHÔNG đủ điều kiện sang lát 2; việc kế = anh quyết mục 13.14 (thiết kế lại lát 1, chuỗi 7 lần đếm lại). |
+| 26/11 (soi ~07:45, lịch chạy NGOÀI khoảng 13–19/11) | 25/11 21:12 (bản MỘT CỘT lên prod 19/11, mục 14.12; cách 11 giờ) | 0 | 371 = 371 | 0 | 348 | 0 | 0 | 0 | ĐẠT, nhưng KHÔNG phải lần mới: đây đúng là lần đối chiếu đã ghi ở mục 19.3 (chuỗi tự đếm của worker = 7/7 từ 25/11), lần kế ~21:12 tối nay. Dòng này thuộc chuỗi MỚI của bản một cột, không nối với chuỗi 3/7 của bản hai cột ở trên. Số sống lúc soi: 589 đơn đang giữ, bộ đếm 641, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0. Đơn giữ lâu nhất 128 giờ. Câu 2 của lịch còn viết theo chỉ mục cũ `Order_stock_committed_idx` (đã bỏ 19/11); em EXPLAIN trước, máy đi qua `Order_stock_held_idx` (ước 519 dòng) rồi mới chạy. Lát 2–5 đã lên prod 19/11 nên câu "đủ điều kiện sang lát 2" của lịch không còn nghĩa; việc đang chờ anh là mục 19.3 (bật ON_HAND 2–3 shop tình nguyện). |
 
 Đủ 7 dòng liên tiếp lệch cứng 0 (dòng 12/11 tính là dòng 1) → trình anh lát 2. Có dòng lệch cứng khác 0 → dừng đếm, soi nguyên nhân trước, KHÔNG tự sửa số trên prod.
 
@@ -1079,6 +1080,122 @@ Mọi số đọc bằng câu SELECT / EXPLAIN của câu SELECT qua Supabase SQ
 - Sáu lần đối chiếu ở giữa (20 → 24/11) em không đọc được từng lần (bảng chỉ giữ lần cuối); căn cứ là `streak` = 7 và `lastMismatchAt` trống.
 
 **Việc kế, CHỜ anh:** bật ON_HAND cho 2–3 shop tình nguyện (thứ tự mục 8). Còn thiếu: app mobile ra bản trước khi bật cho shop có nhân viên dùng app (OTA cho khách 1.4.3 phải dựng từ nhánh `ota/1.4.3-ten-khong-cat`); xem tay 5 dòng nhật ký nêu trên.
+
+## 20. Rà lại trước khi mở cho shop khách (26/11/2026, anh: "có thể làm lát 2 được rồi, em kiểm tra lại phương án rồi trình, đặc biệt mô hình lớn, tránh lặp lại lỗi nghẽn") — ĐỀ XUẤT, chờ anh duyệt, CHƯA code
+
+**Em hiểu "làm lát 2" là:** mã lát 2 → 5 đã nằm trên prod từ 19/11 sau hai công tắc theo shop; việc còn lại là MỞ cho shop khách (bật `ON_HAND`, mời dùng `ON_RECEIVE`). Nếu anh muốn nói việc khác thì phần đo dưới đây vẫn dùng được.
+
+**Cách rà:** đọc lại mã mọi đường chạy khi hai công tắc bật (`order-stock.ts`, `stock-committed.ts` + worker, `stock-awaiting-ship.ts`, `inventory-stats.ts`, `routes/products.ts`, `routes/inventory.ts`, `routes/stocktakes.ts`, `routes/packing.ts`, `routes/orders.ts` phần hàng hoàn), rồi đo trên prod bằng SELECT / EXPLAIN (26/11 ~08:00, Supabase SQL Editor). Thước đo là bốn kiểu lỗi đã gây nghẽn: câu đi dọc chỉ mục của cả bảng rồi mới lọc shop (danh sách đơn 25/11); câu lớn dần theo thời gian (quét bù 15/11); nạp nhiều vào RAM web (OOM 25/11); giao dịch dài giữ kết nối (P2028).
+
+**Cỡ hôm nay:** bảng đơn 1.177 MB / 1,12 triệu dòng; `InventoryLog` 64 MB / 143.954 dòng; `Product` 66 MB / 75.098 dòng; 51 shop có sản phẩm kho; 24 giờ qua 2.606 dòng nhật ký, 1.141 đơn rời kho. Phần kho hôm nay NHỎ nên mọi câu dưới đây còn rẻ; cái em soi là câu nào lớn theo cả hệ thống hoặc theo thời gian.
+
+### 20.1. Bốn lỗ phải bịt TRƯỚC khi mở rộng (đều đã đo)
+
+| # | Chỗ | Số đo prod | Vì sao lớn dần | Hướng sửa (thiết kế, không vá ngưỡng) |
+|---|---|---|---|---|
+| 1 | **Nhật ký kho** (`GET /api/inventory/logs`, `routes/inventory.ts:1021–1077`) | Trang đầu, shop 5.702 mã: đi lùi `InventoryLog_createdAt_idx` qua 22.453 dòng của MỌI shop, 37.879 khối, 316 ms để lấy 20 dòng. Shop 4.202 mã: 23.585 dòng, 38.922 khối. Câu đếm, shop 43.912 mã: quét tuần tự cả `InventoryLog` + `Product`, 9.398 khối, 260 ms. Shop 18 mã thì máy đi đúng (9 khối). | Đúng dạng câu danh sách đơn 25/11: lọc qua quan hệ `product: { userId }` + `orderBy createdAt` + `take`. `InventoryLog` không có cột chủ shop. Chi phí theo số dòng nhật ký của CẢ hệ thống; từ 19/11 mỗi đơn có sản phẩm kho ghi thêm dòng "Xuất cho đơn" nên bảng lớn nhanh gấp đôi | Thêm cột `ownerId` vào `InventoryLog` (chỉ 4 chỗ ghi: 3 trong `stock-ledger.ts`, 1 câu INSERT thô trong `stock-committed.ts`), điền dòng cũ theo lô, chỉ mục `(ownerId, createdAt, id)`; đổi danh sách, câu đếm và báo cáo "Hàng hỏng, mất & chênh kiểm kê" (652 ms / 172.107 khối cho shop 43.912 mã, mục 19.1) sang lọc theo cột này. Bảng mới 64 MB nên làm bây giờ là rẻ nhất |
+| 2 | **Dòng "N sản phẩm chưa về kho"** trên Tổng kho (`restockedNotBackYet`, chạy ở MỖI lượt tải bảng của shop `ON_HAND` + `ON_CANCEL`, tức gần như mọi shop sẽ bật) | Shop nhiều đơn Chờ hàng về nhất (3.206 đơn): 385 ms, 2.518 khối (642 đọc đĩa) để trả về 0. Cả hệ thống 19.772 đơn Chờ hàng về / 198 shop (19/11: 16.952), 14.400 đơn quá 14 ngày, cũ nhất 14/09; chỉ 296 đơn thật sự thuộc phép tính | Tập Chờ hàng về KHÔNG BAO GIỜ nhỏ lại ở shop không quét nhận hoàn (đa số), tăng ~400 đơn / ngày. Câu duyệt hết tập đó của shop rồi mới lọc "đã cộng sổ" | (a) chỉ mục một phần đúng tập cần đọc: `(channelId, returnRequestedAt) WHERE returnStatus = 'AWAITING' AND stockRestoredAt IS NOT NULL`; (b) chỉ tính đơn hủy trong N ngày gần nhất, vì con số cộng dồn mãi cũng vô nghĩa với khách; (c) tách khỏi câu danh sách, gọi một lần khi mở trang. N chưa có căn cứ → câu hỏi 2 ở 20.5 |
+| 3 | **Tổng kho của shop `ON_HAND` vẫn chạy câu "Chờ giao"** (`awaitingShipByProduct`, `routes/products.ts:375`) dù màn đã đọc bộ đếm, không dùng kết quả | Shop 451 đơn chờ giao: 134 ms, 1.797 khối mỗi lượt tải bảng | Theo số đơn chờ giao của shop. Khách 12.000 đơn / ngày ≈ 25.000 đơn chờ → ước ~100.000 khối mỗi lượt (em nhân từ số trên, chưa đo) | Shop `ON_HAND` bỏ câu này (Excel của shop `ON_HAND` đã không có cột Chờ giao, `lib/excel.ts:154`). Hệ quả đáng nhớ: shop LỚN nên vào `ON_HAND` sớm, vì bộ đếm đọc O(1) còn cột Chờ giao của cách cũ tính lại từ đơn mỗi lượt |
+| 4 | **Quét mã kiện hoàn** (`GET /api/orders/lookup`, `routes/orders.ts:1616–1642`) — thao tác chính của chế độ `ON_RECEIVE` | Mới EXPLAIN, CHƯA chạy thật: máy đi `Order_channelId_idx`, tức đọc MỌI đơn của gian rồi lọc mã. Shop nhiều đơn Chờ hàng về nhất có 136.724 đơn trên một gian. `Order_returnTrackingCode_idx` vẫn KHÔNG HỢP LỆ trên prod (984 kB) | Khớp chính xác không gom được ba chỉ mục vì một cái hỏng. Khớp lỏng (`contains`) không có chỉ mục nào, mỗi lần quét trượt là đọc hết đơn của shop | REINDEX CONCURRENTLY chỉ mục hỏng (việc đã treo từ 25/11, làm 03:00–05:00 khi Disk IO đã hồi); khớp lỏng chỉ tìm trong đơn N ngày gần nhất qua `Order_channelId_createdAt_idx`. EXPLAIN lại sau khi sửa |
+
+### 20.2. Thiếu đèn báo — phải có trước khi khách nhìn thấy bộ đếm
+
+Shop `ON_HAND` cộng thẳng bộ đếm "đang giữ" vào Tồn kho. Bộ đếm lệch = khách thấy Tồn kho sai. Hôm nay lệch chỉ nằm ở một dòng `maintenance_jobs`, không ai được báo (lịch soi đã hết; lần trước lỗi quét bù chạy 3 ngày không đèn nào đỏ, mục 13.14 lỗ 3). Đề xuất: một phép kiểm đọc hai dòng `stock-committed-check` và `stock-committed-sweep`, báo anh khi lệch cứng khác 0, đối chiếu quá 26 giờ chưa chạy, hoặc quét bù lỗi 3 nhịp liền. Kênh báo: câu hỏi 4.
+
+### 20.3. Đã rà, KHÔNG chặn việc mở
+
+- **Quét bù** (1 giờ / lần): 48 ms qua `Order_stock_held_idx` (đo 25/11), chi phí theo cỡ tập đang giữ (hôm nay 589 đơn). Mốc xem lại 200.000 đơn giữ đã ghi ở 14.5.
+- **Đối chiếu** (1 lần / ngày): 1,36 giây, 37.473 khối (6.368 đọc đĩa). Nhánh so với "Chờ giao" bỏ được khi không còn shop cách cũ.
+- **Đường ghi theo từng đơn** (giữ, rời kho, hủy, nhận hoàn): khóa dòng đơn rồi khóa sản phẩm theo thứ tự mã cố định, mỗi đơn vài câu qua `InventoryLog_orderId_idx`. Không vòng lặp theo shop, không khóa trong RAM.
+- **Thống kê Tổng kho, phiếu kiểm kê, Excel:** một câu gom theo `userId` hoặc có trần 2.000 dòng / trang 100; không nạp cả kho vào RAM web.
+- **Biên bản bàn giao:** tối đa 500 đơn trong MỘT giao dịch, hạn mặc định 5 giây. Lúc database nghẽn như tối 25/11 sẽ lỗi (khách bấm lại được, không sai số). CHƯA đo thời gian thật của lô 500 đơn; đo ở pha chạy thử.
+- **Nhập kho hàng hoàn cả lô:** tối đa 100 đơn, mỗi đơn một giao dịch nối tiếp trong một lượt gọi. Chấp nhận ở cỡ này; shop vài trăm kiện hoàn / ngày phải bấm nhiều lượt.
+- **Kiểm kê theo phiên:** trang tự tải lại TOÀN BỘ dòng 15 giây một lần (tối đa 2.000 dòng). Chưa ai mở phiên nào. Không chặn, nhưng sửa thành "chỉ lấy dòng đổi" trước khi giới thiệu tính năng này, vì băng thông Render đang là khoản phải trả.
+
+### 20.4. Thứ tự làm đề xuất
+
+| Pha | Việc | Khách thấy gì | Điều kiện qua pha |
+|---|---|---|---|
+| A | Bịt 4 lỗ ở 20.1 + đèn báo 20.2. Mỗi câu sửa có test so kết quả cũ / mới và EXPLAIN trên prod trước / sau. Chỉ mục trên bảng đơn dựng tay CONCURRENTLY 03:00–05:00 | không | số khối mỗi câu không còn phụ thuộc shop khác / tuổi dữ liệu |
+| B | App mobile ra bản (mục 19 bước 4), rồi bật `ON_HAND` cho 2–3 shop tình nguyện | Tồn kho = hàng trong kho | 7 ngày: chuỗi đối chiếu không đứt, không câu kho nào lọt nhóm đọc đĩa nhiều, shop không báo lệch |
+| C | Lối thoát "kiện không về" cho đơn Chờ hàng về quá N ngày, rồi mới MỜI shop đã quét nhận hoàn dùng `ON_RECEIVE` | tồn về lúc kho nhận kiện | một vòng hủy sau giao → nhận kiện thật trên prod |
+| D | Mở `ON_HAND` cho mọi shop, shop mới mặc định `ON_HAND`; bỏ câu "Chờ giao" cách cũ và nhánh so sánh của đối chiếu | đổi cho mọi shop | anh quyết sau pha B + C |
+
+Tắt lại ở mọi pha: `stockModel = 'LEGACY'` theo từng shop (mục 19 bước 6).
+
+**Lưu ý cho khách 12.000 đơn / ngày (ghi chú 13/11):** nối gian SAU pha A, và vào thẳng `ON_HAND`; đừng để shop này chạy cách cũ vì cột Chờ giao của cách cũ là câu nặng nhất theo số đơn của một shop.
+
+### 20.5. Chờ anh
+
+1. Duyệt thứ tự A → B → C → D, hay anh muốn mở trước rồi sửa sau? (Em đề nghị A trước: bốn lỗ đều rẻ khi bảng còn nhỏ, và đều là thứ sẽ lớn theo đúng số khách mình sắp thêm.)
+2. N ngày cho dòng "chưa về kho" và lối thoát "kiện không về". Em tạm đề xuất 30, là số TỰ CHỌN, chưa có căn cứ; muốn có căn cứ thì đo thời gian kiện quay đầu của các shop đã quét (chưa đo).
+3. Shop nào chạy thử pha B. Em chưa hỏi shop nào.
+4. Đèn báo gửi về đâu (thư, Telegram, hay chuông của tài khoản admin).
+
+### 20.6. Chưa kiểm
+
+- Câu quét mã kiện hoàn mới xem kế hoạch, chưa chạy thật (sợ đọc cả đơn của shop lúc Disk IO chưa chắc hồi).
+- Câu Nhật ký kho em viết lại theo dạng Prisma sinh ra (LEFT JOIN + lọc `userId`), không chép nguyên văn từ log.
+- Read IOPS giờ cao điểm sau bản sửa danh sách đơn 25/11 (hẹn xem chiều tối 26/11) — dựng chỉ mục ở pha A phải đợi số này.
+- Thời gian thật của Biên bản bàn giao 500 đơn; hai máy cùng đếm một phiên kiểm kê; một vòng `ON_RECEIVE` có hàng thật.
+
+## 21. ĐÃ LÀM 26/11/2026 sáng — bịt 4 lỗ + đèn báo, rồi BẬT cho mọi shop (anh: "Việc anh dùng thử mấy hôm anh thấy đã ok rồi nên bật cho tất cả các shop luôn. Chủ yếu phần kiểm soát các lỗi để tránh việc sập hệ thống như hôm qua là rất quan trọng… cứ vậy làm hết từng phần… Làm và test cẩn thận")
+
+Anh bỏ pha chạy thử 2–3 shop (pha B ở 20.4) và chốt bật thẳng cho mọi shop. Em làm theo thứ tự: bịt lỗ (pha A) lên prod và đo lại → mới bật.
+
+### 21.1. Pha A — commit `f107cbb6`, lên prod 08:58
+
+| Lỗ (mục 20.1) | Đã làm | Số đo prod trước → sau |
+|---|---|---|
+| 1. Nhật ký kho | `InventoryLog.ownerId` + trigger `inventory_log_owner_trg` (BEFORE INSERT, tự điền từ `Product.userId` — nơi ghi không phải truyền, bản cũ đang chạy lúc deploy cũng không tạo được dòng thiếu chủ). Danh sách, câu đếm, báo cáo "Hàng hỏng, mất & chênh kiểm kê" lọc theo cột này. Câu đếm có TRẦN 10.000 (`LOG_COUNT_CAP`), màn ghi "10.000+ dòng" kèm chú thích cách xem cũ hơn | Trang đầu, shop 5.702 mã: 37.879 khối / 316 ms → **5 khối / 0,2 ms**. Câu đếm, shop 43.912 mã: 9.398 khối → 119 khối. Báo cáo, shop 43.912 mã: 172.107 khối / 652 ms → 6.720 khối / 114 ms |
+| 2. Dòng "chưa về kho" | Viết lại `restockedNotBackYet`: đi từ dòng CỘNG LẠI của chính shop trong 30 ngày (`NOT_BACK_WINDOW_DAYS`, số tự chọn) qua chỉ mục một phần `InventoryLog_owner_restore_idx`, rồi tra đơn theo khóa chính. Tách thành `GET /api/products/not-back-yet`, màn gọi một lần lúc mở trang (nhớ 5 phút). Câu chữ thêm "trong 30 ngày gần đây" | Shop 3.206 đơn Chờ hàng về: 2.518 khối / 385 ms → **8 khối / 0,4 ms**. Shop nhiều dòng cộng lại nhất (1.066 dòng / 30 ngày): 4.514 khối, 787 ms lúc đĩa nguội |
+| 3. Câu "Chờ giao" thừa | Shop `ON_HAND` không chạy `awaitingShipByProduct` nữa | bớt hẳn một câu mỗi lượt tải Tổng kho |
+| 4. Quét mã kiện hoàn | Khớp chính xác = 3 câu riêng theo thứ tự mã vận đơn chiều đi → mã đơn → mã vận đơn chiều hoàn, lọc gian bằng danh sách mã gian. Khớp lỏng chỉ đọc đơn tạo trong 60 ngày, tối đa 20.000 đơn mới nhất mỗi gian (`LOOKUP_LOOSE_DAYS`, `LOOKUP_LOOSE_ROWS`, số tự chọn), thoát ký tự `%` `_` | Mã vận đơn chiều đi: 3 khối; mã đơn: 4 khối (trước: đọc mọi đơn của gian). Khớp lỏng, shop 136.724 đơn: 18.683 khối (12.163 đọc đĩa), 7,4 giây lúc đĩa nguội — có trần, trước đây em ước ~127.000 khối (nhân từ 0,93 khối / đơn, chưa chạy thật). Mã vận đơn chiều hoàn vẫn đọc cả gian cho tới khi dựng lại chỉ mục hỏng (21.5) |
+
+**Đèn báo (mục 20.2):** HQ → Sức khỏe có thêm dấu hiệu "Bộ đếm kho (hàng đang giữ)". ĐỎ khi lần đối chiếu gần nhất có lệch cứng, khi đối chiếu quá 26 giờ chưa chạy / chưa từng chạy, hoặc khi công tắc `STOCK_COMMITTED_OFF` đang bật; VÀNG khi quét bù lỗi 3 nhịp liền. Đọc hai dòng `maintenance_jobs` theo khóa chính (`collectStockCounterHealth`, `stockCounterSignal` trong `services/stock-committed.ts`). Em chọn kênh này vì anh đã chốt 12/09 "không email, không chuông, vượt ngưỡng thì trang tự đỏ". Em CHƯA mở trang HQ trên prod để nhìn dấu hiệu.
+
+**Công tắc khẩn:** env `STOCK_MODEL_FORCE=LEGACY` trên dịch vụ web → mọi shop về cách hiển thị cũ sau khi tiến trình khởi động lại, không deploy mã, không đụng database.
+
+**Chuẩn bị prod bằng tay trước khi push (08:14–08:20, Supabase SQL Editor):**
+
+- `ALTER TABLE "InventoryLog" ADD COLUMN "ownerId" TEXT` (có `lock_timeout` 5 giây), hàm + trigger.
+- Điền 146.454 dòng cũ theo 8 lô 20.000 dòng. Bảng này có trigger sổ cái chạy cả khi UPDATE (`order_ledger_on_inventory_log`), nên mỗi lô chạy trong giao dịch có `SET LOCAL session_replication_role = replica` để KHÔNG kích tính lại sổ của các đơn (cột mới không đổi con số nào của sổ). Kiểm sau: 0 dòng thiếu chủ, 0 dòng sai chủ.
+- Ba chỉ mục `CREATE INDEX CONCURRENTLY`, mỗi cái dưới 2 giây, đều hợp lệ (13.656 kB, 6.320 kB, 208 kB). `ANALYZE "InventoryLog"`.
+- Migration `20261126120000_inventory_log_owner` ghi xong 08:58:42, không rollback; dòng mới sau deploy đều có chủ.
+
+**Test:** `stock-scale.test.ts` 19 ca (trigger điền chủ ở mọi đường ghi; danh sách mới = danh sách lọc kiểu cũ, không lẫn shop khác; trần đếm; "chưa về kho" bản mới = bản cũ trong cửa sổ, bỏ đơn ngoài cửa sổ; shop cách mới không còn số Chờ giao; ba kiểu khớp chính xác, khớp lỏng có cửa sổ + trần, `%` `_` không khớp bừa, shop khác không tra được; mặc định mới; công tắc khẩn), `stock-counter-health.test.ts` 10 ca. Cả bộ backend: 3.045 qua, 21 đỏ; em cất thay đổi và chạy lại đúng 10 tệp có ca đỏ trên mã gốc thì vẫn đỏ nguyên 21 ca đó (sổ cái bẩn và xóa gian trên database local, có từ trước). Màn local (tài khoản thử, shop cách mới): Tổng kho hiện dòng "…trong 30 ngày gần đây…" qua đường gọi riêng, Nhật ký kho tải đủ.
+
+### 21.2. Bật cho mọi shop — commit `31585e23`, lên prod 09:06
+
+- **Cách bật:** shop CHƯA có dòng `shop_sync_settings` (đa số) đọc mặc định trong mã, `DEFAULT_STOCK_MODEL` đổi `LEGACY` → `ON_HAND`. Migration `20261126130000_stock_model_default_on_hand` đổi mặc định của cột và chuyển các dòng đang `LEGACY` sang `ON_HAND` (3 dòng trên prod; các dòng này do mặc định cũ sinh ra lúc khách lưu cài đặt khác, trước ngày này không ai tự chọn được cách cũ). Từ đây `LEGACY` trong một dòng nghĩa là Hubsell cố ý cho shop đó về cách cũ. Một chỗ quyết định cho mọi nơi đọc: `resolveStockSettings` (`services/stock-ledger.ts`).
+- **Trước khi bật (09:00, đọc prod):** đối chiếu tươi bộ đếm 683 = tính lại từ đơn 683, lệch 0 mã, 0 vị trí, 0 mã âm. 51 shop có sản phẩm kho; 20 shop đang có hàng giữ cho đơn (20 shop này thấy cột Tồn kho tăng đúng bằng phần đang giữ).
+- **Sau khi bật (09:07, đọc prod):** migration ghi xong 09:06:24, không rollback; 4 dòng cài đặt đều `ON_HAND` (3 `ON_CANCEL`, 1 `ON_RECEIVE`); mặc định cột là ON_HAND; bộ đếm 684 = 684, lệch 0; nhịp quét bù đầu của worker bản mới 09:00:44 chạy 276 ms, không lỗi. Giao diện trên Vercel đã là bản mới (tệp JS của trang có đường gọi `not-back-yet`).
+- **Đĩa của Supabase 08:07–09:07** (biểu đồ Observability → Database): Read IOPS nền 150–500; gai ~2.000 trong khoảng 2 phút lúc 09:00 và gai ~900 lúc 09:06 là hai lần web + worker khởi động lại sau deploy (kiểu gai đã ghi 25/11); các bước chuẩn bị prod không tạo gai thấy được. Lúc đo Supabase đang treo băng "We are investigating a technical issue", biểu đồ có lúc không vẽ.
+- **Test:** 98 ca của 7 tệp test kho qua; cả bộ backend 3.047 qua, 21 đỏ, đúng 21 ca đỏ có sẵn, không ca đỏ mới. Shop thử của test giờ mang dòng cài đặt `LEGACY` ghi rõ (hơn 60 tệp test viết cho cách cũ); test của cách mới gọi `setStockSettings`.
+
+### 21.3. Lùi lại
+
+| Mức | Cách | Tác dụng |
+|---|---|---|
+| Một shop | đặt `stockModel = 'LEGACY'` ở dòng `shop_sync_settings` của shop đó (chưa có dòng thì INSERT) | màn của shop về cách cũ ngay |
+| Mọi shop, gấp | đặt env `STOCK_MODEL_FORCE=LEGACY` trên dịch vụ web của Render | mọi shop về cách cũ sau khi web khởi động lại; gỡ biến là về cách mới |
+| Bỏ hẳn | revert `31585e23` + đặt lại mặc định cột | như trước 26/11 |
+
+Sổ tồn bán và số đẩy sàn không bị cách hiển thị đụng tới nên lùi không phải chuyển dữ liệu. Riêng Kiểm kê / sửa ô Tồn kho / Excel ghi trong lúc ở cách mới là bút toán thật.
+
+### 21.4. Khách thấy gì từ 09:06
+
+Tổng kho có dải giải thích một lần ("Tồn kho từ nay là hàng thực có trong kho…", bấm Đã hiểu là thôi); cột Tồn kho = sổ + đang giữ + ô không bán; Có thể bán và số đẩy sàn KHÔNG đổi; Nhật ký kho ba ngăn số; Kiểm kê nhanh ghi phần chênh; sửa ô Tồn kho và Excel theo số hàng trong kho. Shop mới đăng ký vào thẳng cách mới.
+
+### 21.5. CÒN LẠI
+
+- **Dựng lại chỉ mục hỏng `Order_returnTrackingCode_idx` — CHƯA làm.** Lệnh: `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"`, quét cả bảng đơn hai lần. Luật đã ghi 25/11: chỉ làm 03:00–05:00, một cái một lần, trước khi chạy không có giao dịch nào quá 30 giây. Em không làm vào buổi sáng. Tới lúc đó, quét mã vận đơn CHIỀU HOÀN vẫn đọc mọi đơn của gian như trước (hai kiểu mã kia đã nhanh).
+- **App mobile:** bản khách 1.4.3 (OTA dựng từ nhánh `ota/1.4.3-ten-khong-cat`) CHƯA có cách hiển thị mới, số "Tồn" trên app thấp hơn web đúng bằng phần đang giữ. Không sai dữ liệu: app chỉ nhập / xuất theo số lượng (`/adjust`, `/adjust-bulk`), không gõ đè tồn. Bản 1.5.0 đã có. Ra OTA cho 1.4.3 là việc gửi tới máy khách, em chưa làm.
+- **Pha C (mời dùng "cộng tồn khi kho nhận kiện" + lối thoát "kiện không về") — chưa làm.** Chế độ này khách vẫn tự bật được ở trang Đối soát đơn hoàn như từ 19/11; em không mời ai. Cửa sổ 30 ngày đã làm cho đống đơn Chờ hàng về không còn ảnh hưởng tốc độ Tổng kho.
+- **Hai con số tự chọn chờ anh xem:** 30 ngày của dòng "chưa về kho"; 60 ngày / 20.000 đơn mỗi gian của khớp lỏng.
+- **Chưa kiểm:** em không đăng nhập tài khoản nào trên prod nên chưa NHÌN màn prod của shop khách và trang HQ Sức khỏe; shop đang đếm dở một phiếu Kiểm kê nhanh đúng lúc chuyển cách (trang tải lại số sổ khi mở lại; em chưa dựng lại ca này); khớp lỏng mới đo một lần trên một shop; kiểm kê theo phiên vẫn tải lại toàn bộ dòng 15 giây một lần (20.3).
+- **Dọn sau:** chỉ mục cũ `InventoryLog_manual_idx` (12.616 kB) không còn câu nào dùng; bỏ là lệnh DROP trên prod, cần lời anh.
+- Lúc mở local để nhìn màn em chạy nhầm cấu hình backend có kèm worker trong khoảng 1 phút rồi dừng; database local, `.env` local không có cấu hình gửi thư, nhật ký không có dòng gửi nào.
 
 ## 12. Nguồn
 
