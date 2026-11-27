@@ -5,13 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 27/11 ~19:50 — Quảng cáo TikTok: khách bấm Loại video trên app bị "TikTok từ chối" 6 lần — gốc là chiến dịch TỰ CHỌN VIDEO — ĐÃ SỬA trên local, CHƯA commit / push
+## Phiên 27/11 ~19:50 — Quảng cáo TikTok: khách bấm Loại video trên app bị "TikTok từ chối" 6 lần — gốc là chiến dịch TỰ CHỌN VIDEO — ĐÃ SỬA, COMMIT + PUSH `7c5a3b4a` 27/11 20:00, ⏳ khách bấm lại xem câu mới
 
 Anh 27/11 (ảnh tab Lịch sử trên app của khách): "khách hàng khi loại video trên app không được. anh test thử với tài khoản của anh thì vẫn được". Chi tiết: [docs/ADS-TIKTOK-GMV-MAX.md](docs/ADS-TIKTOK-GMV-MAX.md) mục 4, gạch đầu dòng "Loại/khôi phục video".
 
 - **Gốc:** câu lỗi sàn trong ảnh — `40002 Cannot operate on product Gmv Max campaign with custom video selection type.` Chiến dịch của khách để chế độ chủ shop tự chọn video (trong ảnh chỉ có 4 video); TikTok chỉ cho loại / khôi phục qua API khi chiến dịch để sàn tự chọn video. Gian nhà toàn chiến dịch sàn tự chọn nên anh thử thì được. Không phải lỗi app, kết nối hay quyền. Căn cứ là câu lỗi của sàn; CHƯA đọc `product_video_specific_type` của chính chiến dịch này qua API (cần token của khách trên prod).
 - **Đã sửa (không gọi thêm sàn, không migration):** `action-log.ts` nhận diện câu lỗi → hiện đúng MỘT câu anh chốt 27/11 ("Khi khách bấm loại hiện lên lỗi đỏ như trên nhưng thay bằng…"): **"TikTok không cho loại video khi chiến dịch chọn video thủ công"** (bản đầu em viết ba câu hướng dẫn, anh rút gọn; em viết hoa đúng "TikTok" như phần còn lại của app); đổi lúc ĐỌC sổ nên 6 dòng cũ của khách và app mobile bản đang phát hành thấy lời mới ngay khi backend lên. `POST /videos/action` trả 409 kèm lời đó thay cho "TikTok từ chối lệnh: <tiếng Anh>". Payload videos thêm `campaign.videoSelectionCustom` + `videoSelectionHelp` → web hiện dải vàng trên trang chiến dịch, không khóa nút. Chuông lệnh tự động bị từ chối với ca này bỏ câu "sẽ thử lại".
 - **Kiểm:** 82 test hai tệp `tiktok-ads*.test.ts` qua (thêm 4 ca), `tsc` backend + frontend sạch. ❌ CHƯA nhìn dải vàng trên trình duyệt (local không có máy giả TikTok Ads để dựng trang chiến dịch); ❌ chưa thử trên app.
+- **✅ COMMIT + PUSH 27/11 20:00 — `7c5a3b4a` (anh: "Commit và push").** Backend web prod `/health` trả đúng bản này lúc 20:04; giao diện Vercel (dải vàng) chưa xác nhận. Chưa có lượt thật sau khi lên: khách mở lại tab Lịch sử / bấm loại sẽ thấy câu mới. 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
 - **Còn hở, chờ anh:** (1) app mobile chưa có dải nhắc trước khi bấm — cần OTA; (2) luật Tự loại thật bật trên chiến dịch tự chọn video sẽ gửi lệnh và bị từ chối mỗi ngày — chưa có ca thật.
 
 ---
