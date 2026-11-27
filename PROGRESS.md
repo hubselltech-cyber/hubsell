@@ -5,6 +5,32 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 27/11 ~20:30 — Thư thông báo Quay video đóng hàng: SOẠN XONG mẫu thư — ĐÃ COMMIT 27/11, chưa push, CHƯA gửi thư nào
+
+Anh 27/11: "Viết cho anh cái bài đăng ra mắt tính năng quay video gói hàng. Mà mình gửi mail chưa em nhỉ?" rồi "Soạn thư".
+
+- **Thư chưa từng gửi:** trước phiên này mã chỉ có một mẫu thư tính năng (app điện thoại 1.4.2), không có mẫu nào cho video đóng hàng. Hộp Đã gửi Zoho và vé `feature-pack-video` trên prod CHƯA kiểm.
+- **Đã viết:** `featurePackVideoEmailHtml` + `sendFeaturePackVideoMail` (`backend/src/services/customer-mails.ts` mục 1f), khóa `pack-video` trong `ANNOUNCE_FEATURES` (vé `feature-pack-video`). Một nút về `/orders/videos`. Giá 2.000 ₫ / giờ, 2 giờ tặng, trần 60 ngày đọc từ hằng số (`config/pack-video.ts`, `lib/pack-video-retention.ts`), không gõ tay. Câu chữ theo landing `/quay-video-dong-hang`: chỉ webcam máy tính, điện thoại "sắp có".
+- **Ảnh:** `frontend/public/guide-assets/pack-video-khung-hinh.png` (864 × 650, 63 KB) = hình VẼ khung video chụp từ landing đang chạy, mã vận đơn bịa. ⛔ Không dùng khung video thật. Ảnh phải lên Vercel trước khi gửi thư (thư chỉ chứa link).
+- **Ảnh 2 (anh: "Thiếu đoạn màn hình cài đặt chọn cam toàn cảnh và cận cảnh ấy em. mở chrome chụp lấy cái ảnh"):** `frontend/public/guide-assets/pack-video-chon-camera.png` (619 × 314, 12 KB) = ô chọn camera trên màn quay của app THẬT (`app.hubsell.vn/orders/videos/record`, Chrome của anh), cả hai camera đang bật; chỉ có tên webcam + khổ hình, không có hình từ camera, không có dữ liệu shop. Phần trống dưới ô đã cắt bỏ (ghép lại mép dưới). Thư thêm một đoạn "Có hai webcam thì chọn thêm camera cận cảnh… Không bắt buộc". Chụp xong em đã tắt camera, không bấm Bắt đầu quay; ô chọn camera toàn cảnh trên máy anh có thể còn nhớ "USB Video".
+- **Kiểm:** tsc backend sạch; `customer-mails.test.ts` + `feature-announce-drip.test.ts` 30 / 30 (thêm 6 ca). Đã chụp bản xem trước ở 640 và 380 px: hai ảnh nạp, không tràn ngang. ❌ Chưa gửi thư mẫu thật, chưa xem trong Gmail / chế độ tối của hộp thư.
+- **CHƯA làm, chờ anh:** (1) duyệt chữ; (2) push (anh 27/11: "Commit the working tree changes" — mới commit); (3) cách gửi — worker nhỏ giọt `feature-announce-drip.ts` VẪN trỏ `mobile-1-4-2` (hạn 30/11), em không đổi vì đổi là 9h hôm sau máy tự gửi 25 thư / ngày; (4) ai nhận — cơ chế hiện có gửi MỌI chủ shop có email kể cả hết hạn gói, trong khi tính năng chỉ mở cho tài khoản còn hạn.
+- Bài đăng fanpage: nháp trong chat, không lưu tệp (lệ bài đăng một lần).
+
+---
+## Phiên 27/11 ~21:00 — Kiểm ticket Shopee + rà thông báo Open Platform 30/10 → 27/11 — CHỈ ĐỌC, không sửa mã; ticket tiền ưu đãi anh chốt "Để tự đóng"
+
+Anh 27/11: "những cái ticket mình gửi shopee, em vào kiểm tra 1 lượt và cả các thay đổi phía shopee gần đây nữa". Em đọc My Enquiries + trang Announcement bằng Chrome, thư Shopee trong Gmail hubselltech@, rồi dò mã nguồn.
+
+- **Ticket tiền ưu đãi quảng cáo `2123633047348785173`:** Shopee trả lời 23/11, "Your Action Required" — xác nhận KHÔNG có API, xin 4 mục (API liên quan / hiện trạng / phạm vi ảnh hưởng / kết quả mong muốn) để xét làm tính năng. Nguyên văn ở [docs/SHOPEE-NAP-VI-QUANG-CAO-TRU-TRUNG.md](docs/SHOPEE-NAP-VI-QUANG-CAO-TRU-TRUNG.md) mục 10. Nháp trả lời em đưa trong chat; anh chốt 27/11 "Để tự đóng" → không gửi, ca xong.
+- **Ticket pentest `2124033021594316879`:** 23/11 Shopee mới báo "đã chuyển bộ phận liên quan", In Progress, chưa trả lời 4 câu.
+- **Ticket 429 `2113468448421310539`:** Shopee tự đóng 24/11 (đúng 5 ngày sau khi chờ mình phản hồi) — xong.
+- **Thông báo đụng Hubsell:** API in vận đơn Shopee phải chuyển sang luồng `create_shipping_document_job` → `get_shipping_document_job_status` → `download_shipping_document_job_filelink` **trước Q2/2027** (Hubsell đang dùng đúng luồng cũ, `shopee/client.ts` ~2733–2817) — CHƯA làm; `sspl_fee` mới trong escrow VN (lãi đơn vẫn đúng vì lấy `escrow_amount`, chỉ thiếu tên dòng phí); chế độ hạ cấp mùa sale (`warning` ở `get_order_list`, push có thể trùng); đơn hỏa tốc VN đổi giờ lấy hàng. Chưa kiểm số prod cho mục nào.
+- **Thư 22/11:** 3 ủy quyền Shopee hết hạn 09/12 và 12/12 (shop 1877173360, 93068669) — chưa tra là gian nào.
+- **Anh chốt 27/11 tối:** (1) "Chấp nhận che tên người nhận" → không thuê pentest, không nộp báo cáo; sau 31/12 tên người nhận đơn Shopee có thể bị che, chưa biết che kiểu gì. (2) "Đặt lịch API in vận đơn vào đầu quý 2 năm 2027. Tùy em chọn một ngày" → tác vụ hẹn giờ `hubsell-0504-2027-shopee-api-in-van-don`, Thứ Hai 05/04/2027 08:30, chỉ khảo sát + đề xuất lát.
+- Ghi memory: `hubsell-shopee-thay-doi-api-ra-soat-2026-11-27` (mới) + 3 tệp ticket. Chưa commit.
+
+---
 ## Phiên 27/11 ~19:50 — Quảng cáo TikTok: khách bấm Loại video trên app bị "TikTok từ chối" 6 lần — gốc là chiến dịch TỰ CHỌN VIDEO — ĐÃ SỬA, COMMIT + PUSH `7c5a3b4a` 27/11 20:00, ⏳ khách bấm lại xem câu mới
 
 Anh 27/11 (ảnh tab Lịch sử trên app của khách): "khách hàng khi loại video trên app không được. anh test thử với tài khoản của anh thì vẫn được". Chi tiết: [docs/ADS-TIKTOK-GMV-MAX.md](docs/ADS-TIKTOK-GMV-MAX.md) mục 4, gạch đầu dòng "Loại/khôi phục video".

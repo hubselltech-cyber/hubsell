@@ -1,5 +1,7 @@
 // Hàm thuần của thư tự động gửi khách (19/09/2026): người gửi theo vai, nội
 // dung từng thư, cửa sổ ngày VN của worker nhắc hạn. Không chạm DB / SMTP.
+import { existsSync } from "fs";
+import { join } from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveSender } from "../../lib/mailer";
 import {
@@ -15,7 +17,11 @@ import {
   CONNECT_REMINDER_SUBJECT,
   connectNudgeEmailHtml,
   CONNECT_NUDGE_SUBJECT,
+  featurePackVideoEmailHtml,
+  FEATURE_PACK_VIDEO_SUBJECT,
 } from "../customer-mails";
+import { PACK_VIDEO_HOUR_PRICE_VND, PACK_VIDEO_WELCOME_HOURS } from "../../config/pack-video";
+import { RETENTION_DAYS } from "../../lib/pack-video-retention";
 import { vnDayWindow } from "../../workers/subscription-reminder";
 import { signupWindow } from "../../workers/onboarding-reminder";
 
@@ -175,6 +181,53 @@ describe("thư nhắc một lần khách đăng ký lâu chưa nối gian (25/10
     expect(html).toContain("Shopee, TikTok Shop hoặc Lazada");
     expect(html).toContain("Trả lời thẳng email này");
     expect(CONNECT_NUDGE_SUBJECT).toContain("để trống");
+  });
+});
+
+describe("thư thông báo Quay video đóng hàng (27/11/2026)", () => {
+  const html = featurePackVideoEmailHtml({ fullName: "<b>Lan</b>" });
+
+  it("một nút duy nhất về trang Video đóng hàng, tên khách được escape, mời trả lời thư", () => {
+    expect(html).toContain("&lt;b&gt;Lan&lt;/b&gt;");
+    expect(html).not.toContain("<b>Lan</b>");
+    expect(html.match(/<a href=/g)?.length).toBe(1);
+    expect(html).toContain("/orders/videos");
+    expect(html).toContain("Đồng ý và bắt đầu");
+    expect(html).toContain("trả lời thư này");
+    expect(FEATURE_PACK_VIDEO_SUBJECT).toContain("Quay video đóng hàng");
+  });
+
+  it("giá, giờ tặng, trần ngày lưu đọc từ hằng số — không gõ tay", () => {
+    expect(html).toContain(`${PACK_VIDEO_HOUR_PRICE_VND.toLocaleString("vi-VN")}₫ một giờ`);
+    expect(html).toContain(`${PACK_VIDEO_WELCOME_HOURS} giờ quay`);
+    expect(html).toContain(`tối đa ${RETENTION_DAYS.HARD_CAP} ngày`);
+    // 2.000 đ / giờ, 36 giây / đơn → 100 đơn / giờ, 20 đ / đơn — khớp bảng giá landing.
+    expect(html).toContain("đủ cho 100 đơn, khoảng 20₫ một đơn");
+  });
+
+  it("chỉ nói điều đang chạy: webcam trên máy tính, điện thoại sắp có, không hứa thắng khiếu nại", () => {
+    expect(html).toContain("webcam USB");
+    expect(html).toContain("sắp có");
+    expect(html).not.toMatch(/thắng khiếu nại|đòi lại|camera an ninh/i);
+  });
+
+  it("hai ảnh ở guide-assets (khung video vẽ + ô chọn camera), ảnh nào cũng có alt", () => {
+    expect(html).toContain("/guide-assets/pack-video-khung-hinh.png");
+    expect(html).toContain("/guide-assets/pack-video-chon-camera.png");
+    const imgs = html.match(/<img [^>]*>/g) ?? [];
+    expect(imgs.length).toBe(2);
+    for (const img of imgs) expect(img).toMatch(/alt="[^"]+"/);
+  });
+
+  it("camera cận cảnh nói rõ là tùy chọn — một webcam vẫn quay được", () => {
+    expect(html).toContain("camera cận cảnh");
+    expect(html).toContain("Không bắt buộc, một webcam vẫn quay được");
+  });
+
+  it("ảnh trong thư có tệp thật trong frontend/public/guide-assets", () => {
+    for (const file of ["pack-video-khung-hinh.png", "pack-video-chon-camera.png"]) {
+      expect(existsSync(join(__dirname, "../../../../frontend/public/guide-assets", file))).toBe(true);
+    }
   });
 });
 

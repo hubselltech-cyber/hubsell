@@ -21,6 +21,8 @@ import { BUSINESS_TZ_OFFSET_MS } from "../lib/date-range";
 import { isMailerConfigured, sendMail, type MailAttachment, type MailRole } from "../lib/mailer";
 import { mailHq } from "./hq-mail";
 import { AD_SPEND_BAND_LABEL, isHighAdSpend, type AdSpendBand } from "../lib/ad-spend-band";
+import { PACK_VIDEO_HOUR_PRICE_VND, PACK_VIDEO_WELCOME_HOURS } from "../config/pack-video";
+import { RETENTION_DAYS } from "../lib/pack-video-retention";
 
 const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
@@ -289,6 +291,75 @@ export async function sendFeatureMobileAppMail(to: string, input: { fullName: st
     role: "noreply",
     subject: FEATURE_MOBILE_APP_SUBJECT,
     html: featureMobileAppEmailHtml(input),
+  });
+}
+
+// ---------------- 1f. Thông báo tính năng Quay video đóng hàng (27/11/2026) ----------------
+//
+// Anh Trung 27/11: "Soạn thư" (sau khi hỏi "mình gửi mail chưa em nhỉ?"). Bản web mở cho mọi chủ shop còn hạn gói
+// từ 26/11. MỘT nút về trang Video đóng hàng. Mọi câu về tính năng đi theo trang landing /quay-video-dong-hang
+// (đúng mã đang chạy): chỉ webcam trên máy tính, điện thoại "sắp có", KHÔNG hứa thắng khiếu nại.
+// Giá, giờ tặng, trần ngày lưu đọc từ hằng số — đổi giá / luật thì thư đổi theo, test chặn số gõ tay.
+// Gửi: scripts/feature-announce-once.ts --feature=pack-video (vé "feature-pack-video").
+// Ảnh 1: hình VẼ khung video của landing (mã vận đơn bịa) — ⛔ không dùng khung video thật (tem có tên + SĐT người nhận).
+// Ảnh 2 (anh 27/11: "Thiếu đoạn màn hình cài đặt chọn cam toàn cảnh và cận cảnh"): chụp ô chọn camera trên màn quay
+// của app thật, CHỈ ô đó (tên webcam + khổ hình) — không có hình từ camera, không có dữ liệu shop.
+
+/** 36 giây một đơn = mốc ví dụ của landing (bảng giá "Đủ cho"). */
+const PACK_VIDEO_EXAMPLE_SECONDS = 36;
+
+export function featurePackVideoEmailHtml(input: { fullName: string }): string {
+  const ordersPerHour = Math.round(3600 / PACK_VIDEO_EXAMPLE_SECONDS);
+  const perOrder = Math.round(PACK_VIDEO_HOUR_PRICE_VND / ordersPerHour);
+  const item = (title: string, text: string) =>
+    `<li style="margin-bottom:8px"><b>${title}</b> ${text}</li>`;
+  const gift =
+    PACK_VIDEO_WELCOME_HOURS > 0
+      ? ` Hubsell tặng bạn <b>${PACK_VIDEO_WELCOME_HOURS} giờ quay</b> để thử, đủ cho khoảng ${(PACK_VIDEO_WELCOME_HOURS * ordersPerHour).toLocaleString("vi-VN")} đơn.`
+      : "";
+  return shell({
+    heading: "Khách báo thiếu hàng, bạn có sẵn video của đúng đơn đó",
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p(
+        "Người mua báo thiếu, sai hay vỡ hàng thì sàn hỏi bằng chứng. Nhiều shop có quay, nhưng clip nằm lẫn trong điện thoại, không có mã vận đơn, tới lúc cần thì không biết clip nào của đơn nào."
+      ),
+      p("Hubsell vừa mở <b>Quay video đóng hàng</b> trên bản web. Bạn chỉ cần máy tính và một webcam USB."),
+      `<p style="text-align:center;margin:16px 0"><img src="${FRONTEND_URL}/guide-assets/pack-video-khung-hinh.png" alt="Khung video đóng hàng: ngày giờ và mã vận đơn in sẵn trong hình" width="432" style="display:inline-block;width:432px;max-width:100%;height:auto;border-radius:12px" /></p>`,
+      `<ul style="color:#444;padding-left:20px;margin:0 0 12px">
+        ${item("Đưa tem vào camera là tự quay.", "Đưa tem đơn kế, video cũ tự đóng, video mới tự mở. Không phải bấm nút nào.")}
+        ${item("Ngày giờ, mã vận đơn in sẵn trong hình", "ngay lúc quay, kèm mã đơn hàng.")}
+        ${item("Gõ mã vận đơn là ra video.", "Tải về tệp MP4 gốc để nộp vào ô bằng chứng của sàn.")}
+        ${item("Hàng hoàn về:", "quay khui kiện thành video riêng, không đè lên video đóng.")}
+      </ul>`,
+      p(
+        "Có hai webcam thì chọn thêm <b>camera cận cảnh</b> soi sát tem ngay trên màn quay: một camera quay cả bàn, một camera soi mã vận đơn, hình cận cảnh được ghép vào góc video lúc quay. Không bắt buộc, một webcam vẫn quay được."
+      ),
+      `<p style="text-align:center;margin:16px 0"><img src="${FRONTEND_URL}/guide-assets/pack-video-chon-camera.png" alt="Màn quay: chọn camera toàn cảnh và camera cận cảnh" width="432" style="display:inline-block;box-sizing:border-box;width:432px;max-width:100%;height:auto;border:1px solid #e2e8f0;border-radius:12px" /></p>`,
+      p(
+        `Video được giữ theo trạng thái đơn: đơn còn hoàn, còn tranh chấp thì còn giữ, tối đa ${RETENTION_DAYS.HARD_CAP} ngày từ ngày quay.`
+      ),
+      p(
+        `Tính năng nằm sẵn trong tài khoản Hubsell còn hạn gói, chỉ trả theo giờ quay: <b>${money(PACK_VIDEO_HOUR_PRICE_VND)} một giờ</b>. Quay ${PACK_VIDEO_EXAMPLE_SECONDS} giây mỗi đơn thì một giờ đủ cho ${ordersPerHour} đơn, khoảng ${perOrder}₫ một đơn.${gift}`
+      ),
+      p(
+        "Cách mở: vào <b>Đơn hàng → Video đóng hàng</b>, bấm <b>Đồng ý và bắt đầu</b> một lần là quay được. Quay bằng app Hubsell trên điện thoại sắp có."
+      ),
+    ].join("\n"),
+    cta: { label: "Mở Video đóng hàng", url: `${FRONTEND_URL}/orders/videos` },
+    footnote:
+      "Quay thử thấy chỗ nào vướng, bạn trả lời thư này kèm ảnh màn hình, Hubsell đọc và sửa từng góp ý. Nếu không muốn nhận thư thông báo nữa, chỉ cần trả lời một chữ \"thôi\".",
+  });
+}
+
+export const FEATURE_PACK_VIDEO_SUBJECT = "Hubsell — Quay video đóng hàng: đưa tem vào camera là tự quay";
+
+/** Trả về true khi đã gửi — script một lần dựa vào đây để giữ / nhả vé chống trùng. */
+export async function sendFeaturePackVideoMail(to: string, input: { fullName: string }): Promise<boolean> {
+  return safeSend("feature-pack-video", to, {
+    role: "noreply",
+    subject: FEATURE_PACK_VIDEO_SUBJECT,
+    html: featurePackVideoEmailHtml(input),
   });
 }
 
