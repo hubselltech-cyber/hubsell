@@ -207,6 +207,64 @@ describe("saveProductGroup", () => {
     expect(l).toMatchObject({ linkedChannels: 2, ownCostChannels: 1 });
   });
 
+  // 27/11/2026 — anh Trung: đã nối kho thì đổi giá vốn ở Tổng kho là đổi cho mọi SKU sàn đã nối; giá riêng lệch thì hỏi.
+  it("đổi giá vốn kho: SKU sàn khớp giá kho cũ theo giá mới, giá riêng lệch mặc định GIỮ, chọn follow thì theo", async () => {
+    const kho = async () => Number((await prisma.product.findUniqueOrThrow({ where: { id: idL } })).costPrice);
+    const own = async (code: string) => {
+      const cp = await prisma.channelProduct.findFirstOrThrow({ where: { channelId, channelSku: `${code}-${stamp}` } });
+      return cp.costPrice === null ? null : Number(cp.costPrice);
+    };
+    const before = await kho();
+    await prisma.channelProduct.create({
+      data: { channelId, channelSku: `KHOP-${stamp}`, productName: "KHOP", productId: idL, costPrice: before },
+    });
+    // Dòng đơn cũ còn 0 của SKU đang khớp giá kho: SKU bỏ giá riêng xong thì dòng này phải nhận giá kho MỚI.
+    const zeroLine = (
+      await prisma.order.create({
+        data: {
+          channelId,
+          orderCode: `TEST-SUA-${stamp}-theo-kho`,
+          customerName: "Khách test",
+          itemCount: 1,
+          items: { create: { channelSku: `KHOP-${stamp}`, productName: "KHOP", quantity: 1, price: 100_000, costPriceAtSale: 0 } },
+        },
+        select: { items: { select: { id: true } } },
+      })
+    ).items[0].id;
+
+    const detail = (await loadProductGroup(userId, idL))?.variants.find((v) => v.id === idL);
+    expect(detail?.ownCosts.map((o) => o.costPrice).sort()).toEqual([before, 45_000].sort());
+    expect(detail?.ownCosts[0]).toMatchObject({ shopName: `TEST-SUA-${stamp}`, channelName: "SHOPEE" });
+
+    // Không gửi ownCost = giữ giá riêng lệch; SKU khớp giá cũ vẫn theo.
+    const kept = await save(idL, { productName: NAME, variants: [{ id: idL, costPrice: before + 1_000 }] });
+    expect(kept).toMatchObject({ followedSkus: 1, keptOwnSkus: 1 });
+    expect(await own("KHOP")).toBeNull();
+    expect(await own("GIA-RIENG")).toBe(45_000);
+    expect(await own("THEO-KHO")).toBeNull();
+    expect(Number((await prisma.orderItem.findUniqueOrThrow({ where: { id: zeroLine } })).costPriceAtSale)).toBe(before + 1_000);
+
+    // Khách chọn "Áp giá mới cho tất cả".
+    const followed = await save(idL, { productName: NAME, variants: [{ id: idL, costPrice: before + 2_000 }], ownCost: "follow" });
+    expect(followed).toMatchObject({ followedSkus: 1, keptOwnSkus: 0 });
+    expect(await own("GIA-RIENG")).toBeNull();
+    expect((await loadProductGroup(userId, idL))?.variants.find((v) => v.id === idL)?.ownCostChannels).toBe(0);
+
+    // Giá riêng TRÙNG giá kho mới → theo kho, không cần hỏi (giá hiệu lực không đổi).
+    await prisma.channelProduct.updateMany({ where: { channelId, channelSku: `GIA-RIENG-${stamp}` }, data: { costPrice: 70_000 } });
+    expect(await save(idL, { productName: NAME, variants: [{ id: idL, costPrice: 70_000 }] })).toMatchObject({ followedSkus: 1, keptOwnSkus: 0 });
+
+    // Xóa giá kho về 0 KHÔNG kéo giá riêng của gian về 0, kể cả khi chọn follow.
+    await prisma.channelProduct.updateMany({ where: { channelId, channelSku: `GIA-RIENG-${stamp}` }, data: { costPrice: 70_000 } });
+    expect(await save(idL, { productName: NAME, variants: [{ id: idL, costPrice: 0 }], ownCost: "follow" })).toMatchObject({ followedSkus: 0 });
+    expect(await own("GIA-RIENG")).toBe(70_000);
+
+    // Trả giá kho + dọn giá riêng để các ca sau không lệ thuộc.
+    await prisma.channelProduct.updateMany({ where: { channelId, productId: idL }, data: { costPrice: null } });
+    await save(idL, { productName: NAME, variants: [{ id: idL, costPrice: before }] });
+    expect(await kho()).toBe(before);
+  });
+
   it("người không thấy tài chính đổi giá vốn → 403, không ghi gì (kể cả tên gửi kèm)", async () => {
     const before = Number((await prisma.product.findUniqueOrThrow({ where: { id: idL } })).costPrice);
     let caught: unknown = null;

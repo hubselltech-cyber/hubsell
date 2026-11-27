@@ -13,6 +13,8 @@
 // người thấy tài chính có cột. Đây là giá MẶC ĐỊNH ở kho — máy chủ ghi qua đúng đường của trang Cấu hình
 // Giá vốn: đơn mới dùng giá mới, đơn cũ chưa có giá được tính, đơn cũ đã có giá giữ nguyên. Trước khi
 // lưu hỏi lại nếu mã đang là quà tặng mà giá cao (cùng rào với trang Cấu hình Giá vốn).
+// 27/11/2026 (anh Trung): đổi giá vốn ở đây = đổi cho mọi SKU sàn đã nối; SKU sàn đang đặt giá riêng lệch giá
+// kho thì hỏi lại trước khi lưu (own-cost-choice.tsx).
 //
 // Không sửa ở đây (có cửa riêng, ghi rõ cuối hộp): tồn kho, mã vạch.
 // ============================================================
@@ -32,7 +34,8 @@ import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-import { blankRow, buildPayload, costChangesByPrice, firstBlocker, initDraft, isDirty, rowIssues, type GroupDraft, type RowEdit } from "./draft";
+import { blankRow, buildPayload, costChangesByPrice, firstBlocker, initDraft, isDirty, ownCostConflicts, rowIssues, type GroupDraft, type RowEdit } from "./draft";
+import { useOwnCostChoice } from "./own-cost-choice";
 import { VariantRows } from "./variant-rows";
 
 /** Sản phẩm đang mở ở hộp sửa: một SKU bất kỳ của mẫu + có tô dòng đó không (mở từ menu ⋯ của một phân loại). */
@@ -128,6 +131,7 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
   const [draft, setDraft] = useState<GroupDraft>(() => initDraft(detail));
   const [saving, setSaving] = useState(false);
   const { confirmGiftCost, giftCostDialog } = useGiftCostGuard();
+  const { askOwnCost, ownCostDialog } = useOwnCostChoice();
   const tableRef = useRef<HTMLDivElement>(null);
   /** Dòng vừa thêm — đưa con trỏ vào ô Phân loại của nó sau khi vẽ. */
   const focusKey = useRef<string | null>(null);
@@ -178,11 +182,19 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
           return;
         }
       }
-      const saved = await saveProductGroup(detail.anchorId, payload);
+      // SKU sàn đã nối đang đặt giá riêng lệch giá kho → hỏi: theo giá mới hay giữ. Đóng hộp = quay lại sửa, chưa lưu gì.
+      const ownCost = await askOwnCost(ownCostConflicts(draft));
+      if (ownCost === null) {
+        setSaving(false);
+        return;
+      }
+      const saved = await saveProductGroup(detail.anchorId, { ...payload, ownCost });
       toast.success(
         (payload.added.length > 0
           ? `Đã lưu ${saved.productName} — thêm ${formatNumber(payload.added.length)} phân loại, nay có ${formatNumber(saved.variants.length)} SKU`
           : `Đã lưu ${saved.productName}`) +
+          (saved.followedSkus > 0 ? ` · ${formatNumber(saved.followedSkus)} SKU sàn theo giá vốn mới` : "") +
+          (saved.keptOwnSkus > 0 ? ` · ${formatNumber(saved.keptOwnSkus)} SKU sàn giữ giá riêng` : "") +
           (saved.backfilledOrderLines > 0 ? ` · tính lại ${formatNumber(saved.backfilledOrderLines)} dòng đơn cũ chưa có giá vốn` : "")
       );
       onSaved();
@@ -243,8 +255,8 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
         Tồn kho sửa bằng nút Nhập · Xuất trên bảng.{" "}
         {seesCost && (
           <>
-            Giá vốn ở đây là giá mặc định của kho: đơn mới tính theo giá mới, đơn cũ đã có giá vốn giữ nguyên; gian đặt giá
-            vốn riêng thì sửa ở{" "}
+            Đổi giá vốn ở đây là đổi cho mọi SKU sàn đã nối: đơn mới tính theo giá mới, đơn cũ đã có giá vốn giữ nguyên. Muốn
+            một gian tính giá vốn riêng thì nhập ở{" "}
             <Link href="/finance/cost-prices" className="underline underline-offset-2 hover:text-foreground">
               Cấu hình Giá vốn
             </Link>
@@ -269,6 +281,7 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
         </Button>
       </DialogFooter>
       {giftCostDialog}
+      {ownCostDialog}
     </>
   );
 }

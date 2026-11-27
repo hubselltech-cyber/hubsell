@@ -10,8 +10,11 @@
 //
 // GIÁ VỐN của SKU đang có (19/11/2026, anh Trung: "sửa sản phẩm mà không sửa được giá vốn") = giá MẶC
 // ĐỊNH ở kho (Product.costPrice), ghi qua đúng đường của trang Cấu hình Giá vốn (lib/cost-price.ts):
-// đơn mới dùng giá mới, đơn cũ còn 0 được vá, đơn cũ đã có giá GIỮ NGUYÊN, gian đặt giá riêng vẫn theo
-// giá riêng. Chỉ người thấy tài chính mới sửa được.
+// đơn mới dùng giá mới, đơn cũ còn 0 được vá, đơn cũ đã có giá GIỮ NGUYÊN. Chỉ người thấy tài chính mới sửa được.
+//
+// SKU SÀN ĐÃ NỐI THEO GIÁ MỚI (27/11/2026, anh Trung — docs mục 15.4): đổi giá vốn ở đây là đổi cho mọi SKU
+// sàn đã nối (lib/cost-price followWarehouseCostIn). SKU sàn đang có giá riêng LỆCH cả giá kho cũ lẫn mới
+// thì hộp sửa hỏi khách, gửi kèm `ownCost`: "follow" = theo giá mới, "keep" = giữ giá riêng (mặc định khi vắng).
 //
 // CỐ Ý KHÔNG sửa ở đây: tồn kho (Nhập · Xuất · sổ kho), mã vạch (hộp Cài đặt SKU), ảnh (lát sau: ảnh
 // tải lên đang gắn vào lượt Sao chép sản phẩm, cron dọn ảnh mồ côi sau 2 ngày).
@@ -20,8 +23,8 @@
 // phần DB (loadProductGroup / saveProductGroup).
 // ============================================================
 
-import { InventoryLogType, Prisma } from "@prisma/client";
-import { applyCostPricesIn, COST_TX_OPTIONS, invalidateOwnerCostCaches } from "../lib/cost-price";
+import { type ChannelName, InventoryLogType, Prisma } from "@prisma/client";
+import { applyCostPricesIn, COST_TX_OPTIONS, invalidateOwnerCostCaches, type OwnCostMode } from "../lib/cost-price";
 import { prisma } from "../lib/prisma";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
 import { MANUAL_LIMITS } from "./listing-copy/manual";
@@ -90,6 +93,8 @@ export interface GroupEditPlan {
   updates: RowUpdate[];
   /** Giá vốn mặc định ở kho của các dòng CÓ đổi giá — ghi riêng qua lib/cost-price (kèm vá đơn cũ còn 0). */
   costs: { productId: string; cost: number }[];
+  /** SKU sàn đã nối có giá riêng lệch giá kho: theo giá mới hay giữ — khách chọn ở hộp hỏi lại; vắng = giữ. */
+  ownCost: OwnCostMode;
   added: RowAdd[];
   /** Mã SKU mới (đổi + thêm) — phải kiểm trùng với phần còn lại của Tổng kho. */
   newSkuCodes: string[];
@@ -127,7 +132,7 @@ function parseVariant(raw: unknown): string | null {
 /**
  * Body PUT /api/products/:id/group → kế hoạch ghi. Thuần, không chạm DB. Ném ProductGroupEditError
  * khi sai luật. Body: { productName, variants: [{ id, skuCode?, variantName?, sellingPrice?, costPrice? }],
- * added: [{ skuCode, variantName, sellingPrice, costPrice?, stock? }] } — trường vắng = giữ nguyên;
+ * added: [{ skuCode, variantName, sellingPrice, costPrice?, stock? }], ownCost? } — trường vắng = giữ nguyên;
  * dòng không gửi = giữ nguyên (vẫn đổi tên theo mẫu). `costPrice` của dòng đang có: người không thấy
  * tài chính gửi lên thì TỪ CHỐI (403) chứ không lặng lẽ bỏ qua — họ không được biết lẫn đổi giá vốn.
  */
@@ -261,6 +266,7 @@ export function planGroupEdit(
     renameAll,
     updates,
     costs,
+    ownCost: b.ownCost === "follow" ? "follow" : "keep",
     added,
     newSkuCodes: [...updates.flatMap((u) => (u.skuCode ? [u.skuCode] : [])), ...added.map((a) => a.skuCode)],
   };
@@ -280,8 +286,13 @@ export interface ProductGroupVariant {
   imageUrl: string | null;
   /** Số SKU sàn đang nối — đổi mã SKU của dòng này thì cảnh báo (liên kết giữ, mã lệch với sàn). */
   linkedChannels: number;
-  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian — đổi giá vốn ở kho không đổi giá của chúng. */
+  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian. */
   ownCostChannels: number;
+  /**
+   * Các SKU sàn có giá riêng đó — hộp sửa so với giá kho cũ / mới để biết có phải hỏi lại không
+   * (giá riêng lệch cả hai). Route cắt khỏi dữ liệu với người không thấy tài chính.
+   */
+  ownCosts: { shopName: string; channelName: ChannelName; label: string; costPrice: number }[];
 }
 
 export interface ProductGroupDetail {
@@ -305,8 +316,17 @@ const DETAIL_SELECT = {
   isActive: true,
   imageUrl: true,
   _count: { select: { channelProducts: true } },
-  // Giá riêng của gian thắng giá kho (lib/cost-price effectiveSkuCost) — chỉ cần đếm.
-  channelProducts: { where: { costPrice: { gt: 0 } }, select: { id: true } },
+  // SKU sàn đang có giá riêng của gian (lib/cost-price effectiveSkuCost) — đếm + giá để hộp sửa hỏi lại khi lệch.
+  channelProducts: {
+    where: { costPrice: { gt: 0 } },
+    select: {
+      id: true,
+      costPrice: true,
+      channelSku: true,
+      variantName: true,
+      channel: { select: { shopName: true, channelName: true } },
+    },
+  },
 } satisfies Prisma.ProductSelect;
 
 type DetailRow = Prisma.ProductGetPayload<{ select: typeof DETAIL_SELECT }>;
@@ -352,6 +372,12 @@ function toDetail(anchorId: string, rows: DetailRow[]): ProductGroupDetail {
       imageUrl: r.imageUrl,
       linkedChannels: r._count.channelProducts,
       ownCostChannels: r.channelProducts.length,
+      ownCosts: r.channelProducts.map((cp) => ({
+        shopName: cp.channel.shopName,
+        channelName: cp.channel.channelName,
+        label: cp.variantName?.trim() || cp.channelSku,
+        costPrice: Number(cp.costPrice ?? 0),
+      })),
     })),
   };
 }
@@ -398,11 +424,14 @@ async function assertSkuCodesFree(ownerId: string, familyIds: string[], plan: Gr
 /** Mẫu sau sửa + số dòng đơn cũ (đang giá vốn 0) vừa nhận giá vốn nhờ lượt đổi giá này. */
 export interface ProductGroupSaveResult extends ProductGroupDetail {
   backfilledOrderLines: number;
+  /** Số SKU sàn đã nối vừa bỏ giá riêng để theo giá kho mới / số SKU sàn còn giữ giá riêng. */
+  followedSkus: number;
+  keptOwnSkus: number;
 }
 
 /**
  * Lưu trọn gói một lần sửa mẫu. Thứ tự trong giao dịch: (1) tên + khóa gom cho cả mẫu, (2) từng dòng
- * có đổi, (3) giá vốn có đổi + vá đơn cũ còn 0, (4) phân loại mới + tồn ban đầu qua sổ kho.
+ * có đổi, (3) giá vốn có đổi + SKU sàn đã nối theo giá mới + vá đơn cũ còn 0, (4) phân loại mới + tồn ban đầu qua sổ kho.
  */
 export async function saveProductGroup(input: {
   ownerId: string;
@@ -456,6 +485,8 @@ export async function saveProductGroup(input: {
   );
 
   let backfilledOrderLines = 0;
+  let followedSkus = 0;
+  let keptOwnSkus = 0;
   try {
     await prisma.$transaction(
       async (tx) => {
@@ -479,7 +510,10 @@ export async function saveProductGroup(input: {
           });
         }
         if (plan.costs.length > 0) {
-          backfilledOrderLines = (await applyCostPricesIn(tx, plan.costs, ownerId)).backfilledOrderLines;
+          const cost = await applyCostPricesIn(tx, plan.costs, ownerId, { ownCost: plan.ownCost });
+          backfilledOrderLines = cost.backfilledOrderLines;
+          followedSkus = cost.followedSkus;
+          keptOwnSkus = cost.keptOwnSkus;
         }
         for (const a of plan.added) {
           // Mã vạch quản lý: DB tự sinh (DEFAULT của cột) — không truyền.
@@ -526,8 +560,8 @@ export async function saveProductGroup(input: {
       `${plan.renameAll ? "đổi tên/khóa gom, " : ""}${plan.updates.length} dòng đổi` +
       `${plan.updates.some((u) => u.skuCode) ? ` (đổi mã: ${plan.updates.filter((u) => u.skuCode).map((u) => u.skuCode).join(", ")})` : ""}` +
       `, thêm ${plan.added.length} phân loại${plan.added.length ? ` (${plan.added.map((a) => a.skuCode).join(", ")})` : ""}` +
-      `${plan.costs.length ? `, đổi giá vốn ${plan.costs.length} SKU (vá ${backfilledOrderLines} dòng đơn cũ còn 0)` : ""}`
+      `${plan.costs.length ? `, đổi giá vốn ${plan.costs.length} SKU (vá ${backfilledOrderLines} dòng đơn cũ còn 0; ${followedSkus} SKU sàn theo giá mới, ${keptOwnSkus} giữ giá riêng — ${plan.ownCost})` : ""}`
   );
   const detail = await loadProductGroup(ownerId, productId);
-  return detail && { ...detail, backfilledOrderLines };
+  return detail && { ...detail, backfilledOrderLines, followedSkus, keptOwnSkus };
 }

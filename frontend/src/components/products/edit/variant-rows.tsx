@@ -115,7 +115,7 @@ export function VariantRows({
                 {seesCost && (
                   <td className={CELL}>
                     <CurrencyInput
-                      className={cn(FIELD, "tabular-nums", issue?.costNote && WARN_INPUT)}
+                      className={cn(FIELD, "tabular-nums")}
                       value={r.cost}
                       placeholder="0"
                       aria-label={`Giá vốn của ${label}`}
@@ -124,8 +124,8 @@ export function VariantRows({
                     />
                     {issue?.costNote && (
                       <p
-                        className="mt-0.5 text-[11px] leading-snug text-amber-700"
-                        title="Gian đã đặt giá vốn riêng cho SKU này thì lãi lỗ của gian đó vẫn tính theo giá riêng. Sửa giá riêng ở trang Cấu hình Giá vốn."
+                        className="mt-0.5 text-[11px] leading-snug text-muted-foreground"
+                        title="Đổi giá vốn ở Tổng kho là đổi cho mọi SKU sàn đã nối với phân loại này. SKU sàn nào đang đặt giá vốn riêng khác giá kho thì hệ thống hỏi lại khi lưu."
                       >
                         {issue.costNote}
                       </p>

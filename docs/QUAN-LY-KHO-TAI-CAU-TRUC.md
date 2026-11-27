@@ -829,3 +829,111 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
   - Sản phẩm trên sàn: tab Cần nối 20/20 dòng là công tắc khóa, không còn dấu "—"; tab Đã nối 20/20 dòng có nút "Gỡ nối", xổ dòng đầu có nút "Gỡ nối" ở từng phân loại; không cuộn ngang.
   - Hộp Nối kho: ô tìm trống, chữ mờ "Tìm sản phẩm kho muốn nối"; gõ "BL00" ra 4 gợi ý, cả 4 có viên "Tổng kho" (đóng hộp, không nối).
 - **CHƯA làm trên prod:** sửa tồn thật rồi Enter (ý 1 — mới đo trên local), lưu giá vốn thật, gỡ nối thật, hộp hỏi lại quà tặng, tài khoản nhân viên, màn điện thoại.
+
+## 15. Giá vốn Tổng kho ↔ trang Cập nhật giá vốn — đọc mã + đo prod 27/11/2026 (CHƯA LÀM, chờ anh chốt)
+
+Anh Trung 27/11: "có phương án nào đẩy giá vốn từ Tổng kho sang phần Cập nhật giá vốn trong tài chính không?" kèm ba ý: (1) trang Cập nhật giá vốn nên có đường lấy giá từ Sản phẩm Tổng kho; (2) "Sản phẩm trong tổng kho đang tự lấy giá vốn ở phần Cập nhật giá vốn nên nếu áp dụng thì cũng phải nghiên cứu kỹ"; (3) "Khi đăng sản phẩm mới trong tổng kho hiện tại chỉ có giá bán chưa có giá vốn". Sau khi nghe hiện trạng anh chốt: "Đo prod trước".
+
+### 15.1 Hiện trạng trong mã (đọc 27/11)
+
+- Hai nơi lưu: `Product.costPrice` (giá kho, mặc định) và `ChannelProduct.costPrice` (giá riêng của gian). Luật 11/10 ở `backend/src/lib/cost-price.ts` `effectiveSkuCost`: giá gian > 0 thì thắng, không thì giá kho của sản phẩm đã nối.
+- Tổng kho → Tài chính: đã có, nhưng chỉ khi gian chưa có giá riêng (trang Cập nhật giá vốn hiện giá kho, `costSource = "default"`, chỉ giải thích ở tooltip). Tab Nhập giá vốn, tab Mapping và Excel đều ghi giá riêng của gian → khách đã gõ giá ở Tài chính thì sửa giá ở Tổng kho hết tác dụng với gian đó (hộp Sửa sản phẩm chỉ báo vàng "N SKU sàn có giá vốn riêng, không đổi theo").
+- Tài chính → Tổng kho: KHÔNG liên tục. Chỉ chép một lần lúc nối kho / tạo sản phẩm kho từ SKU sàn, và chỉ khi giá kho đang 0 (`inheritChannelCostPrice`, `backend/src/routes/mappings.ts`). Giá nhập ở Tài chính SAU khi nối không lên kho.
+- Form tạo sản phẩm kho đã có ô "Giá vốn mặc định" nhưng ở mục 5 cuối form, một số chung cho mọi phân loại (`manual-product-form.tsx`); bảng phân loại chỉ có cột Giá bán.
+
+### 15.2 Số đo prod 27/11 (Supabase SQL Editor, 6 câu CHỈ ĐỌC; SKU sàn đang bán, không tính gian Offline)
+
+| Nhóm | Số SKU sàn | Chủ shop |
+|---|---|---|
+| Đang bán | 220.234 | 254 |
+| Chưa nối kho | 150.705 (57.629 đã có giá riêng) | — |
+| Đã nối kho | 69.529 | 46 |
+| · theo giá kho (gian trống, kho có giá) | 7.405 | 17 |
+| · gian có giá, kho = 0 | 25.190 | 19 |
+| · gian = kho | 30.132 | — |
+| · gian ≠ kho | 690 (275 lệch < 5 %; 52 lệch từ 2 lần) | 17 (7 có lá lệch từ 2 lần) |
+| · cả hai = 0 | 6.112 | — |
+
+- **Phía sản phẩm kho:** 75.201 sản phẩm / 54 chủ shop; 50.829 (68 %) giá vốn 0. Trong đó 23.131 sản phẩm ĐÃ NỐI mà gian có giá (23.127 sản phẩm các gian chung MỘT mức giá) — Tổng kho hiện trống giá, Giá trị tồn tính 0. 5.818 sản phẩm đã nối, hai bên đều 0. Sản phẩm chưa nối gian: 23.539, giá 0 là 21.880.
+- **Sản phẩm kho tạo từ 05/11:** 10.824, giá 0 là 9.040; riêng nhóm chưa nối gian 4.530, giá 0 là 4.092 (90 %). Số này gồm cả Excel và Sao chép từ sàn, không tách được riêng form tạo mới.
+- **Tiền 30 ngày của 690 lá lệch** (sổ `order_line_ledger` bản 4, bỏ đơn hủy): 3.886 dòng / 3.864 đơn / 14 chủ shop; giá vốn theo giá gian 626,0 tr, theo giá kho 521,3 tr → kéo giá kho sang thì giảm 107,8 tr và tăng 3,0 tr. Nhóm lệch từ 2 lần: 173 dòng, 4 chủ shop, chiếm −102,0 tr.
+- **Nhóm lệch từ 2 lần (52 lá):** 44 lá giá gian cao hơn; một chủ shop giữ 38 lá. 29 lá lệch từ 20 lần đều là giá gian cao hơn; 28 / 29 lá có giá kho dưới 5 % giá bán (thấp nhất 1 đ), giá gian trung vị 36,4 % giá bán → ở nhóm này giá KHO mới là số đáng ngờ. Chưa mở từng lá, chưa hỏi khách.
+- **Độ tập trung:** một chủ shop giữ 19.589 / 25.190 SKU "gian có giá, kho = 0"; một chủ shop giữ 27.062 / 30.132 SKU "gian = kho"; một chủ shop giữ 6.121 / 7.405 SKU "theo giá kho". 11 chủ shop vừa có SKU theo kho vừa có SKU giá riêng.
+- Giới hạn: tiền 30 ngày là đơn đã chốt giá (ảnh chụp không đổi) — chỉ là thước đo mức dịch chuyển giá vốn mỗi tháng VỀ SAU nếu kéo giá kho sang, không phải số báo cáo cũ sẽ đổi.
+
+### 15.3 Kết luận + đề xuất (em, chờ anh chốt)
+
+- Kéo MÙ giá kho đè giá gian là nguy hiểm: phần tiền dịch chuyển nằm gần hết ở nhóm lệch lớn, nơi giá kho mới là số sai → giá vốn tụt, lãi ảo, hòa vốn quảng cáo sai.
+- Lỗ hổng lớn hơn nằm ở chiều NGƯỢC: 23.131 sản phẩm kho trống giá dù gian đã có giá.
+- **Lát A (em xếp trước):** điền giá kho đang 0 từ giá gian khi các gian đã nối chung một mức giá (23.127 sản phẩm); từ nay lưu giá ở Tài chính cho SKU đã nối mà kho đang 0 thì điền luôn kho. Chỉ điền ô trống, không đè. Phải đo trước: SKU cùng sản phẩm ở gian khác đang trống giá sẽ nhận giá này (đơn mới + dòng đơn cũ đang 0).
+- **Lát B:** nút "Lấy giá vốn từ Tổng kho" ở trang Cập nhật giá vốn = xóa giá riêng của gian để theo kho; hộp số cũ → mới từng dòng + Bỏ qua; dòng lệch từ 2 lần KHÔNG tích sẵn; nhóm gian = kho (30.132) chuyển sang theo kho thì không đổi số nào.
+- **Lát C:** hộp Sửa sản phẩm — dòng báo vàng thành ô tích "Áp luôn cho N SKU sàn đang đặt giá riêng", mặc định tắt.
+- **Lát D:** form tạo sản phẩm kho — cột Giá vốn cạnh Giá bán trong bảng phân loại.
+- Không đề xuất đảo luật thành "giá kho luôn thắng" (phá giá vốn theo gian 11/10).
+- Trước khi push lát A / B / C: mô phỏng hòa vốn quảng cáo trước / sau từng chiến dịch trên gian thật.
+
+### 15.4 Anh Trung nêu thêm luật (27/11, sau khi xem số đo) — CHƯA CODE
+
+Nguyên văn: "nếu đã liên kết sản phẩm rồi thì khi khách hàng thay đổi giá vốn trong Tổng kho thì giá vốn trong Cập nhật giá vốn cũng đổi theo luôn và lên hết các sản phẩm đã liên kết luôn".
+
+- Luật này thay lát C (ô tích mặc định tắt) bằng mặc định ÁP: sửa giá vốn ở Tổng kho = mọi SKU sàn đã nối của sản phẩm đó theo giá mới.
+- Cách làm em đề xuất (chưa duyệt): khi giá kho đổi, XÓA giá riêng của các SKU sàn đã nối (`ChannelProduct.costPrice` → NULL) để chúng theo giá kho — không chép số xuống từng gian (chép thì lại thành hai bản). Trang Cập nhật giá vốn đọc giá hiệu lực nên hiện giá mới ngay. Đặt trong lõi `applyCostPricesIn` (`lib/cost-price.ts`) để mọi cửa dùng chung.
+- Các cửa sửa giá kho (rà mã 27/11): hộp Sửa sản phẩm và trang Tài chính (dòng Offline, popup SKU P&L theo mã) đã qua lõi; `PATCH /api/products/:id` và nhập Excel Tổng kho (`routes/products.ts`) đang ghi thẳng `Product.costPrice`, KHÔNG qua lõi và không vá dòng đơn đang 0 → phải dẫn về lõi, nếu không cùng một việc sửa giá cho hai kết quả.
+- Điểm em phản biện, chờ anh chốt: SKU sàn đang mang giá riêng KHÁC giá kho cũ (khách cố ý đặt riêng, hoặc nối nhầm quy cách thùng ↔ set như ca Hoàng Long) — áp im lặng sẽ xóa số khách đã đặt. Em đề xuất chỉ riêng ca này mới hiện hộp số cũ → mới với nút "Giữ giá riêng của gian"; mọi ca còn lại áp thẳng, không hỏi. Theo số đo 15.2: 690 SKU / 17 chủ shop rơi vào ca này, 30.132 SKU "gian = kho" đi thẳng.
+- Chiều ngược GIỮ: nhập giá ở trang Cập nhật giá vốn cho một gian vẫn là giá riêng của gian đó (luật 11/10). Tức "sửa ở đâu sau cùng thì chỗ đó thắng": sửa ở Tổng kho = cho mọi gian đã nối; sửa ở Tài chính = riêng gian đó.
+- Không đổi: đơn cũ đã có giá vẫn đóng băng; chỉ đơn mới và dòng đang 0 nhận giá mới.
+- Lát A vẫn cần đi trước / cùng lượt: 23.131 sản phẩm kho đang trống giá, khách mở Tổng kho thấy ô trống thì không có gì để "sửa".
+
+### 15.5 ĐÃ LÀM (27/11 chiều, anh chốt "Hỏi lại ca này") — ĐÃ COMMIT 27/11 chiều, CHƯA push
+
+**Luật (một chỗ: `backend/src/lib/cost-price.ts`):**
+
+- `followWarehouseCostIn` — giá kho đổi và giá mới > 0 thì XÓA giá riêng (`ChannelProduct.costPrice` → NULL, kèm `costPriceInheritedAt`) của SKU sàn đã nối, bằng MỘT câu UPDATE cho cả lô:
+  - giá riêng = giá kho cũ hoặc = giá kho mới → luôn theo kho, không hỏi;
+  - giá riêng lệch cả hai → theo lựa chọn: `"follow"` (theo giá mới) hoặc `"keep"` (giữ). Cửa không có hộp hỏi mặc định `"keep"`.
+  - giá kho về 0 → KHÔNG đụng giá riêng nào (không kéo giá vốn các gian về 0).
+- `settleWarehouseCostIn` — phần sau khi đã ghi giá kho: theo giá trước, vá đơn cũ còn 0 sau (đảo thứ tự thì dòng đơn còn 0 của SKU vừa bỏ giá riêng không được vá). `applyCostPricesIn` gọi hàm này; kết quả trả thêm `followedSkus`, `keptOwnSkus`.
+- Luật "giá gian thắng giá kho" (11/10) không đổi: nhập ở trang Cấu hình Giá vốn cho một gian vẫn là giá riêng của gian đó.
+
+**Các cửa sửa giá kho — nay cùng một đường:**
+
+| Cửa | Trước | Nay |
+|---|---|---|
+| Hộp Sửa sản phẩm (`PUT /api/products/:id/group`) | qua lõi, không đụng giá gian | qua lõi + theo giá; nhận `ownCost: "follow" \| "keep"` từ hộp hỏi |
+| Trang Tài chính (dòng Offline, popup SKU P&L theo mã) | qua lõi | qua lõi + theo giá, mặc định giữ giá riêng lệch |
+| `PATCH /api/products/:id` có `costPrice` | ghi thẳng, không vá đơn còn 0 | qua `applyCostPrice`, mặc định giữ |
+| Nhập Excel Tổng kho (`POST /api/products/import`) | ghi thẳng, không vá đơn còn 0 | ghi trong vòng cập nhật rồi `settleWarehouseCostIn`, mặc định giữ |
+
+**Lỗi cũ lộ ra khi dẫn Excel về lõi, đã sửa cùng lượt:** tệp Excel KHÔNG có cột Giá vốn, ô Giá vốn để trống, hoặc tệp do người không thấy tài chính nhập → trước đây ĐÈ giá vốn kho của mọi mã có trong tệp về 0 (`parseMoney(... ?? 0)`). Nay các ca đó = không đổi giá vốn (cùng luật với cột Tồn kho sửa 20/11); muốn xóa giá vốn thì gõ số 0. Chưa đo trên prod lỗi này đã làm mất giá vốn của bao nhiêu sản phẩm (68 % sản phẩm kho đang giá 0 — mục 15.2 — có thể một phần từ đây, CHƯA kiểm).
+
+**Giao diện (hộp Sửa sản phẩm ở Tổng kho):**
+
+- Dưới ô Giá vốn vừa đổi: dòng xám "Áp cho N SKU sàn đã nối" (thay dòng vàng "N SKU sàn có giá vốn riêng, không đổi theo").
+- Bấm Lưu mà có SKU sàn giá riêng lệch → hộp "N SKU sàn đang đặt giá vốn riêng": bảng Gian hàng · SKU sàn · Giá riêng (gạch) · Giá mới; hai nút "Giữ giá riêng của gian" / "Áp giá mới cho tất cả"; đóng hộp = quay lại sửa, chưa lưu gì. Tệp mới `frontend/src/components/products/edit/own-cost-choice.tsx`; danh sách phải hỏi tính ở `draft.ts` `ownCostConflicts` từ `ownCosts` mà `GET /:id/group` trả kèm (người không thấy tài chính nhận mảng rỗng).
+- Thông báo sau lưu: "· N SKU sàn theo giá vốn mới · N SKU sàn giữ giá riêng".
+- Dòng chú thích cuối hộp đổi thành: "Đổi giá vốn ở đây là đổi cho mọi SKU sàn đã nối… Muốn một gian tính giá vốn riêng thì nhập ở Cấu hình Giá vốn."
+
+**Anh Trung xem local 27/11 chiều, hai góp ý — ĐÃ SỬA:**
+
+1. "Phần này giao diện đang hòa vào giao diện phía sau khi ấn lưu thay đổi". Gốc: Base UI mặc định KHÔNG vẽ nền mờ cho hộp mở từ trong một hộp khác, nên hộp hỏi nằm thẳng trên hộp Sửa sản phẩm, cùng màu nền. Sửa ở gốc `frontend/src/components/ui/dialog.tsx`: `<DialogOverlay forceRender />` → hộp con nào cũng có nền mờ, hộp cha lùi ra sau. Áp cho MỌI hộp lồng nhau của app (vd hộp "Mã này đang là quà tặng"), không riêng hộp này; hộp cấp một không đổi. Các hộp lồng khác chưa soi lại từng cái.
+2. "Câu chữ đang khó hiểu" → hai nút đổi theo chữ anh đặt: "Không thay đổi giá vốn của gian hàng" / "Áp thay đổi giá vốn lên gian hàng" (bản đầu của em: "Giữ giá riêng của gian" / "Áp giá mới cho tất cả"). Câu mô tả trong hộp sửa theo cùng từ: "… gian hàng đang tính theo giá vốn riêng, khác giá ở Tổng kho. Áp thay đổi thì từ nay gian hàng tính theo giá vốn ở Tổng kho."
+
+Soi lại sau sửa: 1440 sáng + tối hộp cha mờ hẳn sau hộp hỏi; 375 px hai nút xếp dọc, mỗi nút 311 px, không tràn (bảng trong hộp cuộn ngang trong khung). tsc + eslint frontend sạch.
+
+**Đã kiểm (local, DB dev, tài khoản thử `giavon-thu@hubsell.test`, mẫu 3 phân loại × 2 gian):**
+
+- vitest 5 tệp giá vốn / sửa sản phẩm: 67 qua (thêm ca mới trong `product-group-edit-db.test.ts`: khớp giá cũ thì theo, lệch mặc định giữ, chọn follow thì theo, trùng giá mới thì theo, về 0 không đụng, dòng đơn còn 0 nhận giá kho mới). tsc backend + frontend sạch, eslint frontend sạch.
+- Trên màn 1440, sáng + tối: đổi 3 phân loại → hộp hỏi hiện ĐÚNG 2 SKU lệch (TikTok 92.000, Shopee 880.000), không hỏi 2 SKU đang khớp; bảng trong hộp không tràn ngang (638 / 638 px).
+  - "Giữ giá riêng của gian" → thông báo "2 SKU sàn theo giá vốn mới · 2 SKU sàn giữ giá riêng"; trang Cấu hình Giá vốn: 4 dòng 90.000 (theo kho), 2 dòng giữ 92.000 / 880.000.
+  - "Áp giá mới cho tất cả" → cả 6 dòng 91.000, đều "theo giá mặc định ở kho".
+- `PATCH /api/products/:id`: SKU sàn giá riêng bằng giá kho cũ → theo 95.000.
+- Nhập Excel (gọi thẳng API bằng tệp CSV): không có cột Giá vốn → giá kho giữ 95.000; ô trống → giữ; có 97.000 → kho 97.000, Shopee (đang khớp) theo, TikTok (lệch 99.000) giữ.
+
+**CHƯA làm / CHƯA kiểm:**
+
+- Mô phỏng hòa vốn quảng cáo: lượt deploy này TỰ NÓ không đổi giá vốn nào trên prod — giá chỉ đổi khi khách sửa giá ở Tổng kho (hoặc nhập Excel có cột Giá vốn) sau đó, và chỉ ở đơn mới + dòng đơn còn 0. Vì vậy không có số trước / sau để mô phỏng lúc deploy; anh quyết có cần đo gì thêm trước khi push không.
+- Popup SKU P&L và nhập Excel trên GIAO DIỆN (mới gọi API); hộp nhập Excel chưa hiện số "SKU sàn theo giá mới / giữ giá riêng" máy chủ đã trả.
+- Tài khoản nhân viên; màn 1280 và điện thoại; mẫu vài trăm phân loại (hộp hỏi cuộn trong khung 50vh, chưa thử dữ liệu dài).
+- App mobile: không có cửa sửa giá kho (chỉ màn Giá vốn theo gian) nên không đổi.
+- Lát A (điền giá kho trống từ giá gian), lát B (nút lấy giá từ Tổng kho ở trang Tài chính), lát D (cột Giá vốn ở form tạo sản phẩm kho): chưa làm, chờ anh.
+- Dữ liệu thử `GVTHU-*` + tài khoản thử đã dọn khỏi DB dev trước khi commit.

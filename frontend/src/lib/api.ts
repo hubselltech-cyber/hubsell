@@ -1962,8 +1962,13 @@ export interface ProductGroupVariant {
   imageUrl: string | null;
   /** Số SKU sàn đang nối vào dòng này. */
   linkedChannels: number;
-  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian — đổi giá vốn ở kho không đổi giá của chúng. */
+  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian. */
   ownCostChannels: number;
+  /**
+   * Các SKU sàn có giá riêng đó (27/11/2026): đổi giá vốn ở kho thì SKU sàn đã nối theo giá mới; giá riêng nào
+   * lệch cả giá kho cũ lẫn mới thì hộp sửa hỏi lại. Rỗng với người không thấy tài chính.
+   */
+  ownCosts: { shopName: string; channelName: ChannelName; label: string; costPrice: number }[];
 }
 
 export interface ProductGroupDetail {
@@ -1982,6 +1987,8 @@ export interface ProductGroupSavePayload {
   productName: string;
   variants: { id: string; skuCode?: string; variantName?: string; sellingPrice?: number; costPrice?: number }[];
   added: { skuCode: string; variantName: string; sellingPrice: number; costPrice?: number; stock?: number }[];
+  /** SKU sàn đã nối có giá riêng lệch giá kho: "follow" = theo giá mới, "keep" = giữ giá riêng (vắng = giữ). */
+  ownCost?: "follow" | "keep";
 }
 
 /** Một nhóm SKU trong hộp Thống kê Tổng kho: số SKU, tổng tồn (tồn âm tính 0), giá trị tồn theo giá vốn. */
@@ -2020,10 +2027,11 @@ export function fetchProductGroup(productId: string) {
 
 /**
  * Lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán / giá vốn từng dòng, phân loại mới. Lỗi luật →
- * ApiError.message. `backfilledOrderLines` = số dòng đơn cũ chưa có giá vốn vừa nhận giá mới.
+ * ApiError.message. `backfilledOrderLines` = số dòng đơn cũ chưa có giá vốn vừa nhận giá mới;
+ * `followedSkus` / `keptOwnSkus` = số SKU sàn đã nối vừa theo giá kho mới / còn giữ giá riêng.
  */
 export function saveProductGroup(productId: string, payload: ProductGroupSavePayload) {
-  return apiFetch<ProductGroupDetail & { backfilledOrderLines: number }>(`/api/products/${productId}/group`, {
+  return apiFetch<ProductGroupDetail & { backfilledOrderLines: number; followedSkus: number; keptOwnSkus: number }>(`/api/products/${productId}/group`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

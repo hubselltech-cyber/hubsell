@@ -4,7 +4,7 @@
 // (máy chủ vẫn là nơi quyết; ở đây chỉ để khách thấy lỗi tại ô, khỏi bấm Lưu rồi mới biết).
 // ============================================================
 
-import type { ProductGroupDetail, ProductGroupSavePayload, ProductGroupVariant } from "@/lib/api";
+import type { ChannelName, ProductGroupDetail, ProductGroupSavePayload, ProductGroupVariant } from "@/lib/api";
 
 /** Mã SKU mới: chữ không dấu, số, - _ . — tối đa 50 ký tự (máy chủ tự đổi chữ hoa). */
 const NEW_SKU_PATTERN = /^[A-Za-z0-9._-]{1,50}$/;
@@ -52,7 +52,24 @@ export interface RowIssues {
   stock?: string;
   /** Nhắc nhẹ (vàng), không chặn lưu. */
   skuNote?: string;
+  /** Chú thích (xám) dưới ô Giá vốn: giá mới sẽ áp cho bao nhiêu SKU sàn đã nối. */
   costNote?: string;
+}
+
+/**
+ * Một SKU sàn đã nối đang có giá vốn riêng LỆCH cả giá kho cũ lẫn giá kho mới (khách cố ý đặt riêng cho gian,
+ * hoặc nối nhầm quy cách) — trước khi lưu phải hỏi: theo giá mới hay giữ giá riêng. Giá riêng trùng giá kho cũ
+ * hoặc mới thì không hỏi, máy chủ tự cho theo kho (backend lib/cost-price followWarehouseCostIn — cùng luật).
+ */
+export interface OwnCostConflict {
+  key: string;
+  skuCode: string;
+  shopName: string;
+  channelName: ChannelName;
+  /** Phân loại (hoặc mã SKU) của dòng trên sàn. */
+  label: string;
+  ownCost: number;
+  newCost: number;
 }
 
 const digitsOf = (n: number) => String(Math.max(0, Math.round(n)));
@@ -135,9 +152,9 @@ export function rowIssues(draft: GroupDraft): Record<string, RowIssues> {
     }
 
     if (r.kind === "new" && r.stock !== "" && Number(r.stock) > STOCK_MAX) issue.stock = "Số quá lớn";
-    // Giá riêng của gian thắng giá kho — nói ngay tại ô, kẻo khách sửa xong thấy lãi lỗ gian đó không đổi.
-    if (r.kind === "existing" && costChanged(r) && r.original.ownCostChannels > 0) {
-      issue.costNote = `${r.original.ownCostChannels} SKU sàn có giá vốn riêng, không đổi theo`;
+    // Đổi giá vốn ở kho = đổi cho mọi SKU sàn đã nối (27/11/2026) — nói ngay tại ô để khách biết giá này đi tới đâu.
+    if (r.kind === "existing" && costChanged(r) && Number(r.cost || 0) > 0 && r.original.linkedChannels > 0) {
+      issue.costNote = `Áp cho ${r.original.linkedChannels} SKU sàn đã nối`;
     }
     if (Object.keys(issue).length > 0) out[r.key] = issue;
   }
@@ -187,6 +204,31 @@ export function costChangesByPrice(payload: ProductGroupSavePayload): Map<number
     const ids = out.get(v.costPrice);
     if (ids) ids.push(v.id);
     else out.set(v.costPrice, [v.id]);
+  }
+  return out;
+}
+
+/** Các SKU sàn phải hỏi lại trước khi lưu (xem OwnCostConflict). Rỗng = lưu thẳng. */
+export function ownCostConflicts(draft: GroupDraft): OwnCostConflict[] {
+  const out: OwnCostConflict[] = [];
+  for (const r of draft.rows) {
+    if (r.kind !== "existing" || !costChanged(r)) continue;
+    const newCost = Number(r.cost || 0);
+    // Xóa giá kho về 0 không kéo giá các gian về 0 — máy chủ không đụng giá riêng, không có gì để hỏi.
+    if (!(newCost > 0)) continue;
+    const oldCost = r.original.costPrice ?? 0;
+    (r.original.ownCosts ?? []).forEach((own, i) => {
+      if (own.costPrice === oldCost || own.costPrice === newCost) return;
+      out.push({
+        key: `${r.key}-${i}`,
+        skuCode: r.skuCode.trim() || r.original.skuCode,
+        shopName: own.shopName,
+        channelName: own.channelName,
+        label: own.label,
+        ownCost: own.costPrice,
+        newCost,
+      });
+    });
   }
   return out;
 }

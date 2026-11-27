@@ -5,6 +5,7 @@ import { Prisma, InventoryLogType, Role } from "@prisma/client";
 import { hasPermission } from "../config/permission-registry";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
+import { applyCostPrice, COST_TX_OPTIONS, invalidateOwnerCostCaches, settleWarehouseCostIn } from "../lib/cost-price";
 import {
   availableToPush,
   checkLowStockLater,
@@ -542,7 +543,8 @@ function groupEditResponse(req: AuthRequest, detail: ProductGroupDetail) {
   const seesFinancials = canSeeFinancials(req);
   return {
     ...detail,
-    variants: detail.variants.map((v) => hideCost(v, seesFinancials)),
+    // Giá riêng của từng gian cũng là giá vốn — cắt cùng với giá kho.
+    variants: detail.variants.map((v) => (seesFinancials ? v : { ...hideCost(v, false), ownCosts: [] })),
     costPriceHidden: !seesFinancials,
     addMax: GROUP_ADD_MAX,
   };
@@ -612,6 +614,8 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       sizeChart,
     } = req.body ?? {};
     const data: Prisma.ProductUpdateInput = {};
+    /** Giá vốn mới (null = không gửi) — KHÔNG ghi thẳng vào `data`, đi qua lib/cost-price sau khi các trường khác đã lưu. */
+    let nextCost: number | null = null;
 
     if (skuCode !== undefined) {
       if (typeof skuCode !== "string" || skuCode.trim().length === 0) {
@@ -660,7 +664,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         res.status(400).json({ error: "Giá vốn phải là số không âm" });
         return;
       }
-      data.costPrice = cost;
+      nextCost = cost;
     }
     if (sellingPrice !== undefined) {
       const selling = parseMoney(sellingPrice);
@@ -791,6 +795,13 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         return;
       }
       throw err;
+    }
+
+    // Giá vốn kho đổi → cùng đường với hộp Sửa sản phẩm (27/11/2026): SKU sàn đã nối theo giá mới, đơn cũ còn 0
+    // được vá. Cửa này không có hộp hỏi nên SKU sàn có giá riêng lệch giá kho thì GIỮ giá riêng.
+    if (nextCost !== null && nextCost !== Number(product.costPrice)) {
+      await applyCostPrice([id], nextCost, req.ownerId!);
+      updated = await prisma.product.findUniqueOrThrow({ where: { id } });
     }
 
     // Đổi tồn an toàn làm đổi TỒN KHẢ DỤNG → đẩy số mới lên các sàn đã liên kết.
@@ -1048,7 +1059,12 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       productName: string;
       /** undefined = file không có cột Phân loại → giữ nguyên giá trị đang có. */
       variantName: string | null | undefined;
-      costPrice: number;
+      /**
+       * null = tệp không có cột Giá vốn / ô để trống / người nhập không thấy tài chính → KHÔNG đụng giá vốn của
+       * mã đã có (mã mới thì 0). Trước 27/11/2026 ô trống bị đọc thành 0 → tệp chỉ để sửa tồn mà thiếu cột Giá
+       * vốn, hoặc tệp do nhân viên nhập, là ĐÈ giá vốn mọi mã về 0. Muốn xóa giá vốn thì gõ số 0.
+       */
+      costPrice: number | null;
       sellingPrice: number;
       /** null = dòng không có cột Tồn kho / ô để trống → KHÔNG đụng tồn của mã đã có. */
       quantityInStock: number | null;
@@ -1085,9 +1101,8 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
       // Nhân viên nhập file có cột Giá vốn thì cột đó bị bỏ qua, không phải
       // báo lỗi cả dòng — hàng vẫn vào kho, chủ shop vào đặt giá vốn sau.
-      const cost = canSeeFinancials(req)
-        ? parseMoney(pickColumn(row, COLS.cost) ?? 0)
-        : 0;
+      const rawCost = canSeeFinancials(req) ? pickColumn(row, COLS.cost) : undefined;
+      const cost = rawCost === undefined ? undefined : parseMoney(rawCost);
       const selling = parseMoney(pickColumn(row, COLS.selling) ?? 0);
       if (cost === null || selling === null) {
         errors.push({
@@ -1115,7 +1130,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
         skuCode,
         productName,
         variantName: rawVariant === undefined ? undefined : cleanVariantName(String(rawVariant)),
-        costPrice: cost,
+        costPrice: cost ?? null,
         sellingPrice: selling,
         quantityInStock: qty,
       });
@@ -1143,9 +1158,13 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
     const stockChangedIds: string[] = [];
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
+    // Tệp có giá vốn thì lượt này kèm một câu vá đơn cũ còn 0 — cần trần giao dịch rộng như trang Cấu hình Giá vốn.
+    const fileHasCost = valid.some((v) => v.costPrice !== null);
     const result = await prisma.$transaction(async (tx) => {
       let created = 0;
       let updated = 0;
+      /** Mã đã có mà tệp mang giá vốn — sau vòng lặp cho SKU sàn đã nối theo giá mới + vá đơn cũ còn 0 (một lượt cho cả tệp). */
+      const costChanges: { productId: string; oldCost: number; newCost: number }[] = [];
 
       // Lấy trước các sản phẩm đã tồn tại theo SKU để biết create hay update
       const existing = await tx.product.findMany({
@@ -1165,10 +1184,13 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               productName: v.productName,
               variantName: variant,
               groupKey: productGroupKey(v.productName, variant),
-              costPrice: v.costPrice,
+              ...(v.costPrice !== null ? { costPrice: v.costPrice } : {}),
               sellingPrice: v.sellingPrice,
             },
           });
+          if (v.costPrice !== null) {
+            costChanges.push({ productId: found.id, oldCost: Number(found.costPrice), newCost: v.costPrice });
+          }
           if (v.quantityInStock !== null) {
             const written = onHandImport
               ? await setOnHandAbsolute(tx, {
@@ -1197,7 +1219,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               productName: v.productName,
               variantName: v.variantName ?? null,
               groupKey: productGroupKey(v.productName, v.variantName ?? null),
-              costPrice: v.costPrice,
+              costPrice: v.costPrice ?? 0,
               sellingPrice: v.sellingPrice,
               quantityInStock: 0,
             },
@@ -1217,10 +1239,15 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
       // Tồn vừa đổi qua Excel → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
       stockTicket = await stageStockPush(tx, stockChangedIds, { source: "nhập tồn kho từ Excel" });
-      return { created, updated };
-    });
+      // Giá kho vừa ghi ở trên → cùng luật với hộp Sửa sản phẩm (27/11/2026). Tệp Excel không có hộp hỏi nên SKU
+      // sàn có giá riêng lệch giá kho thì GIỮ giá riêng.
+      const cost = await settleWarehouseCostIn(tx, costChanges, ownerId, "keep");
+      return { created, updated, costChanged: costChanges.some((c) => c.oldCost !== c.newCost), ...cost };
+    }, fileHasCost ? COST_TX_OPTIONS : undefined);
 
     await finishStockPush(stockTicket);
+    // Bộ đệm biên lãi của Trợ lý quảng cáo đọc giá vốn — xóa sau khi giao dịch đã chốt.
+    if (result.costChanged || result.backfilledOrderLines > 0) await invalidateOwnerCostCaches(ownerId);
 
     res.json({
       created: result.created,
@@ -1228,6 +1255,10 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       totalImported: result.created + result.updated,
       skipped: errors.length,
       errors,
+      // Giá vốn trong tệp: số SKU sàn đã nối vừa theo giá kho mới / còn giữ giá riêng / dòng đơn cũ còn 0 được vá.
+      followedSkus: result.followedSkus,
+      keptOwnSkus: result.keptOwnSkus,
+      backfilledOrderLines: result.backfilledOrderLines,
       // Cột "Tồn kho" của tệp này đã được hiểu theo nghĩa nào (để hộp nhập nói rõ với khách).
       stockColumn: onHandImport ? "ON_HAND" : "SELLABLE",
       legacyFile: importSettings.stockModel === "ON_HAND" && legacyFile,

@@ -6,6 +6,11 @@
 //   - Giá vốn MẶC ĐỊNH ở kho  → Product.costPrice        (applyCostPrice; mỗi sản phẩm một giá:
 //     applyCostPricesIn — hộp "Sửa sản phẩm" ở Tổng kho, 19/11/2026)
 //
+// ★ 27/11/2026 — GIÁ KHO ĐỔI THÌ SKU SÀN ĐÃ NỐI THEO (anh Trung chốt): đường ghi giá kho bỏ luôn giá riêng
+//   của các SKU sàn đã nối đang khớp giá kho, để chúng đọc giá mới; giá riêng lệch thì hỏi khách
+//   (followWarehouseCostIn). MỌI cửa sửa giá kho phải đi qua applyCostPricesIn, hoặc tự ghi rồi gọi
+//   settleWarehouseCostIn — đừng ghi Product.costPrice rồi thôi.
+//
 // Cả hai đều VÁ LẠI các dòng hàng đã bán mà lúc bán chưa biết giá vốn.
 //
 // ★ 11/10/2026 — GIÁ VỐN THEO GIAN (anh Trung chốt, khách cần cùng mã SKU mỗi
@@ -336,15 +341,98 @@ export async function invalidateOwnerCostCaches(ownerId: string): Promise<void> 
 }
 
 /**
+ * SKU sàn ĐÃ NỐI đang mang giá riêng mà giá riêng đó LỆCH cả giá kho cũ lẫn giá kho mới (khách cố ý đặt riêng
+ * cho gian, hoặc nối nhầm quy cách): "follow" = bỏ giá riêng, theo giá kho mới; "keep" = giữ giá riêng.
+ * Giá riêng TRÙNG giá kho cũ hoặc mới thì không hỏi, luôn theo kho. Xem followWarehouseCostIn.
+ */
+export type OwnCostMode = "follow" | "keep";
+
+/**
+ * GIÁ KHO ĐỔI → SKU SÀN ĐÃ NỐI THEO GIÁ MỚI (27/11/2026, anh Trung: "nếu đã liên kết sản phẩm rồi thì khi khách
+ * hàng thay đổi giá vốn trong Tổng kho thì giá vốn trong Cập nhật giá vốn cũng đổi theo luôn và lên hết các sản
+ * phẩm đã liên kết luôn" — docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 15.4).
+ *
+ * Cách làm: XÓA giá riêng của gian (ChannelProduct.costPrice → NULL) để SKU đó đọc thẳng giá kho qua
+ * effectiveSkuCost — không chép số xuống từng gian (chép là lại thành hai bản, lần sửa sau lệch tiếp).
+ *   · giá riêng = giá kho cũ, hoặc = giá kho mới → luôn theo kho (hai bên vốn đang khớp);
+ *   · giá riêng lệch cả hai → theo `mode` (hộp Sửa sản phẩm hỏi khách; cửa không có giao diện hỏi thì "keep").
+ * Chỉ chạy khi giá kho THẬT SỰ đổi và giá mới > 0: xóa giá kho về 0 không được kéo giá vốn các gian về 0.
+ * Luật "giá gian thắng giá kho" (11/10) giữ nguyên — nhập ở trang Cấu hình Giá vốn vẫn là giá riêng của gian đó.
+ * Một câu UPDATE cho cả lô. Gọi qua settleWarehouseCostIn (SAU khi đã ghi Product.costPrice, TRƯỚC khi vá đơn cũ còn 0).
+ */
+export async function followWarehouseCostIn(
+  db: Db,
+  changes: { productId: string; oldCost: number; newCost: number }[],
+  ownerId: string,
+  mode: OwnCostMode
+): Promise<{ followed: number; kept: number }> {
+  const live = changes.filter((c) => c.newCost > 0 && c.newCost !== c.oldCost);
+  if (live.length === 0) return { followed: 0, kept: 0 };
+  const ids = live.map((c) => c.productId);
+  // Số tiền đi dạng chuỗi rồi ép numeric trong SQL — mảng số JS qua Prisma raw dễ bị đoán sai kiểu.
+  const olds = live.map((c) => String(c.oldCost));
+  const news = live.map((c) => String(c.newCost));
+  const followAll = mode === "follow";
+  const followed = await db.$executeRaw`
+    UPDATE "ChannelProduct" AS cp
+    SET "costPrice" = NULL, "costPriceInheritedAt" = NULL
+    FROM unnest(${ids}::text[], ${olds}::text[], ${news}::text[]) AS t("pid", "oldCost", "newCost"),
+         "Product" AS p
+    WHERE p."id" = t."pid"
+      AND p."userId" = ${ownerId}
+      AND cp."productId" = p."id"
+      AND cp."costPrice" > 0
+      AND (
+        ${followAll}::boolean
+        OR cp."costPrice" = t."oldCost"::numeric
+        OR cp."costPrice" = t."newCost"::numeric
+      )`;
+  const kept = followAll
+    ? 0
+    : await db.channelProduct.count({
+        where: { productId: { in: ids }, costPrice: { gt: 0 }, product: { userId: ownerId } },
+      });
+  return { followed, kept };
+}
+
+/**
+ * PHẦN SAU KHI Product.costPrice ĐÃ GHI — dùng chung cho mọi cửa sửa giá kho (applyCostPricesIn; nhập Excel
+ * Tổng kho tự ghi giá trong vòng cập nhật từng dòng rồi gọi hàm này): SKU sàn đã nối theo giá mới, rồi vá
+ * đơn cũ còn 0. Thứ tự bắt buộc: theo giá TRƯỚC, vá SAU — câu vá bỏ qua dòng của SKU còn giá riêng, nên SKU
+ * vừa bỏ giá riêng phải bỏ xong thì dòng đơn còn 0 của nó mới nhận giá kho.
+ * `changes` gồm cả sản phẩm gửi lại đúng giá cũ (không theo, nhưng vẫn vá đơn còn 0 như trước nay).
+ */
+export async function settleWarehouseCostIn(
+  db: Db,
+  changes: { productId: string; oldCost: number; newCost: number }[],
+  ownerId: string,
+  mode: OwnCostMode
+): Promise<{ backfilledOrderLines: number; followedSkus: number; keptOwnSkus: number }> {
+  const follow = await followWarehouseCostIn(db, changes, ownerId, mode);
+  // Giá 0 không phải giá để vá ("chưa nhập") — chỉ sản phẩm có giá thật mới đi vá đơn cũ.
+  const priced = changes.filter((c) => c.newCost > 0).map((c) => c.productId);
+  const backfilled = await backfillOrderLinesByProducts(db, priced, ownerId);
+  return { backfilledOrderLines: backfilled, followedSkus: follow.followed, keptOwnSkus: follow.kept };
+}
+
+/**
  * Lõi ghi giá vốn MẶC ĐỊNH ở kho, MỖI sản phẩm một giá — chạy trong transaction do bên gọi mở; xong
  * transaction bên gọi tự gọi invalidateOwnerCostCaches. Ghi gộp theo từng mức giá (các phân loại của
- * một mẫu thường chung giá → một câu UPDATE), rồi vá đơn cũ còn 0 bằng MỘT câu cho cả lô.
+ * một mẫu thường chung giá → một câu UPDATE), cho SKU sàn đã nối theo giá mới (followWarehouseCostIn),
+ * rồi vá đơn cũ còn 0 bằng MỘT câu cho cả lô.
  */
 export async function applyCostPricesIn(
   db: Db,
   entries: { productId: string; cost: number }[],
-  ownerId: string
-): Promise<{ products: number; backfilledOrderLines: number }> {
+  ownerId: string,
+  opts: { ownCost?: OwnCostMode } = {}
+): Promise<{ products: number; backfilledOrderLines: number; followedSkus: number; keptOwnSkus: number }> {
+  // Giá kho TRƯỚC khi ghi — để biết sản phẩm nào thật sự đổi giá và SKU sàn nào đang khớp giá cũ.
+  const before = await db.product.findMany({
+    where: { id: { in: [...new Set(entries.map((e) => e.productId))] }, userId: ownerId },
+    select: { id: true, costPrice: true },
+  });
+  const oldCostById = new Map(before.map((p) => [p.id, Number(p.costPrice)]));
   const idsByCost = new Map<number, string[]>();
   for (const e of entries) {
     const ids = idsByCost.get(e.cost);
@@ -359,10 +447,16 @@ export async function applyCostPricesIn(
     });
     products += updated.count;
   }
-  // Giá 0 không phải giá để vá ("chưa nhập") — chỉ sản phẩm vừa có giá thật mới đi vá đơn cũ.
-  const priced = entries.filter((e) => e.cost > 0).map((e) => e.productId);
-  const backfilled = await backfillOrderLinesByProducts(db, priced, ownerId);
-  return { products, backfilledOrderLines: backfilled };
+  const settled = await settleWarehouseCostIn(
+    db,
+    entries.flatMap((e) => {
+      const oldCost = oldCostById.get(e.productId);
+      return oldCost === undefined ? [] : [{ productId: e.productId, oldCost, newCost: e.cost }];
+    }),
+    ownerId,
+    opts.ownCost ?? "keep"
+  );
+  return { products, ...settled };
 }
 
 /** Lõi của applyCostPrice (một giá cho nhiều sản phẩm) — chạy trong transaction do bên gọi mở. */
@@ -370,12 +464,14 @@ export async function applyCostPriceIn(
   db: Db,
   productIds: string[],
   cost: number,
-  ownerId: string
-): Promise<{ products: number; backfilledOrderLines: number }> {
+  ownerId: string,
+  opts: { ownCost?: OwnCostMode } = {}
+): Promise<{ products: number; backfilledOrderLines: number; followedSkus: number; keptOwnSkus: number }> {
   return applyCostPricesIn(
     db,
     productIds.map((productId) => ({ productId, cost })),
-    ownerId
+    ownerId,
+    opts
   );
 }
 
@@ -387,10 +483,11 @@ export async function applyCostPriceIn(
 export async function applyCostPrice(
   productIds: string[],
   cost: number,
-  ownerId: string
-): Promise<{ products: number; backfilledOrderLines: number }> {
+  ownerId: string,
+  opts: { ownCost?: OwnCostMode } = {}
+): Promise<{ products: number; backfilledOrderLines: number; followedSkus: number; keptOwnSkus: number }> {
   const r = await prisma.$transaction(
-    (tx) => applyCostPriceIn(tx, productIds, cost, ownerId),
+    (tx) => applyCostPriceIn(tx, productIds, cost, ownerId, opts),
     COST_TX_OPTIONS
   );
   await invalidateOwnerCostCaches(ownerId);

@@ -49,7 +49,10 @@ function DialogContent({
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      {/* forceRender: Base UI mặc định KHÔNG vẽ nền mờ cho hộp mở TỪ TRONG một hộp khác, nên hộp con (hộp hỏi lại
+          khi lưu…) nằm thẳng trên hộp cha, cùng màu nền, hòa vào nhau (anh Trung 27/11/2026). Vẽ nền mờ cho cả
+          hộp con để hộp cha lùi ra sau. Hộp cấp một vốn đã có nền mờ — không đổi gì. */}
+      <DialogOverlay forceRender />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
