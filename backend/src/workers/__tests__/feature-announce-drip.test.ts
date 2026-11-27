@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DRIP, dripBudget, pauseKind } from "../feature-announce-drip";
+import { ANNOUNCE_FEATURES } from "../../services/feature-announce";
 
 /** Giờ VN → Date (VN = UTC+7). */
 const vn = (iso: string) => new Date(`${iso}+07:00`);
@@ -25,9 +26,16 @@ describe("dripBudget — gửi nốt thư báo tính năng mỗi ngày một lô
     expect(dripBudget({ now: vn("2026-11-07T15:00:00"), sentToday: 3, pausedToday: true })).toBe(0);
   });
 
-  it("quá hạn đợt gửi: thôi hẳn", () => {
-    expect(dripBudget({ now: vn("2026-12-01T10:00:00"), sentToday: 0, pausedToday: false })).toBe(0);
-    expect(dripBudget({ now: vn("2026-11-30T23:30:00"), sentToday: 0, pausedToday: false })).toBe(DRIP.perDay);
+  it("quá hạn đợt gửi: thôi hẳn (đọc hạn từ DRIP.until, không gõ ngày tay)", () => {
+    const next = new Date(`${DRIP.until}T10:00:00+07:00`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    expect(dripBudget({ now: next, sentToday: 0, pausedToday: false })).toBe(0);
+    expect(dripBudget({ now: vn(`${DRIP.until}T23:30:00`), sentToday: 0, pausedToday: false })).toBe(DRIP.perDay);
+  });
+
+  it("đợt đang chạy phải là một thư có trong ANNOUNCE_FEATURES (27/11: Quay video đóng hàng)", () => {
+    expect(DRIP.feature).toBe("pack-video");
+    expect(ANNOUNCE_FEATURES[DRIP.feature]?.kind).toBe("feature-pack-video");
   });
 
   it("dấu nghỉ theo ngày VN, khác kind vé gửi thư", () => {

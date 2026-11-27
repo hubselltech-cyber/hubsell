@@ -28,13 +28,17 @@ import { BUSINESS_TZ_OFFSET_MS, businessDayStart, toBusinessDateKey } from "../l
 import { isMailerConfigured } from "../lib/mailer";
 import { ANNOUNCE_FEATURES, sendAnnounceBatch } from "../services/feature-announce";
 
+// 27/11/2026 — anh Trung: "Gửi thư đi thôi", "Push và gửi" → đợt mới = thư Quay video đóng hàng ("pack-video").
+// Đợt "mobile-1-4-2" dừng sớm 3 ngày so với hạn 30/11 (worker chỉ chạy MỘT đợt một lúc). Giữ 25 thư / ngày.
+// Hạn 20/12 là SỐ EM TỰ CHỌN: hơn 250 chủ shop / 25 ≈ 11 ngày gửi, cộng dư cho ngày Zoho chặn và khách mới
+// đăng ký trong lúc gửi. Bật tối 27/11 (sau 9h VN) nên 25 thư đầu đi ngay lượt chạy đầu của worker.
 export const DRIP = {
-  feature: "mobile-1-4-2",
+  feature: "pack-video",
   perDay: 25,
   /** Giờ VN bắt đầu gửi mỗi ngày. */
   fromHourVN: 9,
   /** Quá ngày này (giờ VN) thì thôi hẳn, kể cả còn người chưa nhận. */
-  until: "2026-11-30",
+  until: "2026-12-20",
   pauseMs: 3000,
 } as const;
 

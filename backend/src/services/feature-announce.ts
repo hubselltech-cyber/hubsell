@@ -32,8 +32,8 @@ export const ANNOUNCE_FEATURES: Record<string, AnnounceFeature> = {
     kind: "feature-mobile-1-4-2",
     send: (to, fullName) => sendFeatureMobileAppMail(to, { fullName }),
   },
-  // 27/11/2026: Quay video đóng hàng (bản web mở cho khách 26/11). MỚI CHỈ gửi tay được bằng script;
-  // worker nhỏ giọt (feature-announce-drip.ts) vẫn trỏ "mobile-1-4-2" — anh duyệt thư rồi mới đổi DRIP.feature.
+  // 27/11/2026: Quay video đóng hàng (bản web mở cho khách 26/11). Anh duyệt "Push và gửi" tối 27/11 →
+  // worker nhỏ giọt (feature-announce-drip.ts) đang gửi đợt này, 25 thư / ngày.
   "pack-video": {
     kind: "feature-pack-video",
     send: (to, fullName) => sendFeaturePackVideoMail(to, { fullName }),
