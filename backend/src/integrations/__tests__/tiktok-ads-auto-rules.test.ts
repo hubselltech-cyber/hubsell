@@ -460,5 +460,11 @@ describe("câu chuông lượt chấm", () => {
     expect(r.title).toBe("TikTok từ chối lệnh loại 3 video — ~1,2 tr/tuần vẫn đang chảy");
     expect(r.body).toContain("code 40002");
     expect(r.body).toContain("thử lại");
+    // Chiến dịch tự chọn video (27/11/2026): mai thử lại vẫn bị từ chối → chuông nói việc khách cần làm, không hứa "sẽ thử lại".
+    const custom = refusedNotice(input, "TikTok Ads /campaign/gmv_max/creative/update/ lỗi 40002: Cannot operate on product Gmv Max campaign with custom video selection type. (request_id X)");
+    expect(custom.title).toBe(r.title);
+    expect(custom.body).toContain("TikTok không cho loại video khi chiến dịch chọn video thủ công.");
+    expect(custom.body).not.toContain("thử lại");
+    expect(custom.body).not.toContain("request_id");
   });
 });

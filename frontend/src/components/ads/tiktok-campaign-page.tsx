@@ -588,6 +588,13 @@ export function TiktokCampaignPage() {
           </div>
         )}
         {q.error && <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>}
+        {/* Chiến dịch tự chọn video (27/11/2026): TikTok không cho loại / khôi phục qua API. Chỉ NHẮC, không khóa nút — khách đổi
+            chế độ trên TikTok rồi bấm lại thành công thì backend tự thôi trả cờ. */}
+        {c?.videoSelectionCustom && c.videoSelectionHelp && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+            {c.videoSelectionHelp}.
+          </div>
+        )}
 
         {/* ===== BA CON SỐ KẾT LUẬN ===== */}
         <div className="grid gap-4 sm:grid-cols-3">

@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 27/11 ~19:50 — Quảng cáo TikTok: khách bấm Loại video trên app bị "TikTok từ chối" 6 lần — gốc là chiến dịch TỰ CHỌN VIDEO — ĐÃ SỬA trên local, CHƯA commit / push
+
+Anh 27/11 (ảnh tab Lịch sử trên app của khách): "khách hàng khi loại video trên app không được. anh test thử với tài khoản của anh thì vẫn được". Chi tiết: [docs/ADS-TIKTOK-GMV-MAX.md](docs/ADS-TIKTOK-GMV-MAX.md) mục 4, gạch đầu dòng "Loại/khôi phục video".
+
+- **Gốc:** câu lỗi sàn trong ảnh — `40002 Cannot operate on product Gmv Max campaign with custom video selection type.` Chiến dịch của khách để chế độ chủ shop tự chọn video (trong ảnh chỉ có 4 video); TikTok chỉ cho loại / khôi phục qua API khi chiến dịch để sàn tự chọn video. Gian nhà toàn chiến dịch sàn tự chọn nên anh thử thì được. Không phải lỗi app, kết nối hay quyền. Căn cứ là câu lỗi của sàn; CHƯA đọc `product_video_specific_type` của chính chiến dịch này qua API (cần token của khách trên prod).
+- **Đã sửa (không gọi thêm sàn, không migration):** `action-log.ts` nhận diện câu lỗi → hiện đúng MỘT câu anh chốt 27/11 ("Khi khách bấm loại hiện lên lỗi đỏ như trên nhưng thay bằng…"): **"TikTok không cho loại video khi chiến dịch chọn video thủ công"** (bản đầu em viết ba câu hướng dẫn, anh rút gọn; em viết hoa đúng "TikTok" như phần còn lại của app); đổi lúc ĐỌC sổ nên 6 dòng cũ của khách và app mobile bản đang phát hành thấy lời mới ngay khi backend lên. `POST /videos/action` trả 409 kèm lời đó thay cho "TikTok từ chối lệnh: <tiếng Anh>". Payload videos thêm `campaign.videoSelectionCustom` + `videoSelectionHelp` → web hiện dải vàng trên trang chiến dịch, không khóa nút. Chuông lệnh tự động bị từ chối với ca này bỏ câu "sẽ thử lại".
+- **Kiểm:** 82 test hai tệp `tiktok-ads*.test.ts` qua (thêm 4 ca), `tsc` backend + frontend sạch. ❌ CHƯA nhìn dải vàng trên trình duyệt (local không có máy giả TikTok Ads để dựng trang chiến dịch); ❌ chưa thử trên app.
+- **Còn hở, chờ anh:** (1) app mobile chưa có dải nhắc trước khi bấm — cần OTA; (2) luật Tự loại thật bật trên chiến dịch tự chọn video sẽ gửi lệnh và bị từ chối mỗi ngày — chưa có ca thật.
+
+---
 ## Phiên 27/11 ~17:00 — Sao chép TikTok → Shopee: "Sàn không nhận ảnh sản phẩm" nhưng gốc là ảnh TRONG MÔ TẢ hẹp dưới 700 px — ĐÃ SỬA, COMMIT + PUSH 27/11, ⏳ bấm Đăng lại dòng DarkMan Store (lượt thật đầu tiên)
 
 Anh 27/11 (2 ảnh đợt TC120, and.not.or → DarkMan Store): "lỗi khi sao chép hình ảnh. Kiểu hình ảnh quá dung lượng nhưng không biết là ảnh nào quá dung lượng và cũng không có nút xóa". Chi tiết: [docs/SAO-CHEP-SAN-PHAM.md](docs/SAO-CHEP-SAN-PHAM.md) mục 36.
@@ -14,7 +24,7 @@ Anh 27/11 (2 ảnh đợt TC120, and.not.or → DarkMan Store): "lỗi khi sao c
 - **Sửa giao diện (Sửa bài đăng):** mỗi ảnh mô tả có số thứ tự, nút ✕ khi rê chuột, nhãn "Nhỏ" cho ảnh rộng dưới 700 px.
 - **Đã kiểm:** vitest 86 / 86 (thêm 7 ca), tsc 2 đầu + eslint sạch; local sàn giả lập 1440 sáng + 1280 tối: câu đỏ mới, nhãn Nhỏ đúng ảnh, bỏ ảnh → Lưu → DB còn 11 ảnh.
 - **CHƯA:** lượt đăng thật lên Shopee (local không có token sàn) — sau deploy bấm Đăng lại dòng DarkMan Store là phép thử.
-- **✅ COMMIT + PUSH 27/11 ~17:40 (anh: "Commit và push").** Lượt seed thử đã xóa khỏi DB dev, hai máy chủ local đã tắt. 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
+- **✅ COMMIT + PUSH 27/11 17:19 — `ef82a27b` (anh: "Commit và push").** Backend web prod `/health` trả đúng bản này lúc 17:22; worker (chạy việc đăng) không có `/health` công khai và giao diện Vercel chưa xác nhận. Lượt seed thử đã xóa khỏi DB dev, hai máy chủ local đã tắt. 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
 
 ---
 ## Phiên 27/11 chiều — Giá vốn Tổng kho ↔ trang Cập nhật giá vốn: ĐO PROD + luật "giá kho đổi thì SKU sàn đã nối theo" ĐÃ PUSH `365ad2b2`; ba lát A / B / D ĐÃ PUSH 27/11 tối, ⏳ anh kiểm trên prod

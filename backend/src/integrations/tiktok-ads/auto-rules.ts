@@ -31,6 +31,7 @@
 // ============================================================
 
 import { vndCompact } from "../../lib/ads-format";
+import { CUSTOM_VIDEO_SELECTION_HELP, isCustomVideoSelectionError } from "./action-log";
 
 export type AutoRuleMode = "off" | "dry_run" | "live";
 export const AUTO_RULE_MODES: AutoRuleMode[] = ["off", "dry_run", "live"];
@@ -541,8 +542,13 @@ export function skippedNotice(campaignName: string, skipped: string): { title: s
 
 /** TikTok từ chối lệnh loại: nói rõ khoản vẫn đang chảy + máy sẽ thử lại. */
 export function refusedNotice(i: AutoRunNoticeInput, error: string): { title: string; body: string } {
+  const title = `TikTok từ chối lệnh loại ${i.count} video — ~${vndShort(i.spend)}/${periodText(i.windowDays)} vẫn đang chảy`;
+  // Chiến dịch tự chọn video (27/11/2026): thử lại mai cũng bị từ chối y như vậy → nói thẳng việc khách phải làm, không hứa "sẽ thử lại".
+  if (isCustomVideoSelectionError(error)) {
+    return { title, body: `Chiến dịch "${i.campaignName}". ${CUSTOM_VIDEO_SELECTION_HELP}.` };
+  }
   return {
-    title: `TikTok từ chối lệnh loại ${i.count} video — ~${vndShort(i.spend)}/${periodText(i.windowDays)} vẫn đang chảy`,
+    title,
     body: `Chiến dịch "${i.campaignName}". Lỗi sàn: ${error} Trợ lý sẽ thử lại ở lượt chấm mai; cần gấp thì loại tay trên TikTok Ads Manager.`,
   };
 }

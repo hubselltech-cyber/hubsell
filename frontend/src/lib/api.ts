@@ -4395,6 +4395,10 @@ export interface TiktokAdsCampaignVideos {
     biddingMethod: string;
     /** Lúc Hubsell thấy chiến dịch chuyển sang Phân phối tối đa (ISO); null = ROI mục tiêu. Vắng = backend cũ. */
     maxDeliverySince?: string | null;
+    /** true = lệnh loại / khôi phục gần nhất bị TikTok từ chối vì chiến dịch để chế độ tự chọn video. Vắng = backend cũ. */
+    videoSelectionCustom?: boolean;
+    /** Lời giải thích + việc khách cần làm (chỉ có khi videoSelectionCustom). */
+    videoSelectionHelp?: string | null;
     roasTarget: number | null;
     /** Cộng dồn khoảng ngày đang xem (từ tầng sản phẩm của báo cáo). */
     spend: number;

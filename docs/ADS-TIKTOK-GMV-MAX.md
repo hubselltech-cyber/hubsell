@@ -114,6 +114,19 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   scope hiện tại, với campaign tạo từ Seller Center và video affiliate. Campaign phải đang bật. Sàn không trả
   kết quả từng video; lệnh thật đầu tiên 17/09 được áp dụng sau **~5–8 phút** (docs ghi 20 phút).
   UI đánh dấu "đang chờ" 30 phút từ sổ hành động.
+  - ★ **Chiến dịch TỰ CHỌN VIDEO thì sàn từ chối** (ca thật 27/11/2026 — khách bấm Loại trên app 6 lần, anh Trung thử gian nhà
+    thì được): `40002 Cannot operate on product Gmv Max campaign with custom video selection type.` Lệnh chỉ chạy khi
+    `product_video_specific_type = AUTO_SELECTION` (mọi chiến dịch gian nhà đều thế nên trước giờ không gặp). Không phải lỗi kết
+    nối / quyền, bấm lại không đổi. Hubsell KHÔNG gọi `/campaign/gmv_max/info/` để đọc cờ trước (thêm 1 call / chiến dịch / lượt,
+    token cũ còn thiếu quyền Campaign) mà nhận diện bằng chính câu lỗi: `action-log.ts` → `isCustomVideoSelectionError` +
+    `CUSTOM_VIDEO_SELECTION_HELP` = "TikTok không cho loại video khi chiến dịch chọn video thủ công" (câu anh Trung chốt 27/11, MỘT câu — đừng nới thành đoạn hướng dẫn). Sổ giữ nguyên văn lỗi (còn request_id); đổi sang lời tiếng Việt LÚC ĐỌC (`serializeVideoActionLog`)
+    nên dòng cũ + app mobile bản đang phát hành cũng thấy lời mới. Route `/videos/action` trả 409 kèm lời đó; payload videos có
+    `campaign.videoSelectionCustom` + `videoSelectionHelp` (suy từ lệnh thật gần nhất có kết quả — FAILED vì ca này) → web hiện dải
+    vàng, KHÔNG khóa nút (khách đổi chế độ trên TikTok rồi bấm lại thành công là dải tự tắt). Chuông lệnh tự động bị từ chối
+    (`refusedNotice`) với ca này nói việc cần làm, bỏ câu "sẽ thử lại". Còn hở: luật Tự loại thật trên chiến dịch kiểu này vẫn gửi
+    lệnh mỗi ngày và bị từ chối mỗi ngày (chưa có ca thật); app mobile chưa có dải nhắc (chỉ có lời ở hộp lỗi + tab Lịch sử).
+    Muốn bỏ video của chiến dịch tự chọn qua API phải sửa danh sách video bằng `/campaign/gmv_max/update/` — thuộc nhóm lệnh sửa
+    chiến dịch anh đã chốt KHÔNG làm (23/09).
 - **Trang ủy quyền** tự điền tài khoản TikTok for Business đang đăng nhập trên trình duyệt; lần đầu ủy quyền
   advertiser phải nhập mã xác minh gửi về email tài khoản quảng cáo (hiệu lực 48h cho cùng app).
 - ★ **Gian không nối được — "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này"** (anh Trung 29/10/2026,

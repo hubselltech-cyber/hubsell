@@ -52,11 +52,13 @@ import {
   VIDEO_ACTION_CONFIG_CHANGE,
   VIDEO_HISTORY_ACTIONS,
   VIDEO_VERDICT_MANUAL,
+  CUSTOM_VIDEO_SELECTION_HELP,
   buildVideoActionReasons,
   clampHistoryLimit,
   decodeHistoryCursor,
   encodeHistoryCursor,
   historyCursorWhere,
+  isCustomVideoSelectionError,
   parseVideoActionReasons,
   serializeVideoActionLog,
   videoActionNote,
@@ -597,6 +599,20 @@ async function pendingVideoActions(adsCampaignId: string): Promise<Map<string, "
   return out;
 }
 
+/**
+ * Chiến dịch đang để chế độ TỰ CHỌN VIDEO? (27/11/2026) Suy từ lệnh loại / khôi phục THẬT gần nhất đã có kết quả: sàn vừa từ
+ * chối vì lý do đó → true. Không gọi thêm sàn, không cột mới; khách đổi chế độ trên TikTok rồi bấm lại thành công thì dòng
+ * mới nhất là SUCCESS → dải nhắc tự tắt. Vì vậy trang CHỈ NHẮC, không khóa nút (khóa thì không còn đường nào tự gỡ).
+ */
+async function campaignVideoSelectionCustom(adsCampaignId: string): Promise<boolean> {
+  const last = await prisma.adsActionLog.findFirst({
+    where: { adsCampaignId, action: { in: VIDEO_ACTIONS }, mode: "live", status: { in: ["SUCCESS", "FAILED"] } },
+    orderBy: { createdAt: "desc" },
+    select: { status: true, error: true },
+  });
+  return last?.status === "FAILED" && isCustomVideoSelectionError(last.error);
+}
+
 // Soi SỐNG một campaign: sản phẩm (SPU) + video đang được phân phối, cộng dồn
 // `days` ngày. Không lưu DB (một campaign thật có gần 1.800 video). 2–3 call/lượt.
 adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next) => {
@@ -686,6 +702,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             ])
           : [];
       const pending = await pendingVideoActions(campaign.id);
+      const videoSelectionCustom = await campaignVideoSelectionCustom(campaign.id);
       // Kết luận gần nhất của luật tự động cho từng video (bảng theo dõi) — chip "Máy sẽ loại" / "Cần xem".
       const watches = await prisma.tiktokAdsVideoWatch.findMany({
         where: { adsCampaignId: campaign.id, lastVerdict: { not: "" } },
@@ -735,6 +752,9 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           status: campaign.status,
           biddingMethod: campaign.biddingMethod,
           maxDeliverySince: campaign.maxDeliverySince,
+          /** true = lệnh loại / khôi phục gần nhất bị TikTok từ chối vì chiến dịch để chế độ tự chọn video → trang hiện dải nhắc. */
+          videoSelectionCustom,
+          videoSelectionHelp: videoSelectionCustom ? CUSTOM_VIDEO_SELECTION_HELP : null,
           roasTarget: campaign.roasTarget != null ? Number(campaign.roasTarget) : null,
           spend: products.reduce((s, x) => s + x.cost, 0),
           orders: products.reduce((s, x) => s + x.orders, 0),
@@ -865,6 +885,11 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
       })
     );
     if (!sent.ok) {
+      // Chiến dịch tự chọn video: sàn không cho loại / khôi phục qua API — nói việc khách cần làm thay vì dán nguyên lỗi tiếng Anh.
+      if (isCustomVideoSelectionError(sent.error)) {
+        res.status(409).json({ error: CUSTOM_VIDEO_SELECTION_HELP, code: "custom_video_selection" });
+        return;
+      }
       res.status(502).json({ error: `TikTok từ chối lệnh: ${sent.error}` });
       return;
     }

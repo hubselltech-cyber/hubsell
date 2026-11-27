@@ -46,6 +46,31 @@ export function buildVideoActionReasons(items: VideoActionItem[], grounds: strin
   ].join("\n");
 }
 
+// ------------------------------------------------------------
+// CHIẾN DỊCH TỰ CHỌN VIDEO (27/11/2026 — khách bấm Loại trên app 6 lần đều "TikTok từ chối", anh Trung thử gian nhà thì được).
+// /campaign/gmv_max/creative/update/ chỉ chạy khi chiến dịch Product GMV Max để SÀN tự chọn video
+// (product_video_specific_type = AUTO_SELECTION). Chiến dịch chủ shop TỰ CHỌN video thì sàn trả
+// `40002 Cannot operate on product Gmv Max campaign with custom video selection type.` — không phải lỗi kết nối, bấm lại
+// bao nhiêu lần cũng vậy. Hubsell không đọc cờ đó lúc đồng bộ (tốn thêm 1 call / chiến dịch / lượt) mà nhận diện bằng
+// CHÍNH câu lỗi của sàn: cột `error` giữ nguyên văn (còn request_id để tra), lúc ĐỌC mới đổi sang câu tiếng Việt → cả các
+// dòng đã ghi trước ngày sửa lẫn app mobile bản cũ đều thấy lời mới.
+// ------------------------------------------------------------
+
+const CUSTOM_VIDEO_SELECTION_ERROR = /custom video selection/i;
+
+/** Lời nói với khách — câu anh Trung chốt 27/11/2026 (bản đầu em viết ba câu hướng dẫn, anh rút còn một câu). Không dấu chấm cuối: nơi dùng tự thêm. */
+export const CUSTOM_VIDEO_SELECTION_HELP = "TikTok không cho loại video khi chiến dịch chọn video thủ công";
+
+/** Lỗi sàn (nguyên văn) có phải do chiến dịch để chế độ tự chọn video không. */
+export function isCustomVideoSelectionError(error: string | null | undefined): boolean {
+  return !!error && CUSTOM_VIDEO_SELECTION_ERROR.test(error);
+}
+
+/** Lỗi lưu trong sổ → lời hiện cho khách. Chỉ đổi ca đã biết; lỗi khác (và ghi chú kiểm lệnh B7) giữ nguyên văn. */
+export function friendlyVideoCommandError(error: string | null): string | null {
+  return isCustomVideoSelectionError(error) ? CUSTOM_VIDEO_SELECTION_HELP : error;
+}
+
 /** Một dòng sổ như DB trả (chỉ các cột route cần) → mục lịch sử cho FE / mobile. */
 export interface VideoActionLogRow {
   id: string;
@@ -66,7 +91,7 @@ export function serializeVideoActionLog(l: VideoActionLogRow) {
     /** dry_run = lệnh DIỄN TẬP (status PLANNED, chưa gọi sàn); live = đã gửi lên TikTok. */
     mode: l.mode,
     status: l.status,
-    error: l.error,
+    error: friendlyVideoCommandError(l.error),
     /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
     source: l.verdict === VIDEO_VERDICT_MANUAL ? ("manual" as const) : ("auto" as const),
     ...parseVideoActionReasons(l.reasons),

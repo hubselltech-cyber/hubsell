@@ -275,8 +275,9 @@ export const GMV_MAX_CREATIVE_BATCH = 400;
 /**
  * Loại (REMOVE) hoặc đưa lại (ADD) video trong một campaign GMV Max. Điều kiện
  * của sàn: campaign đang BẬT; Product GMV Max phải để chế độ sàn tự chọn video
- * (product_video_specific_type = AUTO_SELECTION — Hubsell không đọc được cờ này
- * vì chưa xin nhóm quyền Campaign, sai thì sàn trả lỗi). Sàn KHÔNG trả kết quả
+ * (product_video_specific_type = AUTO_SELECTION — Hubsell KHÔNG đọc cờ này trước khi gửi; chiến dịch
+ * chủ shop tự chọn video thì sàn trả 40002 "…custom video selection type", action-log.ts đổi câu đó
+ * thành lời hướng dẫn cho khách — ca thật 27/11/2026). Sàn KHÔNG trả kết quả
  * từng video; trạng thái mới (EXCLUDED) chỉ thấy trong report sau ~20 phút.
  */
 export async function updateGmvMaxCreatives(

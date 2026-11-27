@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CUSTOM_VIDEO_SELECTION_HELP,
   VIDEO_HISTORY_PAGE_MAX,
   VIDEO_HISTORY_PAGE_SIZE,
   buildVideoActionReasons,
   clampHistoryLimit,
   decodeHistoryCursor,
   encodeHistoryCursor,
+  friendlyVideoCommandError,
   historyCursorWhere,
+  isCustomVideoSelectionError,
   parseVideoActionReasons,
   serializeVideoActionLog,
   videoActionNote,
@@ -58,6 +61,36 @@ describe("lịch sử loại video chia trang — con trỏ keyset (24/10/2026)"
     expect(out.videos).toEqual([{ videoId: "7001", note: "chi 1.000đ · 0 đơn" }]);
     expect(out.grounds).toEqual(["căn cứ A"]);
     expect(serializeVideoActionLog({ id: "l2", action: "exclude_video", mode: "dry_run", verdict: "auto", status: "PLANNED", error: null, reasons: "", createdAt: row.createdAt }).source).toBe("auto");
+  });
+
+  // 27/11/2026 — khách bấm Loại 6 lần đều bị từ chối: chiến dịch để chế độ tự chọn video. Câu lỗi dưới đây chép NGUYÊN VĂN từ ảnh khách gửi.
+  describe("chiến dịch tự chọn video: lỗi sàn → lời tiếng Việt", () => {
+    const raw =
+      "TikTok Ads /campaign/gmv_max/creative/update/ lỗi 40002: Cannot operate on product Gmv Max campaign with custom video selection type. (request_id 2026112720433112B1E0BFB582668A5DB7)";
+    const base = { id: "l3", action: "exclude_video", mode: "live", verdict: "manual", status: "FAILED", reasons: "#7712064415788584199 · chi 78.376đ · 0 đơn", createdAt: row.createdAt };
+
+    it("nhận ra đúng ca này, không nhận nhầm lỗi 40002 khác", () => {
+      expect(isCustomVideoSelectionError(raw)).toBe(true);
+      expect(isCustomVideoSelectionError("TikTok Ads /campaign/gmv_max/update/ lỗi 40002: Shop must belong to a Business Center account.")).toBe(false);
+      expect(isCustomVideoSelectionError(null)).toBe(false);
+      expect(isCustomVideoSelectionError("")).toBe(false);
+    });
+
+    it("lịch sử hiện lời hướng dẫn thay cho câu lỗi tiếng Anh — kể cả dòng đã ghi trước ngày sửa", () => {
+      const out = serializeVideoActionLog({ ...base, error: raw });
+      expect(out.error).toBe(CUSTOM_VIDEO_SELECTION_HELP);
+      expect(out.error).toBe("TikTok không cho loại video khi chiến dịch chọn video thủ công");
+      expect(out.error).not.toContain("request_id");
+      expect(out.status).toBe("FAILED");
+    });
+
+    it("lỗi khác và ghi chú kiểm lệnh (B7) giữ nguyên văn", () => {
+      const other = "TikTok Ads /campaign/gmv_max/creative/update/ lỗi 40105: Access token is invalid.";
+      expect(friendlyVideoCommandError(other)).toBe(other);
+      const soak = "Kiểm lại 27/11: TikTok đã ngừng phân phối đủ 3 video của lệnh.";
+      expect(serializeVideoActionLog({ ...base, status: "SUCCESS", error: soak }).error).toBe(soak);
+      expect(friendlyVideoCommandError(null)).toBeNull();
+    });
   });
 });
 import { reconcileSendingCommand, soakCheckExclude } from "../tiktok-ads/send-command";
