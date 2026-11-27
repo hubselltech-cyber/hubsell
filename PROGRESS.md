@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 27/11 sáng (2) — ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — CODE LOCAL (chưa commit / chưa push)
+## Phiên 27/11 sáng (2) — ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — ĐÃ COMMIT `4f22325b` trên master (CHƯA PUSH → prod chưa đổi)
 
 Anh 27/11 ~10:15 (kèm ảnh sidebar khoanh mục): "ẩn phần này trên side bar. Đóng băng luôn không dùng tới nữa để giảm lượt gọi".
 
