@@ -112,6 +112,35 @@ describe("lỗi thật 30/10 Bunchar: Shopee không whitelist ảnh mô tả + U
   });
 });
 
+// 26/11/2026 (docs mục 36) — anh chuyển ảnh: câu đỏ nói "ảnh sản phẩm ≤ 2 MB, 500×500" trong khi sàn chê ẢNH MÔ TẢ hẹp dưới 700 px.
+describe("lỗi thật 26/11: Shopee chê ảnh trong mô tả hẹp hơn 700 px", () => {
+  const raw = "Shopee add_item lỗi: product.error_desc_image_no_pass — The width of product description image must be between 700 and 100000 pixels. Please adjust it.";
+
+  it("error_desc_image_no_pass → câu ảnh TRONG MÔ TẢ, không phải 'Sàn không nhận ảnh sản phẩm'", () => {
+    const { text, detail } = split(humanizeListingError("SHOPEE", raw));
+    expect(text).toMatch(/^Shopee từ chối: Ảnh trong mô tả chưa đạt chuẩn sàn/);
+    expect(text).toMatch(/không phải ảnh sản phẩm/);
+    expect(text).toMatch(/700 px/);
+    expect(text).toMatch(/mục Ảnh trong mô tả/);
+    expect(text).not.toMatch(/Sàn không nhận ảnh sản phẩm|2 MB/);
+    expect(detail).toBe(raw);
+  });
+
+  it("adapter báo đích danh ảnh mô tả thứ mấy hỏng → câu đỏ bảo bỏ đúng ảnh đó", () => {
+    const err = attachListingErrorContext(new Error("Ảnh mô tả số 3 không tải lên Shopee được: Shopee upload_image lỗi: error_param — image file too large (a.jpg)"), { descImageIndex: 3 });
+    const { text, detail } = split(humanizeListingError("SHOPEE", err.message, listingErrorContext(err)));
+    expect(text).toMatch(/^Shopee từ chối: Ảnh thứ 3 trong mô tả không tải lên sàn được/);
+    expect(text).toMatch(/bỏ ảnh thứ 3 rồi bấm Đăng lại/);
+    expect(detail).toBe(err.message);
+  });
+
+  it("không bắt nhầm: lỗi whitelist ảnh mô tả và lỗi ảnh sản phẩm vẫn ra câu cũ", () => {
+    const whitelist = "Shopee add_item lỗi: product.error_param — You are not in the whitelist to add images in description, can only upload plain text";
+    expect(split(humanizeListingError("SHOPEE", whitelist)).text).toMatch(/chưa được Shopee cho phép chèn ảnh vào mô tả/);
+    expect(split(humanizeListingError("SHOPEE", "Shopee upload_image lỗi: error_param — image file too large (a.jpg)")).text).toMatch(/Sàn không nhận ảnh sản phẩm/);
+  });
+});
+
 // 22/11/2026 (docs mục 35) — hai lỗi thật TikTok trước đây dịch sai, khách đọc không biết sửa gì.
 describe("TikTok: nhóm phân loại + bảng size", () => {
   it("12052241 sales_attributes → lỗi phía Hubsell, KHÔNG bảo khách điền thuộc tính danh mục", () => {

@@ -1110,3 +1110,51 @@ có mã vẫn lên (VDT002-…, TC047, 3ong…); nguồn TikTok lỗi là do b�
 - 7 bài Shopee đã lên thiếu phân loại: chưa báo khách (thangpv202, trucxanhq122) — ⏳ anh quyết cách báo.
 - Lazada đích dùng `variantPairs` → hưởng cùng sửa, chưa có lượt thật.
 - Giao diện không đổi → không có ảnh chụp.
+
+## 36. TikTok → Shopee: "Sàn không nhận ảnh sản phẩm" nhưng gốc là ẢNH TRONG MÔ TẢ hẹp dưới 700 px (27/11/2026, anh chuyển 2 ảnh đợt TC120 tạo 16:28 26/11) — ĐÃ SỬA, COMMIT + PUSH 27/11 (anh: "Commit và push"), CHƯA có lượt thật
+
+**Anh báo:** "lỗi khi sao chép hình ảnh. Kiểu hình ảnh quá dung lượng nhưng không biết là ảnh nào quá dung lượng và cũng không
+có nút xóa". Đợt Túi đeo chéo TC120 (TikTok and.not.or → Shopee DarkMan Store), 9 ảnh sản phẩm + 12 ảnh trong mô tả.
+
+### 36.1 Gốc (đọc nguyên văn sàn trong ảnh anh gửi, không đoán)
+
+`Shopee add_item lỗi: product.error_desc_image_no_pass — The width of product description image must be between 700 and
+100000 pixels. Please adjust it.` → Shopee chê **ảnh chèn trong mô tả** có bề ngang dưới 700 px. Không phải dung lượng, không
+phải ảnh sản phẩm.
+
+- Hubsell chuẩn hóa ảnh mô tả bằng luật ảnh SẢN PHẨM (`SHOPEE_IMAGE`: cạnh ngắn ≥ 500, cạnh dài ≤ 2.000). Hai đường lọt:
+  (1) ảnh nguồn rộng 500–699 px để nguyên; (2) ảnh dọc dài (vd 800×4.000) bị thu theo trần 2.000 rồi kéo lại 500 → ngang còn 500.
+- Câu đỏ rơi vào luật Ảnh chung của `error-text.ts` ("Shopee ≤ 2 MB, tối thiểu 500×500…") → khách tưởng ảnh sản phẩm quá dung lượng.
+- Khung Sửa bài đăng có lưới "Ảnh trong mô tả" nhưng chỉ xem, không bỏ được (mục 27 chỉ làm cho ảnh sản phẩm).
+- Lần thứ ba luật Ảnh chung gán nhầm lỗi ảnh mô tả (mục 28 whitelist, nay bề ngang) — lần này tách hẳn luật riêng cho ảnh mô tả.
+
+**Căn cứ con số 700:** chính câu Shopee trả ở trên. Tra web 27/11 không thấy tài liệu công khai nào nêu luật này (cũng không thấy
+luật chiều cao) → không tự đặt thêm ngưỡng nào khác.
+
+### 36.2 Sửa
+
+- `lib/image-normalize.ts`: `ImageRule.minWidth` (bề ngang tối thiểu, thắng cả `maxSide`); `SHOPEE_DESC_IMAGE = SHOPEE_IMAGE +
+  minWidth 700`. Ảnh hẹp → phóng lên ngang 700 giữ tỉ lệ; ảnh dọc dài không còn bị thu hẹp dưới 700. Sửa kèm: ảnh có EXIF xoay
+  90° trước đây tính cỡ theo chiều CHƯA xoay rồi `resize fill` → méo; nay tính theo chiều sau khi xoay (áp cho mọi luật ảnh).
+- `shopee-listing-adapter.createListing`: ảnh mô tả tải TỪNG ảnh theo `SHOPEE_DESC_IMAGE`; ảnh nào hỏng ném
+  "Ảnh mô tả số N không tải lên Shopee được: …" kèm `descImageIndex` (trước: lỗi không nói ảnh nào). Không thêm call sàn.
+- `error-text.ts`: luật riêng `error_desc_image | description image | ảnh mô tả số N` đứng trước luật Ảnh chung →
+  "Ảnh trong mô tả chưa đạt chuẩn sàn (ảnh chèn ở phần mô tả, không phải ảnh sản phẩm). Shopee đòi ảnh mô tả rộng từ 700 px;
+  Hubsell tự phóng ảnh hẹp cho đủ rộng khi đăng. Bấm Đăng lại; vẫn lỗi thì bấm Sửa bài đăng, ở mục Ảnh trong mô tả bỏ bớt ảnh…";
+  có số thứ tự thì "Ảnh thứ N trong mô tả không tải lên sàn được … bỏ ảnh thứ N rồi bấm Đăng lại".
+- `job-edit.updateJobSource` + `PATCH /jobs/:id`: nhận `descriptionImages` = danh sách CÒN GIỮ, chỉ nhận ảnh đang có trong bản
+  chụp (bỏ được, không thêm mới; rỗng = bỏ hết → bài chỉ còn mô tả chữ).
+- FE `source-editor.tsx`: mỗi ảnh mô tả có số thứ tự (khớp "ảnh thứ N" trong câu đỏ), nút ✕ khi rê chuột (như lưới ảnh sản phẩm),
+  nhãn vàng "Nhỏ" cho ảnh rộng dưới 700 px (đo `naturalWidth` khi ảnh tải xong; tooltip nêu số px + Hubsell tự phóng nên có thể
+  hơi mờ); dòng chú thích dưới lưới; Lưu bài đăng gửi danh sách còn giữ. Không thêm nút "Thêm ảnh mô tả" (anh chưa yêu cầu).
+
+### 36.3 Kiểm
+
+- vitest: `image-normalize.test.ts` +4 ca (600×600 → 700×700; 800×4.000 → 700×3.500 ≤ 2 MB; 1.200×800 trả nguyên; EXIF xoay
+  không méo), `error-text.test.ts` +3 ca; listing + image-normalize 64 / 64, listing-copy 22 / 22; tsc 2 đầu + eslint tệp FE sạch.
+- Local (sàn giả lập, lượt seed 12 ảnh mô tả rộng 300–1.500 px, dòng Shopee Lỗi đúng nguyên văn 26/11): câu đỏ mới hiện đúng;
+  4 ảnh 600 / 640 / 500 / 699 gắn "Nhỏ" (300 cũng gắn), 700 không gắn; rê chuột hiện ✕; bỏ ảnh 2 → "Ảnh trong mô tả (11)" →
+  Lưu → toast + DB còn 11; 1440 sáng, 1280 tối, không tràn ngang.
+- **CHƯA:** lượt đăng thật lên Shopee (local không có token sàn) — phép thử là anh / khách bấm **Đăng lại** dòng DarkMan Store
+  sau deploy. Nếu Shopee còn chê điều khác ở ảnh mô tả (chiều cao, tỉ lệ) thì đọc nguyên văn rồi sửa theo đúng chữ đó.
+- Ảnh rất hẹp (vd 300 px) phóng lên 700 sẽ mờ — đã báo bằng nhãn "Nhỏ", khách tự quyết bỏ hay giữ.

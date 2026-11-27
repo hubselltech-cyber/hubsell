@@ -25,6 +25,8 @@ const PLATFORM_LABEL: Record<ChannelName, string> = {
 export interface ListingErrorContext {
   /** Đường dẫn danh mục đích, vd "Giày Dép Nam > Xăng-đan & Dép". */
   categoryPath?: string | null;
+  /** Ảnh TRONG MÔ TẢ thứ mấy (từ 1) không tải lên sàn được — câu đỏ chỉ đúng ảnh cần bỏ. */
+  descImageIndex?: number | null;
 }
 
 const CONTEXT_KEY = "listingErrorContext";
@@ -68,6 +70,25 @@ const SHOPEE_DESC_IMAGE_WHITELIST_RE = /whitelist to add images in description|c
 
 export function isShopeeDescImageWhitelistError(message: string): boolean {
   return SHOPEE_DESC_IMAGE_WHITELIST_RE.test(String(message ?? ""));
+}
+
+/**
+ * Lỗi ẢNH CHÈN TRONG MÔ TẢ (không phải ảnh sản phẩm). Lỗi thật 26/11/2026, TikTok → Shopee:
+ * "product.error_desc_image_no_pass — The width of product description image must be between
+ * 700 and 100000 pixels". Trước đó rơi vào luật Ảnh chung ("Shopee ≤ 2 MB, tối thiểu 500×500")
+ * → khách tưởng ảnh sản phẩm quá dung lượng, xóa ảnh sản phẩm mãi vẫn lỗi. Khớp cả câu adapter
+ * tự ném "Ảnh mô tả số N không tải lên … được".
+ */
+const DESC_IMAGE_RE = /error_desc_image|description images?\b|ảnh mô tả số \d+/i;
+
+function descImageText(ctx: ListingErrorContext, platform: ChannelName): string {
+  const where = "bấm Sửa bài đăng, ở mục Ảnh trong mô tả";
+  const which = "ảnh chèn ở phần mô tả, không phải ảnh sản phẩm";
+  if (ctx.descImageIndex) {
+    return `Ảnh thứ ${ctx.descImageIndex} trong mô tả không tải lên sàn được (${which}) — ${where} bỏ ảnh thứ ${ctx.descImageIndex} rồi bấm Đăng lại.`;
+  }
+  const rule = platform === "SHOPEE" ? " Shopee đòi ảnh mô tả rộng từ 700 px; Hubsell tự phóng ảnh hẹp cho đủ rộng khi đăng." : "";
+  return `Ảnh trong mô tả chưa đạt chuẩn sàn (${which}).${rule} Bấm Đăng lại; vẫn lỗi thì ${where} bỏ bớt ảnh (ảnh gắn nhãn Nhỏ trước) rồi đăng lại.`;
 }
 
 /**
@@ -126,6 +147,11 @@ const RULES: Rule[] = [
   {
     test: SHOPEE_DESC_IMAGE_WHITELIST_RE,
     text: "Gian Shopee này chưa được Shopee cho phép chèn ảnh vào mô tả (chỉ nhận mô tả chữ) — Hubsell tự đăng lại với mô tả dạng chữ, ảnh mô tả bỏ qua; vẫn lỗi thì báo Hubsell kèm dòng chi tiết bên dưới.",
+  },
+  // --- Ảnh chèn TRONG MÔ TẢ bị từ chối (lỗi thật 26/11: bề ngang < 700 px) — đứng trước luật Ảnh chung ---
+  {
+    test: DESC_IMAGE_RE,
+    text: descImageText,
   },
   // --- Shopee: danh mục bắt buộc Bảng size (lỗi thật 02/11) — đứng trước luật Ảnh/Danh mục/Thuộc tính ---
   {

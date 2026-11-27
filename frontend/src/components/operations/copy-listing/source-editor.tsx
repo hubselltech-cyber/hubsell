@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CopyIconButton } from "@/components/ui/copy-icon-button";
@@ -29,6 +30,8 @@ import { duplicateSkus, MAX_LISTING_IMAGES, WARNING_LABELS } from "./shared";
 
 /** Ảnh chèn trong mô tả hiện tối đa ngần này (sàn nhận 12 ảnh đầu). */
 const DESC_IMAGE_PREVIEW = 12;
+/** Shopee đòi ảnh mô tả rộng từ 700 px (nguyên văn add_item 26/11: "width … between 700 and 100000 pixels") — hẹp hơn thì Hubsell phóng lên khi đăng. */
+const DESC_IMAGE_MIN_WIDTH = 700;
 /** Chỉ xem (đã đăng): hiện ngần này phân loại đầu. */
 const VIEW_VARIANT_ROWS = 12;
 
@@ -45,6 +48,12 @@ export function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; 
   /** Ảnh bài đăng (anh chốt 30/10: khách xóa ảnh cũ / tải ảnh mới ngay tại đây, tối đa 9). Lưu → thay toàn bộ danh sách. */
   const photos = useImageUploads(s.images, MAX_LISTING_IMAGES);
   const imagesDirty = photos.urls.length !== s.images.length || photos.urls.some((u, i) => u !== s.images[i]);
+  /** Ảnh chèn trong mô tả còn giữ (27/11: khách bỏ được từng ảnh — ảnh nào sàn chê thì bỏ ảnh đó). Chỉ bỏ, không thêm. */
+  const [descImages, setDescImages] = useState(s.descriptionImages);
+  const descImagesDirty = descImages.length !== s.descriptionImages.length;
+  /** Bề ngang thật của từng ảnh mô tả (đo khi ảnh tải xong) — để gắn nhãn "Nhỏ" cho ảnh hẹp hơn mức Shopee đòi. */
+  const [descWidths, setDescWidths] = useState<Record<string, number>>({});
+  const descNarrow = (url: string) => (descWidths[url] ?? DESC_IMAGE_MIN_WIDTH) < DESC_IMAGE_MIN_WIDTH;
 
   const variantPatch = Object.entries(variantEdits)
     .map(([i, e]) => ({ index: Number(i), ...e }))
@@ -55,7 +64,7 @@ export function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; 
         (e.sku !== undefined && e.sku.trim() !== s.variants[e.index]?.sku) ||
         (e.excluded !== undefined && e.excluded !== Boolean(s.variants[e.index]?.excluded))
     );
-  const dirty = title !== s.title || description !== s.description || variantPatch.length > 0 || imagesDirty;
+  const dirty = title !== s.title || description !== s.description || variantPatch.length > 0 || imagesDirty || descImagesDirty;
   const setVariant = (i: number, k: "price" | "stock", raw: string) =>
     setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), [k]: raw === "" ? 0 : Math.max(0, Number(raw) || 0) } }));
   const setVariantSku = (i: number, raw: string) => setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), sku: raw } }));
@@ -115,6 +124,7 @@ export function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; 
         description,
         ...(variantPatch.length ? { variants: variantPatch } : {}),
         ...(imagesDirty ? { images: photos.urls } : {}),
+        ...(descImagesDirty ? { descriptionImages: descImages } : {}),
       });
       toast.success("Đã cập nhật bài đăng cho mọi gian đích của sản phẩm này.");
       await invalidate(qk.copyListingBatch(batchId));
@@ -158,22 +168,61 @@ export function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; 
           {s.descriptionImages.length > 0 && (
             <div className="space-y-1">
               <FieldLabel
-                label={`Ảnh trong mô tả (${s.descriptionImages.length})`}
-                meta={`chép theo, xếp cuối mô tả trên gian đích${s.descriptionImages.length > DESC_IMAGE_PREVIEW ? ` · sàn nhận ${DESC_IMAGE_PREVIEW} ảnh đầu` : ""}`}
+                label={`Ảnh trong mô tả (${descImages.length})`}
+                meta={
+                  descImages.length === 0
+                    ? "đã bỏ hết — bài đăng chỉ còn mô tả chữ"
+                    : `chép theo, xếp cuối mô tả trên gian đích${descImages.length > DESC_IMAGE_PREVIEW ? ` · sàn nhận ${DESC_IMAGE_PREVIEW} ảnh đầu` : ""}`
+                }
               />
               <div className="flex flex-wrap gap-2">
-                {s.descriptionImages.slice(0, DESC_IMAGE_PREVIEW).map((url, i) => (
-                  <div key={url + i} className="size-16 overflow-hidden rounded-lg border border-slate-200 bg-card">
+                {descImages.slice(0, DESC_IMAGE_PREVIEW).map((url, i) => (
+                  <div key={url + i} className="group relative size-16 overflow-hidden rounded-lg border border-slate-200 bg-card">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={`Ảnh mô tả ${i + 1}`} className="size-full object-cover" loading="lazy" />
+                    <img
+                      src={url}
+                      alt={`Ảnh mô tả ${i + 1}`}
+                      className="size-full object-cover"
+                      loading="lazy"
+                      onLoad={(e) => {
+                        const w = e.currentTarget.naturalWidth;
+                        if (w > 0) setDescWidths((m) => (m[url] === w ? m : { ...m, [url]: w }));
+                      }}
+                    />
+                    <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[10px] font-medium leading-4 text-white">{i + 1}</span>
+                    {descNarrow(url) && (
+                      <span
+                        className="absolute left-0.5 top-0.5 rounded bg-amber-500/90 px-1 text-[10px] font-medium leading-4 text-white"
+                        title={`Ảnh rộng ${descWidths[url]} px — Shopee đòi ảnh mô tả rộng từ ${DESC_IMAGE_MIN_WIDTH} px. Hubsell tự phóng to khi đăng nên ảnh có thể hơi mờ; không muốn thì bỏ ảnh này.`}
+                      >
+                        Nhỏ
+                      </span>
+                    )}
+                    {editable && (
+                      <button
+                        type="button"
+                        aria-label={`Bỏ ảnh mô tả ${i + 1}`}
+                        title="Bỏ ảnh này khỏi mô tả"
+                        onClick={() => setDescImages((prev) => prev.filter((u) => u !== url))}
+                        className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
-                {s.descriptionImages.length > DESC_IMAGE_PREVIEW && (
+                {descImages.length > DESC_IMAGE_PREVIEW && (
                   <div className={cn(TEXT_SUB, "flex size-16 items-center justify-center rounded-lg border border-dashed border-slate-200")}>
-                    +{s.descriptionImages.length - DESC_IMAGE_PREVIEW}
+                    +{descImages.length - DESC_IMAGE_PREVIEW}
                   </div>
                 )}
               </div>
+              {editable && descImages.length > 0 && (
+                <p className={cn(TEXT_SUB, "whitespace-normal")}>
+                  Rê chuột vào ảnh rồi bấm ✕ để bỏ ảnh khỏi mô tả.
+                  {descImages.some(descNarrow) && ` Ảnh gắn nhãn Nhỏ rộng dưới ${DESC_IMAGE_MIN_WIDTH} px — Shopee đòi từ ${DESC_IMAGE_MIN_WIDTH} px, Hubsell tự phóng to khi đăng.`}
+                </p>
+              )}
             </div>
           )}
         </div>

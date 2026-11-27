@@ -10339,6 +10339,8 @@ export function updateCopyListingSource(
     variants?: { index: number; price?: number; stock?: number; sku?: string; excluded?: boolean }[];
     /** Thay toàn bộ danh sách ảnh bài đăng (≤ 9; ảnh đầu = bìa) — xóa ảnh cũ / thêm ảnh mới (30/10). */
     images?: string[];
+    /** Ảnh chèn trong mô tả CÒN GIỮ (chỉ bỏ được, không thêm mới; rỗng = bỏ hết) — 27/11. */
+    descriptionImages?: string[];
   }
 ) {
   return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });

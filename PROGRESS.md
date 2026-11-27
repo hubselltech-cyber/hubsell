@@ -5,6 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 27/11 ~17:00 — Sao chép TikTok → Shopee: "Sàn không nhận ảnh sản phẩm" nhưng gốc là ảnh TRONG MÔ TẢ hẹp dưới 700 px — ĐÃ SỬA, COMMIT + PUSH 27/11, ⏳ bấm Đăng lại dòng DarkMan Store (lượt thật đầu tiên)
+
+Anh 27/11 (2 ảnh đợt TC120, and.not.or → DarkMan Store): "lỗi khi sao chép hình ảnh. Kiểu hình ảnh quá dung lượng nhưng không biết là ảnh nào quá dung lượng và cũng không có nút xóa". Chi tiết: [docs/SAO-CHEP-SAN-PHAM.md](docs/SAO-CHEP-SAN-PHAM.md) mục 36.
+
+- **Gốc (nguyên văn sàn trong ảnh):** `product.error_desc_image_no_pass — The width of product description image must be between 700 and 100000 pixels`. Shopee chê ảnh chèn trong mô tả hẹp dưới 700 px — không phải dung lượng, không phải ảnh sản phẩm. Hubsell chuẩn hóa ảnh mô tả theo luật ảnh sản phẩm (≥ 500 px, ảnh dọc dài còn bị thu về ngang 500); câu đỏ dịch nhầm sang "Shopee ≤ 2 MB, tối thiểu 500×500"; lưới Ảnh trong mô tả chỉ xem, không bỏ được.
+- **Sửa backend:** `lib/image-normalize.ts` thêm `minWidth` + luật `SHOPEE_DESC_IMAGE` (ngang ≥ 700, tự phóng giữ tỉ lệ; sửa kèm ảnh EXIF xoay 90° bị méo); adapter Shopee tải ảnh mô tả theo luật mới, ảnh nào hỏng thì nêu số thứ tự; `error-text.ts` luật riêng cho ảnh mô tả; `PATCH /jobs/:id` nhận `descriptionImages` (chỉ bỏ, không thêm).
+- **Sửa giao diện (Sửa bài đăng):** mỗi ảnh mô tả có số thứ tự, nút ✕ khi rê chuột, nhãn "Nhỏ" cho ảnh rộng dưới 700 px.
+- **Đã kiểm:** vitest 86 / 86 (thêm 7 ca), tsc 2 đầu + eslint sạch; local sàn giả lập 1440 sáng + 1280 tối: câu đỏ mới, nhãn Nhỏ đúng ảnh, bỏ ảnh → Lưu → DB còn 11 ảnh.
+- **CHƯA:** lượt đăng thật lên Shopee (local không có token sàn) — sau deploy bấm Đăng lại dòng DarkMan Store là phép thử.
+- **✅ COMMIT + PUSH 27/11 ~17:40 (anh: "Commit và push").** Lượt seed thử đã xóa khỏi DB dev, hai máy chủ local đã tắt. 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
+
+---
 ## Phiên 27/11 chiều — Giá vốn Tổng kho ↔ trang Cập nhật giá vốn: ĐO PROD + luật "giá kho đổi thì SKU sàn đã nối theo" ĐÃ PUSH `365ad2b2`; ba lát A / B / D ĐÃ PUSH 27/11 tối, ⏳ anh kiểm trên prod
 
 Anh 27/11: "có phương án nào đẩy giá vốn từ Tổng kho sang phần Cập nhật giá vốn trong tài chính không?", rồi "Đo prod trước". Chi tiết + bảng số: [docs/QUAN-LY-KHO-TAI-CAU-TRUC.md](docs/QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 15.
@@ -26,7 +38,7 @@ Anh 27/11: "có phương án nào đẩy giá vốn từ Tổng kho sang phần 
   - **Anh xem local, chỉ chỗ đặt nút lát B ("Em chuyển nút lên khu vực này"):** nút "Lấy giá vốn từ Tổng kho" dời lên mép phải hàng tab Nhập giá vốn · Mapping giá vốn (`PageTabs` `trailing`), chỉ hiện ở tab Nhập giá vốn. Soi lại 1307 / 1280 sáng + tối, khung hẹp 627 px; nút vẫn mở hộp, tab Mapping không có nút, tab sàn Offline khóa nút.
   - **Trước khi push anh dặn soi ca lớn + nhiều cỡ màn** ("ví dụ Sản phẩm sàn có khoảng 1000 sản phẩm chưa nhập giá vốn thì thanh popup hiển thị ra sao", "Chú ý popup cho nhiều kích thước màn hình"): seed 1.000 SKU chưa nối + 200 SKU kho chưa giá + 600 SKU lệch giá. Sửa 3 điểm: hộp lát B thêm khối "Còn SKU sàn đang bán chưa lấy được giá vốn từ Tổng kho" (máy chủ trả `unlinkedNoCost`, `linkedNoWarehouseCost`); hai hộp hết chạm sát mép ở màn 640–800 px; trên điện thoại hai cột giá gộp xuống dưới tên SKU. Đo 13 cỡ màn (1920 → 360) cho hộp lát B, 11 cỡ cho hộp hỏi lại: đạt.
   - Kiểm: 17 tệp / 117 ca test qua, tsc 2 đầu + eslint frontend sạch; chạy thật cả ba trên local. CHƯA: tài khoản nhân viên trên giao diện, luồng Đăng lên gian thật, nhìn màn trên prod.
-  - **✅ COMMIT + PUSH 27/11 tối (anh: "Em push phần này lên trước anh kiểm tra").** Dữ liệu thử + tài khoản thử đã dọn khỏi DB dev, hai máy chủ local đã tắt. Script `lift-warehouse-cost.ts` vẫn CHƯA chạy trên prod.
+  - **✅ COMMIT + PUSH 27/11 tối — `984c5ac9` (anh: "Em push phần này lên trước anh kiểm tra").** Dữ liệu thử + tài khoản thử đã dọn khỏi DB dev, hai máy chủ local đã tắt. Script `lift-warehouse-cost.ts` vẫn CHƯA chạy trên prod.
 - **Dọn + commit 27/11 chiều (anh bấm Commit):** đã xóa dữ liệu thử `GVTHU-*` + tài khoản `giavon-thu@hubsell.test` khỏi DB dev, tắt hai máy chủ local; commit lên master cục bộ, CHƯA push. Commit mang cả mấy chỗ sửa nhãn giờ ("trưa / chiều" → "sáng") của phiên sáng còn nằm trong PROGRESS.md; 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
 
 ---

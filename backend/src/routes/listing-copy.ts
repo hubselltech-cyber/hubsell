@@ -349,6 +349,7 @@ router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
         ...(typeof body.title === "string" ? { title: body.title } : {}),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
         ...(images ? { images } : {}),
+        ...(Array.isArray(body.descriptionImages) ? { descriptionImages: (body.descriptionImages as unknown[]).map(String) } : {}),
         ...(Array.isArray(body.variants)
           ? {
               variants: (body.variants as Record<string, unknown>[])

@@ -10,7 +10,7 @@
 
 import type { Channel } from "@prisma/client";
 import type { FetchedImage } from "../../lib/image-fetch";
-import { SHOPEE_IMAGE } from "../../lib/image-normalize";
+import { SHOPEE_DESC_IMAGE, SHOPEE_IMAGE } from "../../lib/image-normalize";
 import { prisma } from "../../lib/prisma";
 import type { ShopeeItemBaseInfo, ShopeeModel, ShopeeTierVariation } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
@@ -357,7 +357,16 @@ export const shopeeListingAdapter: ListingAdapter = {
     // luôn, khỏi tải ảnh desc + khỏi một lượt add_item hỏng.
     let descImageIds: string[] = [];
     if (!descImagesBlocked(channel.id)) {
-      descImageIds = await uploadImages(draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES), SHOPEE_IMAGE, upload("desc"));
+      // Luật riêng SHOPEE_DESC_IMAGE (bề ngang ≥ 700 — lỗi thật 26/11 error_desc_image_no_pass). Tải TỪNG ảnh
+      // để ảnh nào hỏng thì câu đỏ nêu đúng số thứ tự — khách bỏ ảnh đó ở Sửa bài đăng rồi Đăng lại.
+      const descUrls = draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES);
+      for (let i = 0; i < descUrls.length; i++) {
+        try {
+          descImageIds.push(await upload("desc")(await prepareImage(descUrls[i], SHOPEE_DESC_IMAGE)));
+        } catch (err) {
+          throw attachListingErrorContext(new Error(`Ảnh mô tả số ${i + 1} không tải lên Shopee được: ${(err as Error).message}`), { descImageIndex: i + 1 });
+        }
+      }
     } else if (draft.listing.descriptionImages.length) {
       console.warn(`[listing-copy] ${channel.shopName}: gian không được Shopee whitelist ảnh mô tả — đăng mô tả chữ, bỏ ${draft.listing.descriptionImages.length} ảnh mô tả`);
     }

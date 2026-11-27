@@ -62,6 +62,11 @@ interface SourcePatch {
    * toàn bộ (thứ tự = thứ tự đăng, ảnh đầu = bìa), tối đa 9 (Shopee/TikTok; Lazada lấy 8 đầu).
    */
   images?: string[];
+  /**
+   * 27/11 (anh: "không biết là ảnh nào… cũng không có nút xóa"): khách BỎ ảnh chèn trong mô tả.
+   * Danh sách còn giữ — chỉ nhận ảnh ĐANG có trong bản chụp (bỏ được, không thêm mới); rỗng = bỏ hết.
+   */
+  descriptionImages?: string[];
 }
 
 const MAX_SOURCE_IMAGES = 9;
@@ -242,6 +247,10 @@ export async function updateJobSource(ownerId: string, jobId: string, patch: Sou
   const listing = asListing(job.source);
   if (typeof patch.title === "string") listing.title = patch.title.trim();
   if (typeof patch.description === "string") listing.description = patch.description.trim();
+  if (patch.descriptionImages) {
+    const keep = new Set(patch.descriptionImages);
+    listing.descriptionImages = listing.descriptionImages.filter((u) => keep.has(u));
+  }
   if (patch.images) {
     const cleaned = urlList(patch.images, MAX_SOURCE_IMAGES + 1);
     if (cleaned.length === 0) throw new ListingCopyError("Bài đăng cần ít nhất một ảnh.");
