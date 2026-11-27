@@ -396,6 +396,51 @@ export async function followWarehouseCostIn(
 }
 
 /**
+ * GIÁ GIAN → GIÁ KHO ĐANG TRỐNG (lát A, 27/11/2026 — docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 15.6). Đo prod 27/11:
+ * 24.583 sản phẩm kho đã nối đang giá vốn 0 dù gian đã có giá — khách nhập giá ở trang Cấu hình Giá vốn SAU khi
+ * nối kho thì giá chỉ nằm ở gian (lượt chép lúc nối, routes/mappings inheritChannelCostPrice, đã qua), Tổng kho
+ * hiện trống và Giá trị tồn tính 0.
+ *
+ * Sản phẩm kho đang giá 0 mà các SKU sàn đã nối có giá riêng CHUNG MỘT MỨC → giá kho nhận mức đó. Các gian lệch
+ * nhau thì KHÔNG điền (không đoán gian nào đúng). Chỉ điền ô trống: giá kho đã có số thì không bao giờ bị đè ở đây.
+ * Giá riêng của gian giữ nguyên. Hệ quả: SKU sàn khác cùng sản phẩm đang trống giá nay theo giá kho mới — bên gọi
+ * vá đơn cũ còn 0 cho các sản phẩm trả về (backfillOrderLinesByProducts).
+ *
+ * Một câu UPDATE cho cả lô. `scope`: các SKU sàn vừa được ghi giá, hoặc thẳng danh sách sản phẩm kho (lượt điền
+ * dữ liệu cũ). Trả về id sản phẩm kho vừa được điền.
+ */
+export async function liftShopCostToEmptyWarehouseIn(
+  db: Db | typeof prisma,
+  scope: { channelProductIds: string[] } | { productIds: string[] },
+  ownerId: string
+): Promise<string[]> {
+  const ids = "channelProductIds" in scope ? scope.channelProductIds : scope.productIds;
+  if (ids.length === 0) return [];
+  const inScope =
+    "channelProductIds" in scope
+      ? Prisma.sql`p."id" IN (SELECT t."productId" FROM "ChannelProduct" AS t WHERE t."id" = ANY(${ids}::text[]) AND t."productId" IS NOT NULL)`
+      : Prisma.sql`p."id" = ANY(${ids}::text[])`;
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    WITH one AS (
+      SELECT cp."productId" AS pid, min(cp."costPrice") AS cost
+      FROM "Product" AS p
+      JOIN "ChannelProduct" AS cp ON cp."productId" = p."id"
+      WHERE p."userId" = ${ownerId}
+        AND p."costPrice" = 0
+        AND cp."costPrice" > 0
+        AND ${inScope}
+      GROUP BY cp."productId"
+      HAVING count(DISTINCT cp."costPrice") = 1
+    )
+    UPDATE "Product" AS p
+    SET "costPrice" = one.cost
+    FROM one
+    WHERE p."id" = one.pid AND p."costPrice" = 0
+    RETURNING p."id"`;
+  return rows.map((r) => r.id);
+}
+
+/**
  * PHẦN SAU KHI Product.costPrice ĐÃ GHI — dùng chung cho mọi cửa sửa giá kho (applyCostPricesIn; nhập Excel
  * Tổng kho tự ghi giá trong vòng cập nhật từng dòng rồi gọi hàm này): SKU sàn đã nối theo giá mới, rồi vá
  * đơn cũ còn 0. Thứ tự bắt buộc: theo giá TRƯỚC, vá SAU — câu vá bỏ qua dòng của SKU còn giá riêng, nên SKU
@@ -510,6 +555,8 @@ export async function applyChannelCostPriceIn(
 ): Promise<{
   updated: number;
   backfilledOrderLines: number;
+  /** Số sản phẩm kho đang trống giá vừa nhận giá gian (lát A). */
+  liftedProducts: number;
   sample: { productName: string } | null;
 }> {
   const cps = await db.channelProduct.findMany({
@@ -519,7 +566,7 @@ export async function applyChannelCostPriceIn(
     },
     select: { id: true, productName: true },
   });
-  if (cps.length === 0) return { updated: 0, backfilledOrderLines: 0, sample: null };
+  if (cps.length === 0) return { updated: 0, backfilledOrderLines: 0, liftedProducts: 0, sample: null };
 
   const ids = cps.map((c) => c.id);
   await db.channelProduct.updateMany({
@@ -527,10 +574,15 @@ export async function applyChannelCostPriceIn(
     // Khách tự đặt → không còn là giá thừa kế (Lát 3): xóa dấu để lượt sửa một lần không bao giờ ghi đè số khách nhập.
     data: { costPrice: cost, costPriceInheritedAt: null },
   });
-  const backfilled = cost > 0 ? await backfillOrderLinesByChannelProducts(db, ids) : 0;
+  let backfilled = cost > 0 ? await backfillOrderLinesByChannelProducts(db, ids) : 0;
+  // Lát A (27/11/2026): sản phẩm kho đã nối đang trống giá nhận giá gian vừa nhập (chỉ khi các gian chung một mức).
+  // SKU sàn khác cùng sản phẩm đang trống giá nay theo giá kho → vá luôn dòng đơn còn 0 của chúng.
+  const lifted = cost > 0 ? await liftShopCostToEmptyWarehouseIn(db, { channelProductIds: ids }, ownerId) : [];
+  if (lifted.length > 0) backfilled += await backfillOrderLinesByProducts(db, lifted, ownerId);
   return {
     updated: cps.length,
     backfilledOrderLines: backfilled,
+    liftedProducts: lifted.length,
     sample: { productName: cps[0].productName },
   };
 }
@@ -550,6 +602,7 @@ export async function applyChannelCostPrice(
 ): Promise<{
   updated: number;
   backfilledOrderLines: number;
+  liftedProducts: number;
   sample: { productName: string } | null;
 }> {
   const r = await prisma.$transaction(

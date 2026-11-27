@@ -284,7 +284,7 @@ router.post("/warehouse-only", async (req: AuthRequest, res, next) => {
       throw new ListingCopyError(`Mã SKU đã có: ${taken.map((t) => `${t.sku} (${t.where})`).join(", ")} — đặt mã khác.`);
     }
     const allowCost = canSeeFinancials(req);
-    if (!allowCost) parsed.manual.costPrice = null;
+    if (!allowCost) parsed.manual = { costPrice: null };
     const r = await saveWarehouseOnly({ ownerId: req.ownerId!, userId: req.userId!, listing: parsed.listing, meta: parsed.manual, allowCost, origin });
     const l = parsed.listing;
     await attachUploadsToJob(req.ownerId!, r.jobId, [...l.images, ...l.descriptionImages, ...l.variants.map((v) => v.imageUrl ?? "")]);
@@ -311,7 +311,8 @@ router.post("/jobs", async (req: AuthRequest, res, next) => {
       if (taken.length > 0) {
         throw new ListingCopyError(`Mã SKU đã có: ${taken.map((t) => `${t.sku} (${t.where})`).join(", ")} — đặt mã khác.`);
       }
-      if (!canSeeFinancials(req)) parsed.manual.costPrice = null;
+      // Người không thấy tài chính: bỏ cả giá vốn chung lẫn giá vốn từng phân loại.
+      if (!canSeeFinancials(req)) parsed.manual = { costPrice: null };
       manual = { listing: parsed.listing, meta: parsed.manual };
     }
     const job = await createJob({

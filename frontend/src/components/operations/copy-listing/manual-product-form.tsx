@@ -248,12 +248,14 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
           name,
           sku: e.sku !== undefined ? e.sku : rootSku.trim() ? skuFromRoot(rootSku, name) : "",
           price: e.price !== undefined ? e.price : basePrice,
+          // Giá vốn (27/11/2026): cùng cách với giá bán — dòng chưa sửa riêng thì theo giá vốn chung.
+          cost: e.cost !== undefined ? e.cost : costPrice,
           stock: e.stock !== undefined ? e.stock : baseStock,
           imageUrl: e.imageUrl ?? null,
           excluded: Boolean(e.excluded),
         };
       }),
-    [comboNames, edits, rootSku, basePrice, baseStock]
+    [comboNames, edits, rootSku, basePrice, baseStock, costPrice]
   );
   const activeRows = rows.filter((r) => !r.excluded);
   const editRow = (name: string, patch: ManualVariantEdit) => setEdits((m) => ({ ...m, [name]: { ...(m[name] ?? {}), ...patch } }));
@@ -295,8 +297,11 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
         stock: toInt(r.stock) ?? 0,
         imageUrl: r.imageUrl,
         excluded: r.excluded || undefined,
+        // Giá vốn của riêng phân loại: gửi ĐÚNG số ô đang hiện (ô đã mang sẵn giá vốn chung nếu chưa sửa riêng); ô xóa
+        // trắng = 0, để thứ lưu vào Tổng kho luôn trùng thứ khách nhìn thấy trong bảng.
+        ...(canSeeCost ? { costPrice: r.cost.trim() === "" ? 0 : toInt(r.cost) } : {}),
       })),
-      costPrice: canSeeCost ? toInt(costPrice) : null,
+      costPrice: canSeeCost && costPrice.trim() !== "" ? toInt(costPrice) : null,
     };
   }, [title, description, cover.urls, desc.urls, weight, dims, liveOptions, rows, costPrice, canSeeCost]);
   const payloadJson = JSON.stringify(payload);
@@ -415,6 +420,15 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
     skuMissing: activeRows.filter((r) => !r.sku.trim()).length,
     ...PLATFORM_CTX[p],
   });
+
+  /** Ô "Tồn chung" — vị trí trong lưới đổi theo việc có ô Giá vốn chung hay không (xem mục 3). */
+  const baseStockField = (
+    <div className="space-y-1">
+      <div className={TEXT_TABLE_HEAD}>Tồn chung</div>
+      <Input inputMode="numeric" placeholder="10" value={baseStock} onChange={(e) => setBaseStock(e.target.value)} />
+      <p className={TEXT_SUB}>Tồn đăng lên sàn và nhập Tổng kho.</p>
+    </div>
+  );
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px]">
@@ -536,7 +550,9 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* Có ô Giá vốn chung (người thấy tài chính) thì 4 ô xếp 2 × 2: khung form ở màn 1280 chỉ rộng 641 px, bốn ô
+              một hàng còn 152 px / ô là dòng chú thích gãy ba dòng (đo 27/11/2026). */}
+          <div className={cn("grid gap-3", canSeeCost ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
             <div className="space-y-1">
               <div className={cn(TEXT_TABLE_HEAD, "flex items-center gap-2")}>
                 Mã gốc SKU {!copyMode && <RequiredPill tone="amber" />}
@@ -550,22 +566,28 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
                     : "Sản phẩm không phân loại: mã gốc = mã SKU."}
               </p>
             </div>
+            {/* Lưới 2 × 2: Tồn đứng cạnh Mã gốc để hai ô GIÁ (bán · vốn) nằm chung một hàng, cùng thứ tự với hai cột của bảng. */}
+            {canSeeCost && baseStockField}
             <div className="space-y-1">
               <div className={TEXT_TABLE_HEAD}>Giá bán chung (đ)</div>
               <Input inputMode="numeric" placeholder="199000" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} />
               <p className={TEXT_SUB}>Áp cho dòng chưa sửa riêng.</p>
             </div>
-            <div className="space-y-1">
-              <div className={TEXT_TABLE_HEAD}>Tồn chung</div>
-              <Input inputMode="numeric" placeholder="10" value={baseStock} onChange={(e) => setBaseStock(e.target.value)} />
-              <p className={TEXT_SUB}>Tồn đăng lên sàn và nhập Tổng kho.</p>
-            </div>
+            {canSeeCost && (
+              <div className="space-y-1">
+                <div className={TEXT_TABLE_HEAD}>Giá vốn chung (đ)</div>
+                <Input inputMode="numeric" placeholder="120000" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
+                <p className={TEXT_SUB}>Áp cho dòng chưa sửa riêng. Ghi vào Tổng kho, không đăng lên sàn.</p>
+              </div>
+            )}
+            {!canSeeCost && baseStockField}
           </div>
 
           <ManualVariantTable
             rows={rows}
             skuIssue={skuIssue}
             priceOk={priceOk}
+            showCost={canSeeCost}
             onEdit={editRow}
             onPickImage={(name) => {
               rowKeyRef.current = name;
@@ -612,15 +634,9 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
         {/* 5. Tổng kho */}
         <section id={SECTIONS[4].id} className="scroll-mt-24 space-y-3">
           <h3 className="text-sm font-semibold text-slate-900">5. Tổng kho</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {canSeeCost && (
-              <div className="space-y-1">
-                <div className={TEXT_TABLE_HEAD}>Giá vốn mặc định (đ) — tùy chọn</div>
-                <Input inputMode="numeric" placeholder="120000" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
-                <p className={TEXT_SUB}>Ghi vào SKU kho. Giá vốn riêng từng gian nhập ở Tài chính → Mapping giá vốn sau khi đăng.</p>
-              </div>
-            )}
-            <p className={cn(TEXT_SUB, "self-end")}>
+          {/* Ô giá vốn đã dời lên mục 3, cạnh giá bán (27/11/2026) — ở đây chỉ còn lời giải thích. */}
+          <div>
+            <p className={TEXT_SUB}>
               {copyMode ? (
                 <>
                   Mỗi phân loại thành một SKU <span className="text-slate-900">độc lập</span> trong Tổng kho với tồn ở trên — <span className="text-slate-900">chưa nối với gian</span>, sản phẩm trên sàn vẫn y nguyên. Muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (trùng mã nên khớp đúng).
@@ -630,6 +646,7 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
                   Khi bấm Đăng, mỗi phân loại thành một SKU trong Tổng kho với tồn ở trên. <span className="text-slate-900">Chưa nối với gian</span> — muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (mã trùng nhau nên khớp đúng).
                 </>
               )}
+              {canSeeCost && <> Giá vốn nhập ở mục 3 ghi vào Tổng kho; sau khi nối, gian hàng tính theo giá vốn này.</>}
             </p>
           </div>
         </section>

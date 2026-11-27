@@ -45,7 +45,9 @@ export function useOwnCostChoice() {
   const rows = pending?.rows ?? [];
   const ownCostDialog = (
     <Dialog open={pending != null} onOpenChange={(open) => !open && close(null)}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* 42rem nhưng luôn chừa lề 1rem mỗi bên (`sm:max-w-2xl` trần trụi làm hộp chạm mép ở màn 640–700 px); màn thấp thì
+          hộp tự cuộn, chân hộp dính đáy. */}
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[min(42rem,calc(100%-2rem))]">
         <DialogHeader>
           <DialogTitle>{formatNumber(rows.length)} SKU sàn đang đặt giá vốn riêng</DialogTitle>
           <DialogDescription>
@@ -55,20 +57,22 @@ export function useOwnCostChoice() {
         </DialogHeader>
 
         {/* Mẫu nhiều phân loại × nhiều gian có thể ra vài chục dòng — bảng cuộn trong khung, nút luôn trong tầm mắt. */}
-        <div className="max-h-[50vh] overflow-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[520px] table-fixed text-sm">
+        {/* Điện thoại (< sm): 4 cột không vừa 300 px, hai cột giá từng trôi ra ngoài → ẩn cột Gian hàng + hai cột giá,
+            in gian và "giá riêng → giá mới" ngay dưới tên SKU. */}
+        <div className="max-h-[46vh] overflow-auto rounded-lg border border-slate-200">
+          <table className="w-full table-fixed text-sm sm:min-w-[520px]">
             <thead className="sticky top-0 bg-muted">
               <tr className={TEXT_TABLE_HEAD}>
-                <th className="w-[30%] px-3 py-2 text-left font-medium">Gian hàng</th>
+                <th className="hidden w-[30%] px-3 py-2 text-left font-medium sm:table-cell">Gian hàng</th>
                 <th className="px-3 py-2 text-left font-medium">SKU sàn</th>
-                <th className="w-[19%] px-3 py-2 text-right font-medium">Giá riêng</th>
-                <th className="w-[19%] px-3 py-2 text-right font-medium">Giá mới</th>
+                <th className="hidden w-[19%] px-3 py-2 text-right font-medium sm:table-cell">Giá riêng</th>
+                <th className="hidden w-[19%] px-3 py-2 text-right font-medium sm:table-cell">Giá mới</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r) => (
                 <tr key={r.key}>
-                  <td className="px-3 py-2 align-top">
+                  <td className="hidden px-3 py-2 align-top sm:table-cell">
                     <span className="block truncate" title={r.shopName}>
                       {r.shopName}
                     </span>
@@ -81,16 +85,24 @@ export function useOwnCostChoice() {
                     <span className={cn(TEXT_SUB, "block truncate font-mono")} title={`Mã SKU kho ${r.skuCode}`}>
                       {r.skuCode}
                     </span>
+                    <span className={cn(TEXT_SUB, "block truncate sm:hidden")}>
+                      {r.shopName} · {CHANNEL_META[r.channelName]?.label ?? r.channelName}
+                    </span>
+                    <span className="mt-0.5 block tabular-nums sm:hidden">
+                      <span className="text-muted-foreground line-through">{formatVND(r.ownCost)}</span>
+                      <span className="mx-1.5 text-muted-foreground">→</span>
+                      <span className="font-medium">{formatVND(r.newCost)}</span>
+                    </span>
                   </td>
-                  <td className="px-3 py-2 text-right align-top tabular-nums text-muted-foreground line-through">{formatVND(r.ownCost)}</td>
-                  <td className="px-3 py-2 text-right align-top font-medium tabular-nums">{formatVND(r.newCost)}</td>
+                  <td className="hidden px-3 py-2 text-right align-top tabular-nums text-muted-foreground line-through sm:table-cell">{formatVND(r.ownCost)}</td>
+                  <td className="hidden px-3 py-2 text-right align-top font-medium tabular-nums sm:table-cell">{formatVND(r.newCost)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="sticky -bottom-4 z-10 bg-muted">
           <Button type="button" variant="outline" onClick={() => close("keep")}>
             Không thay đổi giá vốn của gian hàng
           </Button>

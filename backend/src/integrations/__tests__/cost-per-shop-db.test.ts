@@ -138,6 +138,56 @@ describe("Giá vốn theo gian", () => {
     expect(await lineCost(legacyRed)).toBe(70_000); // đã có số thật → không đụng
   });
 
+  // Lát A (27/11/2026): nhập giá ở trang Cấu hình Giá vốn cho SKU đã nối mà kho đang trống giá → kho nhận giá đó.
+  it("giá gian nhập khi kho đang trống giá → kho nhận giá; gian khác cùng sản phẩm theo; kho đã có giá thì không đè; các gian lệch nhau thì không điền", async () => {
+    const kho = async (id: string) => Number((await prisma.product.findUniqueOrThrow({ where: { id } })).costPrice);
+    const empty = await fx.createProduct(0);
+    const mk = (channelId: string, code: string, pid: string, costPrice?: number) =>
+      prisma.channelProduct.create({
+        data: { channelId, channelSku: `TEST-${fx.suffix}-${code}`, productName: code, productId: pid, costPrice },
+      });
+    const a = await mk(fx.channelId, "LIFT", empty);
+    const b = await mk(chB, "LIFT", empty);
+    // Dòng đơn còn 0 của gian B (chưa có giá riêng): kho nhận giá xong thì dòng này phải được vá theo giá kho.
+    const lineSibling = (
+      await prisma.order.create({
+        data: {
+          channelId: chB,
+          orderCode: `TEST-${fx.suffix}-LIFT`,
+          customerName: "Khách test",
+          itemCount: 1,
+          items: { create: { channelSku: `TEST-${fx.suffix}-LIFT`, productName: "LIFT", quantity: 1, price: 200_000 } },
+        },
+        include: { items: true },
+      })
+    ).items[0].id;
+
+    const r = await applyChannelCostPrice([a.id], 90_000, fx.userId);
+    expect(r.liftedProducts).toBe(1);
+    expect(await kho(empty)).toBe(90_000);
+    const bAfter = await prisma.channelProduct.findUniqueOrThrow({ where: { id: b.id }, include: { product: { select: { costPrice: true } } } });
+    expect(bAfter.costPrice).toBeNull();
+    expect(effectiveSkuCost(bAfter)).toBe(90_000);
+    expect(await lineCost(lineSibling)).toBe(90_000);
+
+    // Kho đã có giá: gian nhập giá khác là giá RIÊNG của gian, kho giữ nguyên.
+    expect((await applyChannelCostPrice([b.id], 95_000, fx.userId)).liftedProducts).toBe(0);
+    expect(await kho(empty)).toBe(90_000);
+
+    // Kho trống mà hai gian đang lệch giá nhau → không đoán, không điền.
+    const split = await fx.createProduct(0);
+    const sa = await mk(fx.channelId, "SPLIT", split, 50_000);
+    await mk(chB, "SPLIT", split, 60_000);
+    expect((await applyChannelCostPrice([sa.id], 50_000, fx.userId)).liftedProducts).toBe(0);
+    expect(await kho(split)).toBe(0);
+
+    // Xóa giá gian về 0 không điền gì.
+    const zero = await fx.createProduct(0);
+    const za = await mk(fx.channelId, "ZERO", zero);
+    expect((await applyChannelCostPrice([za.id], 0, fx.userId)).liftedProducts).toBe(0);
+    expect(await kho(zero)).toBe(0);
+  });
+
   it("gỡ liên kết: gian đang theo giá kho giữ được giá, gian có giá riêng giữ nguyên", async () => {
     await keepCostOnDetach(prisma, { channelProductIds: [cpA, cpB] }, fx.userId);
     const after = await prisma.channelProduct.findMany({ where: { id: { in: [cpA, cpB] } } });

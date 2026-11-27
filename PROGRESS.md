@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 27/11 chiều — Giá vốn Tổng kho ↔ trang Cập nhật giá vốn: ĐO PROD + ĐÃ CODE luật "giá kho đổi thì SKU sàn đã nối theo", ĐÃ COMMIT 27/11 chiều, CHƯA push
+## Phiên 27/11 chiều — Giá vốn Tổng kho ↔ trang Cập nhật giá vốn: ĐO PROD + luật "giá kho đổi thì SKU sàn đã nối theo" ĐÃ PUSH `365ad2b2`; ba lát A / B / D ĐÃ PUSH 27/11 tối, ⏳ anh kiểm trên prod
 
 Anh 27/11: "có phương án nào đẩy giá vốn từ Tổng kho sang phần Cập nhật giá vốn trong tài chính không?", rồi "Đo prod trước". Chi tiết + bảng số: [docs/QUAN-LY-KHO-TAI-CAU-TRUC.md](docs/QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 15.
 
@@ -18,6 +18,15 @@ Anh 27/11: "có phương án nào đẩy giá vốn từ Tổng kho sang phần 
 - **Anh xem local, 2 góp ý đã sửa:** hộp hỏi "hòa vào giao diện phía sau" → `components/ui/dialog.tsx` vẽ nền mờ cho cả hộp mở từ trong hộp khác (`forceRender`, áp cho mọi hộp lồng nhau của app); chữ hai nút đổi theo lời anh: "Không thay đổi giá vốn của gian hàng" / "Áp thay đổi giá vốn lên gian hàng". Soi lại 1440 sáng + tối và 375 px.
 - **Đã kiểm local:** vitest 67 qua, tsc 2 đầu sạch; trên màn 1440 sáng + tối bấm cả hai nút của hộp hỏi, số ở trang Cấu hình Giá vốn đổi đúng; PATCH + Excel gọi thẳng API đúng.
 - **CHƯA:** mô phỏng hòa vốn quảng cáo (lượt deploy tự nó không đổi giá vốn nào, chỉ đổi khi khách sửa giá sau đó → không có số trước / sau để mô phỏng; anh quyết có cần đo thêm); thử Excel + popup SKU P&L trên giao diện; tài khoản nhân viên; màn 1280 / điện thoại; lát A, B, D. Không đổi dữ liệu nào trên prod. Tab Supabase đã đóng.
+- **Push 27/11 chiều — anh: "Push và làm tiếp đi em":** `365ad2b2` đã lên master, backend prod `/health` trả đúng bản này; chưa nhìn màn trên prod.
+- **LÀM TIẾP ba lát còn lại — ĐÃ CODE + test + chạy thật local, ĐÃ PUSH 27/11 tối (anh: "Em cứ làm và test đầy đủ… Anh sẽ quay lại kiểm tra sau"); docs mục 15.6–15.9:**
+  - **Lát A:** nhập giá vốn ở trang Cấu hình Giá vốn cho SKU đã nối mà kho đang trống giá → kho nhận giá đó (chỉ khi các gian chung một mức, không bao giờ đè giá kho đã có) — `lib/cost-price.ts` `liftShopCostToEmptyWarehouseIn`. Đo prod: điền dữ liệu cũ = 24.583 sản phẩm / 21 chủ shop, chỉ kéo theo 88 SKU sàn trống giá, không cái nào đang bán, 0 dòng đơn 30 ngày. Script điền dữ liệu cũ `backend/scripts/lift-warehouse-cost.ts` ĐÃ VIẾT, CHƯA chạy trên prod (chờ anh; trước khi chạy phải đo số đơn kiểu cũ dính trigger sổ cái).
+  - **Lát B:** nút "Lấy giá vốn từ Tổng kho" + hộp xem trước (dòng lệch từ 2 lần không tích sẵn) — `lib/cost-from-warehouse.ts`, `components/finance/cost-from-warehouse.tsx`.
+  - **Lát D:** form tạo sản phẩm kho có "Giá vốn chung" cạnh "Giá bán chung" + cột Giá vốn từng phân loại — `ManualMeta.variantCosts`.
+  - **Anh xem local, chỉ chỗ đặt nút lát B ("Em chuyển nút lên khu vực này"):** nút "Lấy giá vốn từ Tổng kho" dời lên mép phải hàng tab Nhập giá vốn · Mapping giá vốn (`PageTabs` `trailing`), chỉ hiện ở tab Nhập giá vốn. Soi lại 1307 / 1280 sáng + tối, khung hẹp 627 px; nút vẫn mở hộp, tab Mapping không có nút, tab sàn Offline khóa nút.
+  - **Trước khi push anh dặn soi ca lớn + nhiều cỡ màn** ("ví dụ Sản phẩm sàn có khoảng 1000 sản phẩm chưa nhập giá vốn thì thanh popup hiển thị ra sao", "Chú ý popup cho nhiều kích thước màn hình"): seed 1.000 SKU chưa nối + 200 SKU kho chưa giá + 600 SKU lệch giá. Sửa 3 điểm: hộp lát B thêm khối "Còn SKU sàn đang bán chưa lấy được giá vốn từ Tổng kho" (máy chủ trả `unlinkedNoCost`, `linkedNoWarehouseCost`); hai hộp hết chạm sát mép ở màn 640–800 px; trên điện thoại hai cột giá gộp xuống dưới tên SKU. Đo 13 cỡ màn (1920 → 360) cho hộp lát B, 11 cỡ cho hộp hỏi lại: đạt.
+  - Kiểm: 17 tệp / 117 ca test qua, tsc 2 đầu + eslint frontend sạch; chạy thật cả ba trên local. CHƯA: tài khoản nhân viên trên giao diện, luồng Đăng lên gian thật, nhìn màn trên prod.
+  - **✅ COMMIT + PUSH 27/11 tối (anh: "Em push phần này lên trước anh kiểm tra").** Dữ liệu thử + tài khoản thử đã dọn khỏi DB dev, hai máy chủ local đã tắt. Script `lift-warehouse-cost.ts` vẫn CHƯA chạy trên prod.
 - **Dọn + commit 27/11 chiều (anh bấm Commit):** đã xóa dữ liệu thử `GVTHU-*` + tài khoản `giavon-thu@hubsell.test` khỏi DB dev, tắt hai máy chủ local; commit lên master cục bộ, CHƯA push. Commit mang cả mấy chỗ sửa nhãn giờ ("trưa / chiều" → "sáng") của phiên sáng còn nằm trong PROGRESS.md; 7 tệp nháp `hubsell-marketing/` vẫn để ngoài.
 
 ---

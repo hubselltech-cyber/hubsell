@@ -3402,6 +3402,52 @@ export function applyCostToSearch(
   });
 }
 
+// ----- "Lấy giá vốn từ Tổng kho" (27/11/2026) — SKU sàn đã nối đang đặt giá vốn riêng chuyển sang theo giá kho -----
+
+export interface CostFromWarehouseRow {
+  id: string;
+  shopName: string;
+  channelName: ChannelName;
+  productName: string;
+  variantName: string | null;
+  channelSku: string;
+  /** Mã SKU của sản phẩm kho đã nối. */
+  stockSku: string;
+  ownCost: number;
+  warehouseCost: number;
+  /** Hai giá lệch nhau nhiều lần — hộp không tích sẵn dòng này. */
+  bigGap: boolean;
+}
+
+export interface CostFromWarehousePreview {
+  /** SKU sàn có giá riêng đúng bằng giá Tổng kho — chuyển sang theo kho không đổi số nào. */
+  same: number;
+  /** SKU sàn có giá riêng khác giá Tổng kho (cả phần chưa bày vì vượt rowLimit). */
+  differ: number;
+  rows: CostFromWarehouseRow[];
+  rowLimit: number;
+  /** SKU sàn đang bán chưa có giá vốn và CHƯA nối kho — nút không lấy giá cho chúng được, phải nối trước. */
+  unlinkedNoCost: number;
+  /** SKU sàn đang bán đã nối kho nhưng sản phẩm ở Tổng kho cũng chưa có giá vốn — phải nhập giá ở Tổng kho. */
+  linkedNoWarehouseCost: number;
+}
+
+/** `channel` = tab sàn của trang, `shop` = "all" hoặc id gian — đúng phạm vi đang lọc. */
+export function previewCostFromWarehouse(scope: { channel: SkuChannelFilter; shop: string }) {
+  return apiFetch<CostFromWarehousePreview>("/api/finance/cost-prices/from-warehouse/preview", {
+    method: "POST",
+    body: JSON.stringify(scope),
+  });
+}
+
+/** Áp: mọi SKU đang bằng giá kho + các dòng lệch giá đã tích (`applyIds`) bỏ giá riêng, theo giá Tổng kho. */
+export function applyCostFromWarehouse(scope: { channel: SkuChannelFilter; shop: string }, applyIds: string[]) {
+  return apiFetch<{ followedSame: number; followedDiffer: number }>("/api/finance/cost-prices/from-warehouse", {
+    method: "POST",
+    body: JSON.stringify({ ...scope, applyIds }),
+  });
+}
+
 /** Từ khóa khớp bao nhiêu dòng trong toàn bộ gian, bỏ qua mọi bộ lọc. */
 export function fetchSkuSearchCount(q: string) {
   return apiFetch<{ rows: number }>(`/api/finance/sku-products/search-count?q=${encodeURIComponent(q)}`);
@@ -10403,7 +10449,8 @@ export interface CopyListingManualPayload {
   weightGrams: number | null;
   dimensionsCm: { length: number; width: number; height: number } | null;
   options: { name: string; values: string[] }[];
-  variants: { sku: string; name: string; price: number; stock: number; imageUrl: string | null; excluded?: boolean }[];
+  /** `costPrice` = giá vốn của riêng phân loại (ghi vào Tổng kho); vắng = dùng giá vốn chung của bài. */
+  variants: { sku: string; name: string; price: number; stock: number; imageUrl: string | null; excluded?: boolean; costPrice?: number | null }[];
   /** Giá vốn mặc định ghi vào SKU kho (tùy chọn). */
   costPrice?: number | null;
 }

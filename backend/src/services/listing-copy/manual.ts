@@ -42,6 +42,12 @@ export const SKU_PATTERN = /^[A-Za-z0-9._-]{6,50}$/;
 export interface ManualMeta {
   /** Giá vốn mặc định ghi vào SKU kho (tùy chọn; nhân viên không được nhập → 0). */
   costPrice: number | null;
+  /**
+   * Giá vốn RIÊNG từng phân loại (27/11/2026, anh Trung: "Khi đăng sản phẩm mới trong tổng kho hiện tại chỉ có giá
+   * bán chưa có giá vốn" — bảng phân loại của form có thêm cột Giá vốn). Khóa = mã SKU CHỮ HOA; phân loại không có
+   * ở đây thì dùng `costPrice` chung. Vắng mặt với bài tạo trước ngày này.
+   */
+  variantCosts?: Record<string, number>;
 }
 
 /** Job MANUAL lưu `source = { ...listing, manual }` — adapter chỉ đọc phần NormalizedListing. */
@@ -94,11 +100,16 @@ export function parseManualListing(
   }
 
   const variants: ListingVariant[] = [];
+  const variantCosts: Record<string, number> = {};
   if (Array.isArray(b.variants)) {
     for (const v of b.variants.slice(0, MANUAL_LIMITS.variants)) {
       const r = (v as Record<string, unknown>) ?? {};
       const price = num(r.price);
       const stock = num(r.stock);
+      // Giá vốn của riêng phân loại này — chỉ thuộc phần kho, không đi vào bài đăng lên sàn.
+      const rowSku = s(r.sku, MANUAL_LIMITS.skuMax).toUpperCase();
+      const rowCost = r.costPrice === null || r.costPrice === undefined || r.costPrice === "" ? null : num(r.costPrice);
+      if (rowSku && rowCost !== null && rowCost >= 0) variantCosts[rowSku] = Math.round(rowCost);
       variants.push({
         sku: s(r.sku, MANUAL_LIMITS.skuMax),
         name: options.length > 0 ? s(r.name, 200) : "",
@@ -144,7 +155,10 @@ export function parseManualListing(
       variants,
       attributes: [],
     },
-    manual: { costPrice: cost !== null && cost >= 0 ? Math.round(cost) : null },
+    manual: {
+      costPrice: cost !== null && cost >= 0 ? Math.round(cost) : null,
+      ...(Object.keys(variantCosts).length > 0 ? { variantCosts } : {}),
+    },
   };
 }
 
@@ -200,7 +214,8 @@ export async function ensureWarehouseProducts(
   source: ManualSource,
   opts: { allowCost: boolean; reason?: string }
 ): Promise<{ created: number; skipped: number }> {
-  const cost = opts.allowCost ? (source.manual?.costPrice ?? 0) : 0;
+  // Giá vốn: của riêng phân loại nếu form có nhập, không thì giá chung của bài; người không thấy tài chính → 0.
+  const costOf = (sku: string) => (opts.allowCost ? (source.manual?.variantCosts?.[sku] ?? source.manual?.costPrice ?? 0) : 0);
   const reason = opts.reason ?? "Tạo từ Sao chép sản phẩm (Tạo mới)";
   let created = 0;
   let skipped = 0;
@@ -221,7 +236,7 @@ export async function ensureWarehouseProducts(
           productName: source.title,
           variantName: variant,
           groupKey: productGroupKey(source.title, variant),
-          costPrice: new Prisma.Decimal(cost),
+          costPrice: new Prisma.Decimal(costOf(sku)),
           sellingPrice: new Prisma.Decimal(v.price),
           quantityInStock: 0,
           imageUrl: v.imageUrl ?? source.images[0] ?? null,

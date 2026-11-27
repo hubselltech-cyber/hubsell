@@ -25,6 +25,7 @@ import {
   CostPriceTable,
   type ProductGroup,
 } from "@/components/finance/cost-price-table";
+import { CostFromWarehouseButton } from "@/components/finance/cost-from-warehouse";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SupportRequestDialog } from "@/components/support/support-request-dialog";
@@ -763,6 +764,28 @@ export default function CostPricesPage() {
             tabs={PAGE_TABS}
             value={pageTab}
             onChange={setPageTab}
+            // Lát B (27/11/2026): SKU sàn đã nối kho đang đặt giá riêng → xem trước rồi chuyển sang theo giá Tổng kho.
+            // Anh Trung xem local chỉ chỗ: nút nằm ở mép phải HÀNG TAB này, không nằm chung hàng nút Excel / Đồng bộ bên
+            // dưới (thêm nút thứ năm vào hàng đó làm cả hàng rớt xuống dòng, đẩy bảng xuống). Phạm vi = tab sàn + gian
+            // đang lọc của tab Nhập giá vốn nên chỉ hiện ở tab đó; tab sàn Offline là hàng kho nội bộ, không có SKU sàn
+            // → khóa nút.
+            trailing={
+              pageTab === "entry" ? (
+                <CostFromWarehouseButton
+                  channel={channel}
+                  shop={shop}
+                  scopeLabel={
+                    shop !== "all"
+                      ? `gian ${shopOptions.find((o) => o.key === shop)?.name ?? "đang chọn"}`
+                      : channel !== "all"
+                        ? `mọi gian ${TABS.find((t) => t.key === channel)?.label ?? ""}`
+                        : "mọi gian hàng"
+                  }
+                  disabled={loading || channel === "offline"}
+                  onApplied={load}
+                />
+              ) : undefined
+            }
           />
         </PageHeaderBand>
 

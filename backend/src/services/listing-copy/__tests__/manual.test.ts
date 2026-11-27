@@ -30,6 +30,25 @@ describe("parseManualListing", () => {
     expect(listing.dimensionsCm).toEqual({ length: 20, width: 14, height: 5 });
     expect(listing.categoryId).toBeNull();
     expect(manual.costPrice).toBe(120000);
+    // Không phân loại nào nhập giá vốn riêng → không có bảng giá từng phân loại (bài tạo trước 27/11 cũng vậy).
+    expect(manual.variantCosts).toBeUndefined();
+  });
+  // 27/11/2026 — bảng phân loại của form có cột Giá vốn: giá của riêng phân loại đi theo mã SKU chữ hoa.
+  it("giá vốn từng phân loại: khóa theo mã SKU chữ hoa, ô trống / âm / không phải số thì bỏ, số 0 vẫn nhận", () => {
+    const { listing, manual } = parseManualListing({
+      ...good,
+      options: [{ name: "Màu", values: ["Đen", "Xám", "Trắng", "Nâu"] }],
+      variants: [
+        { sku: "tc113-den", name: "Đen", price: 199000, stock: 1, costPrice: "95000.4" },
+        { sku: "TC113-XAM", name: "Xám", price: 199000, stock: 1, costPrice: "" },
+        { sku: "TC113-TRANG", name: "Trắng", price: 199000, stock: 1, costPrice: 0 },
+        { sku: "TC113-NAU1", name: "Nâu", price: 199000, stock: 1, costPrice: -5 },
+      ],
+    });
+    expect(manual.variantCosts).toEqual({ "TC113-DEN": 95000, "TC113-TRANG": 0 });
+    expect(manual.costPrice).toBe(120000);
+    // Giá vốn không lọt vào bài đăng lên sàn.
+    expect(Object.keys(listing.variants[0])).not.toContain("costPrice");
   });
   it("thiếu tên / không phân loại / số tổ hợp lệch → lỗi 400 rõ nghĩa", () => {
     expect(() => parseManualListing({ ...good, title: " " })).toThrow(/tên sản phẩm/i);

@@ -36,6 +36,12 @@ import { catalogRowLimit, findCostSiblings } from "../lib/cost-mapping";
 import { loadCostImportData } from "../lib/cost-import-load";
 import { saveCostPlan } from "../lib/cost-import-apply";
 import {
+  applyCostFromWarehouse,
+  FROM_WAREHOUSE_ROW_LIMIT,
+  previewCostFromWarehouse,
+  type WarehouseCostScope,
+} from "../lib/cost-from-warehouse";
+import {
   SearchApplyChangedError,
   SearchApplyInputError,
   applySearchCost,
@@ -1551,6 +1557,40 @@ router.post("/cost-prices/apply-search", heavyRouteGuard("apply-search"), async 
     res.json({ updated: r.updated, backfilledOrderLines: r.backfilled });
   } catch (err) {
     if (!sendSearchApplyError(err, res)) next(err);
+  }
+});
+
+// ── "LẤY GIÁ VỐN TỪ TỔNG KHO" (lát B, 27/11/2026 — lib/cost-from-warehouse.ts) ──
+// POST /api/finance/cost-prices/from-warehouse/preview  { channel, shop }            → số SKU bằng giá kho + các dòng lệch giá
+// POST /api/finance/cost-prices/from-warehouse          { channel, shop, applyIds }  → bỏ giá riêng của gian, SKU theo giá kho
+// `channel` = tab sàn của trang (all | shopee | tiktok | lazada), `shop` = "all" hoặc id gian — đúng phạm vi khách đang lọc.
+function readWarehouseCostScope(ownerId: string, body: Record<string, unknown>): WarehouseCostScope {
+  const channel = typeof body.channel === "string" ? body.channel.toLowerCase() : "all";
+  const shop = typeof body.shop === "string" ? body.shop : "all";
+  const channelName = CHANNEL_BY_KEY[channel];
+  return {
+    ownerId,
+    channelName: channelName && channelName !== ChannelName.OFFLINE ? channelName : null,
+    channelId: shop && shop !== "all" && shop !== "offline" ? shop : null,
+  };
+}
+router.post("/cost-prices/from-warehouse/preview", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await previewCostFromWarehouse(readWarehouseCostScope(req.ownerId!, req.body ?? {})));
+  } catch (err) {
+    next(err);
+  }
+});
+router.post("/cost-prices/from-warehouse", async (req: AuthRequest, res, next) => {
+  try {
+    const raw: unknown = req.body?.applyIds ?? [];
+    if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string") || raw.length > FROM_WAREHOUSE_ROW_LIMIT) {
+      res.status(400).json({ error: `Danh sách SKU không hợp lệ (tối đa ${FROM_WAREHOUSE_ROW_LIMIT} dòng mỗi lần).` });
+      return;
+    }
+    res.json(await applyCostFromWarehouse(readWarehouseCostScope(req.ownerId!, req.body ?? {}), raw as string[]));
+  } catch (err) {
+    next(err);
   }
 });
 

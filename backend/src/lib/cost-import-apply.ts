@@ -3,7 +3,9 @@ import { prisma } from "./prisma";
 import {
   backfillOrderLinesByChannelProducts,
   backfillOrderLinesByProducts,
+  followWarehouseCostIn,
   invalidateOwnerCostCaches,
+  liftShopCostToEmptyWarehouseIn,
 } from "./cost-price";
 
 type Db = Prisma.TransactionClient;
@@ -23,6 +25,12 @@ export async function writeCostImportPlan(
   if (plan.productCost.size > 0) {
     const ids = [...plan.productCost.keys()];
     const costs = ids.map((id) => plan.productCost.get(id)!);
+    // Giá kho TRƯỚC khi ghi — giá kho đổi thì SKU sàn đã nối đang khớp giá kho theo giá mới (27/11/2026,
+    // lib/cost-price followWarehouseCostIn). Cửa này không có hộp hỏi nên giá riêng lệch thì GIỮ.
+    const before = await db.product.findMany({
+      where: { id: { in: ids }, userId: ownerId },
+      select: { id: true, costPrice: true },
+    });
     const rows = await db.$queryRaw<{ id: string }[]>`
       UPDATE "Product" AS p
       SET "costPrice" = v.cost
@@ -30,6 +38,12 @@ export async function writeCostImportPlan(
       WHERE p."id" = v.id AND p."userId" = ${ownerId}
       RETURNING p."id"`;
     productIds = rows.map((r) => r.id);
+    await followWarehouseCostIn(
+      db,
+      before.map((p) => ({ productId: p.id, oldCost: Number(p.costPrice), newCost: plan.productCost.get(p.id)! })),
+      ownerId,
+      "keep"
+    );
   }
   if (plan.shopCost.size > 0) {
     const ids = [...plan.shopCost.keys()];
@@ -41,6 +55,10 @@ export async function writeCostImportPlan(
       WHERE cp."id" = v.id AND c."id" = cp."channelId" AND c."userId" = ${ownerId}
       RETURNING cp."id"`;
     channelProductIds = rows.map((r) => r.id);
+    // Lát A (27/11/2026): sản phẩm kho đã nối đang trống giá nhận giá gian vừa nhập (các gian chung một mức).
+    // Gộp vào productIds để lượt vá đơn cũ phía sau vá luôn dòng còn 0 của SKU sàn khác cùng sản phẩm.
+    const lifted = await liftShopCostToEmptyWarehouseIn(db, { channelProductIds }, ownerId);
+    productIds = [...new Set([...productIds, ...lifted])];
   }
   return { productIds, channelProductIds };
 }

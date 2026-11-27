@@ -2,7 +2,8 @@
 
 // ============================================================
 // Bảng phân loại của form Tạo mới: mỗi tổ hợp một dòng (Đăng / tên / mã SKU + lỗi /
-// giá / tồn / ảnh). Sửa theo TÊN tổ hợp (tổ hợp sinh động từ nhóm phân loại), khác bảng
+// giá bán / giá vốn / tồn / ảnh). Cột Giá vốn thêm 27/11/2026 (anh Trung: "chỉ có giá bán chưa có
+// giá vốn") — ghi vào Tổng kho, không đăng lên sàn; chỉ người thấy tài chính có cột. Sửa theo TÊN tổ hợp (tổ hợp sinh động từ nhóm phân loại), khác bảng
 // của Sửa bài đăng (source-editor.tsx, sửa theo vị trí) nên không gộp.
 // Các ô căng mép trên (align-top) + checkbox / tên / nút Ảnh canh theo hàng 32 px — dòng
 // lỗi dưới ô SKU không kéo ô Giá / Tồn trôi xuống (anh báo 30/10).
@@ -22,6 +23,8 @@ export interface ManualVariantRow {
   name: string;
   sku: string;
   price: string;
+  /** Giá vốn ghi vào Tổng kho (27/11/2026) — "" = chưa nhập. Không đăng lên sàn. */
+  cost: string;
   stock: string;
   imageUrl: string | null;
   excluded: boolean;
@@ -30,6 +33,7 @@ export interface ManualVariantRow {
 export interface ManualVariantEdit {
   sku?: string;
   price?: string;
+  cost?: string;
   stock?: string;
   imageUrl?: string | null;
   excluded?: boolean;
@@ -39,9 +43,12 @@ export function ManualVariantTable({
   rows,
   skuIssue,
   priceOk,
+  showCost,
   onEdit,
   onPickImage,
 }: {
+  /** Cột Giá vốn — chỉ người thấy tài chính (nhân viên không nhập giá vốn, máy chủ cũng bỏ). */
+  showCost: boolean;
   rows: ManualVariantRow[];
   /** Lỗi mã SKU theo tên tổ hợp. */
   skuIssue: Record<string, string>;
@@ -55,12 +62,15 @@ export function ManualVariantTable({
       <table className="w-full table-fixed text-sm">
         <thead className="bg-muted/40">
           <tr className={TEXT_TABLE_HEAD}>
+            {/* Có cột Giá vốn thì Phân loại / Giá bán / Tồn / Ảnh nhường chỗ; tổng vẫn 100 %. Mã SKU GIỮ 30 %: đo ở màn
+                1280 (khung form 641 px) mã 17 ký tự "GVTHU-MU-XANH-REU" cần 159 px chữ — hẹp hơn 30 % là mã bị cắt. */}
             <th className="w-[6%] px-2 py-2 text-left font-medium">Đăng</th>
-            <th className="w-[20%] px-2 py-2 text-left font-medium">Phân loại</th>
+            <th className={cn("px-2 py-2 text-left font-medium", showCost ? "w-[16%]" : "w-[20%]")}>Phân loại</th>
             <th className="w-[30%] px-2 py-2 text-left font-medium">Mã SKU</th>
-            <th className="w-[18%] px-2 py-2 text-left font-medium">Giá</th>
-            <th className="w-[13%] px-2 py-2 text-left font-medium">Tồn</th>
-            <th className="w-[13%] px-2 py-2 text-left font-medium">Ảnh</th>
+            <th className={cn("px-2 py-2 text-left font-medium", showCost ? "w-[14%]" : "w-[18%]")}>Giá bán</th>
+            {showCost && <th className="w-[14%] px-2 py-2 text-left font-medium">Giá vốn</th>}
+            <th className={cn("px-2 py-2 text-left font-medium", showCost ? "w-[9%]" : "w-[13%]")}>Tồn</th>
+            <th className={cn("px-2 py-2 text-left font-medium", showCost ? "w-[11%]" : "w-[13%]")}>Ảnh</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -79,8 +89,13 @@ export function ManualVariantTable({
                   {issue && !r.excluded && <div className="mt-0.5 text-[11px] leading-snug text-red-500">{issue}</div>}
                 </td>
                 <td className="px-2 py-1.5 align-top">
-                  <Input className={cn("h-8 px-2 tabular-nums", !r.excluded && !priceOk(r.price) && WARN_INPUT)} inputMode="numeric" value={r.price} onChange={(e) => onEdit(r.name, { price: e.target.value })} />
+                  <Input className={cn("h-8 px-2 tabular-nums", !r.excluded && !priceOk(r.price) && WARN_INPUT)} inputMode="numeric" aria-label={`Giá bán của ${r.name || "sản phẩm"}`} value={r.price} onChange={(e) => onEdit(r.name, { price: e.target.value })} />
                 </td>
+                {showCost && (
+                  <td className="px-2 py-1.5 align-top">
+                    <Input className="h-8 px-2 tabular-nums" inputMode="numeric" placeholder="0" aria-label={`Giá vốn của ${r.name || "sản phẩm"}`} value={r.cost} onChange={(e) => onEdit(r.name, { cost: e.target.value })} />
+                  </td>
+                )}
                 <td className="px-2 py-1.5 align-top">
                   <Input className="h-8 px-2 tabular-nums" inputMode="numeric" value={r.stock} onChange={(e) => onEdit(r.name, { stock: e.target.value })} />
                 </td>
