@@ -17,9 +17,11 @@ Anh 27/11: "áp lại giá vốn cho đơn cũ của khách hàng này theo giá
 - **Không đụng:** 1 dòng quà 0 đ; 8 dòng của lá chưa có giá; 390 dòng giá vốn 0 có id lá không còn trong danh mục (Shopee 171, TikTok 219) — để 0 theo luật 09/11.
 - Sao lưu + câu hoàn tác: [hoanglong-costprice-backup-2026-11-27.txt](backend/scripts/out/hoanglong-costprice-backup-2026-11-27.txt). Tab Supabase SQL Editor còn mở trong Chrome anh (trang hỏi lưu câu lệnh nên em không đóng được — đóng bỏ không sao).
 - **Push 27/11 chiều — anh: "Chỉ push phần em vừa làm thôi":** đoạn này đã lên máy chủ thành commit riêng `613ede11` (chỉ `PROGRESS.md`, dựng trên nền `25415fcd`, vượt rào bằng `HUBSELL_CHO_PUSH_THU=1`). **3 commit cũ VẪN CHƯA PUSH:** `4f51b79c`, `4f22325b` (đóng băng trang Cảnh báo & P&L Sản phẩm), `bf712f86`; master cục bộ gộp `613ede11` vào bằng một commit gộp, mã 3 commit cũ không đổi. Rào pre-push giờ chặn MỌI lượt đẩy lên master vì bản vá camera đã ở master từ 26/11 — anh muốn gỡ rào; nhánh thử `thu/video-dong-goi-lat-0` (worktree `D:\HubsellVideo`, `app.json` còn package thử, 12 commit chưa gộp) vẫn còn nên em trình anh chọn gỡ hẳn hay chỉ bỏ phần lỗi thời.
+- **✅ RÀO PRE-PUSH ĐÃ GỠ 27/11 chiều — anh: "Gỡ hẳn đi. nhánh thử anh đã dùng làm nhánh chính luôn rồi".** Tệp đổi tên thành `.git/hooks/pre-push.da-go-2026-11-27` (bỏ quyền chạy, git không gọi nữa; dựng lại = đổi tên về `pre-push`). Thư mục hooks dùng chung nên worktree `D:\HubsellVideo` cũng hết rào. Từ nay push master không cần `HUBSELL_CHO_PUSH_THU=1`. Đã thử lượt đẩy giả (`--dry-run`): đi qua, không còn dòng "[rao Hubsell]".
+- **✅ PUSH PHẦN CÒN LẠI 27/11 chiều — anh: "Push luôn phần còn lại, chỉ giữ phần marketting thôi":** đẩy cả `4f51b79c`, `4f22325b` (đóng băng trang Cảnh báo & P&L Sản phẩm — lên prod từ lượt này), `bf712f86`, commit gộp `511ae077` và commit ghi chú này. 7 tệp nháp trong `hubsell-marketing/` (kịch bản TikTok, số liệu GMV Max) GIỮ LẠI máy, không commit.
 
 ---
-## Phiên 27/11 sáng (2) — ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — ĐÃ COMMIT `4f22325b` trên master (CHƯA PUSH → prod chưa đổi)
+## Phiên 27/11 sáng (2) — ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — commit `4f22325b`, ĐÃ PUSH 27/11 chiều (anh: "Push luôn phần còn lại, chỉ giữ phần marketting thôi")
 
 Anh 27/11 ~10:15 (kèm ảnh sidebar khoanh mục): "ẩn phần này trên side bar. Đóng băng luôn không dùng tới nữa để giảm lượt gọi".
 
