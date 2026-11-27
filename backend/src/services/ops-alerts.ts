@@ -30,6 +30,7 @@ import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
 import { loadLossOrders } from "../routes/finance";
+import { LOSS_ORDERS_ALERT_FEATURE } from "../lib/finance-views";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -500,6 +501,9 @@ export async function hubsellAdsNeverLinkedGap(
  * cùng nguồn với trang Đơn lỗ). Một thẻ tổng hợp, bấm vào xem từng đơn.
  */
 async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
+  // ĐÓNG BĂNG 27/11/2026 (anh Trung, cờ ở lib/finance-views.ts): trang đích đã ẩn,
+  // bộ dò thôi đọc sổ cái ở mỗi vòng quét. Thẻ đang mở tự AUTO_CLOSED ở vòng kế.
+  if (!LOSS_ORDERS_ALERT_FEATURE) return [];
   // CÙNG NGUỒN + CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lãi < 0 là LỖ
   // (anh Trung chốt 30/09/2026), KHÔNG loại đơn thiếu giá vốn — thiếu giá vốn mà
   // vẫn âm nghĩa là phí sàn đã ăn hết doanh thu, càng phải báo. Thẻ nói N đơn

@@ -162,12 +162,13 @@ const pctOf = (b) => ({
     await T("taxPlatform", () => pct(cardOf("Thuế sàn TMĐT (khấu trừ tại nguồn)")));
     await shot("tc-tax.png");
 
-    // Ảnh 8: Cảnh báo & P&L sản phẩm
-    await goto("/operations-assistant/loss-orders", "Hiệu quả kinh doanh theo sản phẩm");
-    await T("navSkuPnl", () => pct(page.getByRole("link", { name: /Cảnh báo & P&L/ })));
-    await T("skuChips", () => pctUnion(page.getByRole("button", { name: /Tất cả sản phẩm/ }), page.getByRole("button", { name: /Chưa nhập giá vốn/ })));
-    await T("skuTable", () => pct(page.locator("table").first()));
-    await shot("tc-sku-pnl.png");
+    // Ảnh 8: Cảnh báo & P&L sản phẩm — BỎ 27/11/2026: trang đóng băng (mục sidebar ẩn,
+    // route chỉ chuyển hướng), bước tour đã gỡ khỏi FINANCE_TOUR. Mở lại trang thì trả 5 dòng:
+    //   await goto("/operations-assistant/loss-orders", "Hiệu quả kinh doanh theo sản phẩm");
+    //   await T("navSkuPnl", () => pct(page.getByRole("link", { name: /Cảnh báo & P&L/ })));
+    //   await T("skuChips", () => pctUnion(page.getByRole("button", { name: /Tất cả sản phẩm/ }), page.getByRole("button", { name: /Chưa nhập giá vốn/ })));
+    //   await T("skuTable", () => pct(page.locator("table").first()));
+    //   await shot("tc-sku-pnl.png");
   }
 
   // ================= TOUR GIỮ TIỀN =================

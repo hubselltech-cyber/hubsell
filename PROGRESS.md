@@ -5,6 +5,29 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 27/11 sáng (2) — ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — CODE LOCAL (chưa commit / chưa push)
+
+Anh 27/11 ~10:15 (kèm ảnh sidebar khoanh mục): "ẩn phần này trên side bar. Đóng băng luôn không dùng tới nữa để giảm lượt gọi".
+
+- **Web:** mục sidebar `hidden` ([app-shell.tsx](frontend/src/components/shell/app-shell.tsx)) → mất khỏi sidebar + Ctrl+K. Route `/operations-assistant/loss-orders` còn nhưng KHÔNG gọi API nào, chỉ chuyển hướng (cờ `LOSS_ORDERS_PAGE_FEATURE = false` đầu `page.tsx`): có quyền Lãi/Lỗ Thực Hiện → `/finance/realized-pnl`, không thì về trang chủ của người đó. Ruột trang giữ nguyên trong tệp. Gỡ: dòng `HOME_PRIORITY` (kẻo nhân viên chỉ có lá này bị đẩy vòng tròn), link "Lãi/Lỗ theo SKU" cuối thẻ sản phẩm ở Lãi/Lỗ Thực Hiện, bước 8 tour Tài chính + chữ "P&L theo sản phẩm" ở trang Hướng dẫn.
+- **Backend** (hai cờ ở [finance-views.ts](backend/src/lib/finance-views.ts), đều `false`):
+  - `LOSS_ORDERS_PAGE_FEATURE` → `GET /api/finance/orders-analysis` và `/sku-pnl` trả **410** ngay, không chạm sổ cái (hai đường chỉ trang này gọi; app mobile không gọi — đã grep cả nhánh `ota/1.4.3`).
+  - `LOSS_ORDERS_ALERT_FEATURE` → bộ dò `detectLossOrders` (Trung tâm điều hành) trả rỗng: hết một câu đếm sổ cái + `ensureLedgerFresh` cho mỗi chủ shop ở mỗi vòng quét 10 phút. **Hệ quả: chuông / thẻ "Hubsell soi sao kê: N đơn giao gần đây bị LỖ" THÔI PHÁT**; thẻ đang mở tự đóng ở vòng quét kế. ✅ **anh xác nhận 27/11 ~10:40: "Đồng ý tắt chuông"** (sau này muốn giữ chuông mà vẫn bỏ trang: bật lại MỘT cờ này + đổi `href` thẻ sang `/finance/realized-pnl`).
+  - Trợ lý hỏi đáp "có đơn nào lỗ không?" GIỮ (chỉ chạy khi khách hỏi), link đổi sang Lãi/Lỗ Thực Hiện.
+- **Giữ nguyên:** lá quyền `operations.loss-orders` (web + backend + mobile, y tiền lệ Trợ lý Chat 12/10), hàm `loadLossOrders` / `loadSkuAgg` / `ledgerSkuAgg` (quảng cáo, hòa vốn TikTok dùng), bảng dữ liệu. Không migration.
+- **Kiểm:** kiểm kiểu backend + web sạch, eslint 6 tệp web sạch, 33 / 33 test liên quan (finance-views, finance-definitions, new-order-notify). Soi local (`backend-http` + `frontend-http`, tài khoản chủ shop 4 gian): sidebar Trợ lý vận hành còn 2 mục; Ctrl+K gõ "P&L" không ra; vào thẳng đường dẫn cũ → về Lãi/Lỗ Thực Hiện, trang không phát lượt gọi nào tới hai đường API; gọi tay hai đường → 410; `/realized-pnl` vẫn 200. **CHƯA:** nhìn dòng chân thẻ sản phẩm (DB local kỳ này không có đơn), dark, tài khoản nhân viên, vòng quét thật đóng thẻ cũ (DB local 0 thẻ `loss-orders` đang mở), bộ test rộng.
+- **Chưa đụng (cần thì anh gọi):** landing nếu còn nhắc P&L sản phẩm; nhãn nhóm thông báo app mobile còn chữ "Đơn lỗ"; video tour Tài chính đã quay còn cảnh bước 8; ô tích "Cảnh báo & P&L Sản phẩm" trong hộp Phân quyền nhân viên.
+- **Mở lại:** bỏ `hidden` ở app-shell + bật 3 cờ (1 web, 2 backend) + trả dòng `HOME_PRIORITY`, bước tour, 5 dòng trong `capture-live-tour-assets.js`.
+
+---
+## Phiên 27/11 sáng — Lịch dựng lại chỉ mục mã vận đơn chiều hoàn: chạy lệch giờ, ĐẶT LẠI 03:30 28/11
+
+- Lịch `hubsell-reindex-ma-van-don-chieu-hoan-27-11-03h30` không chạy lúc 03:30 (app Claude không mở), chạy bù 08:13 ngày 27/11 → ngoài khung 03:00–05:30 nên **không chạy gì trên prod**. `Order_returnTrackingCode_idx` vẫn KHÔNG HỢP LỆ.
+- Anh 27/11 ~08:20: "Đặt lại đêm nay" → lịch một lần mới `hubsell-reindex-ma-van-don-chieu-hoan-28-11-03h30`, 03:30 ngày 28/11, vẫn đúng một câu `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"`. Thêm rào: sai ngày / sai khung giờ thì không làm; chỉ push khi commit chưa push toàn tài liệu; rào pre-push chặn thì để nguyên.
+- Điều kiện để chạy đúng giờ: máy cắm điện (cài đặt hiện tại: cắm điện không tự ngủ, chạy pin ngủ sau 10 phút), app Claude + Chrome mở, Supabase còn đăng nhập.
+- Phiên sau: kiểm lịch đã chạy chưa; M2.5 (đo câu tra mã vận đơn) vẫn chờ chỉ mục này.
+
+---
 ## Phiên 26/11 tối muộn — Mobile nâng cấp đợt 3: Kho › Đơn hoàn — CODE LOCAL (chưa commit / chưa OTA)
 
 Anh: "buổi hôm nay sẽ nâng cấp rất nhiều". Chi tiết: `docs/MOBILE-NANG-CAP-DOT-3.md`.

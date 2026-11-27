@@ -125,7 +125,7 @@ const SECTIONS: GuideSection[] = [
     icon: BarChart3,
     title: "Báo cáo tài chính & lãi/lỗ thật",
     description:
-      "Tổng quan, Lãi/Lỗ Thực Hiện theo từng sàn, Báo cáo dòng tiền, thu chi vận hành, thuế bổ sung và P&L theo sản phẩm — biết lãi thật sau khi sàn trừ phí.",
+      "Tổng quan, Lãi/Lỗ Thực Hiện theo từng sàn, Báo cáo dòng tiền, thu chi vận hành và thuế bổ sung — biết lãi thật sau khi sàn trừ phí.",
     tour: FINANCE_TOUR,
   },
   {

@@ -14,6 +14,28 @@ import type { PnlRow } from "./pnl-formula";
 
 // ------------------------------------------------------------ ĐƠN LỖ
 
+/**
+ * CỜ ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" (/operations-assistant/loss-orders) —
+ * anh Trung 27/11/2026: "ẩn phần này trên side bar. Đóng băng luôn không dùng tới nữa
+ * để giảm lượt gọi". Tắt = GET /api/finance/orders-analysis và /sku-pnl trả 410 ngay,
+ * không chạm sổ cái (hai đường này chỉ trang đó gọi; app mobile không gọi). Hàm
+ * loadLossOrders / loadSkuAgg GIỮ NGUYÊN — Trợ lý hỏi đáp ("có đơn nào lỗ không?"),
+ * biên lãi quảng cáo, hòa vốn TikTok vẫn dùng. Mở lại: bật cờ này + cờ cùng tên ở
+ * frontend/src/app/operations-assistant/loss-orders/page.tsx + bỏ `hidden` ở app-shell.tsx.
+ */
+export const LOSS_ORDERS_PAGE_FEATURE: boolean = false;
+
+/**
+ * CỜ bộ dò "đơn lỗ 7 ngày" của Trung tâm điều hành (detectLossOrders ở
+ * services/ops-alerts.ts) — tắt cùng lượt 27/11/2026: đây mới là chỗ tốn lượt gọi
+ * (một câu đếm trên sổ cái + ensureLedgerFresh cho MỖI chủ shop ở MỖI vòng quét
+ * 10 phút), và nút "Xem đơn lỗ" của thẻ dẫn về đúng trang đã đóng băng. Tắt = không
+ * dựng thẻ / chuông "N đơn giao gần đây bị LỖ"; thẻ đang mở tự đóng ở vòng quét kế.
+ * Tách riêng khỏi cờ trang để muốn giữ chuông mà vẫn bỏ trang thì chỉ bật MỘT dòng này
+ * (khi đó đổi href của thẻ sang /finance/realized-pnl).
+ */
+export const LOSS_ORDERS_ALERT_FEATURE: boolean = false;
+
 /** Trường tối thiểu của một đơn Đã giao để dựng dòng "Đơn lỗ". */
 export interface LossOrderSource {
   id: string;

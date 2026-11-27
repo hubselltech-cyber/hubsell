@@ -1,4 +1,4 @@
-import { Router, type Response as ExpressResponse } from "express";
+import { Router, type RequestHandler, type Response as ExpressResponse } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import {
@@ -116,6 +116,7 @@ import {
 } from "../lib/realized-pnl-totals";
 import {
   LOSS_ORDER_LIST_LIMIT,
+  LOSS_ORDERS_PAGE_FEATURE,
   toLossOrderItem,
   type LossOrderBasis,
   type LossOrdersData,
@@ -183,6 +184,15 @@ router.use("/fee-audit", requirePermission("finance.fee-audit"));
 // Cảnh báo & P&L Sản phẩm (trang /operations-assistant/loss-orders) — cũng là
 // dữ liệu lãi/lỗ nên mở cho cả người có quyền Lãi/Lỗ Thực Hiện.
 router.use("/orders-analysis", requirePermission("operations.loss-orders", "finance.realized-pnl"));
+// ĐÓNG BĂNG 27/11/2026 (cờ LOSS_ORDERS_PAGE_FEATURE, lib/finance-views.ts): hai đường
+// chỉ trang Cảnh báo & P&L Sản phẩm gọi → trả 410 ngay, không chạm sổ cái. Chặn ở đây
+// để cả tab trình duyệt còn mở bản web cũ cũng thôi gọi được.
+const lossOrdersPageFrozen: RequestHandler = (_req, res, next) => {
+  if (LOSS_ORDERS_PAGE_FEATURE) return next();
+  res.status(410).json({ error: "Trang Cảnh báo & P&L Sản phẩm đã ngừng. Anh/chị xem ở Lãi/Lỗ Thực Hiện." });
+};
+router.use("/orders-analysis", lossOrdersPageFrozen);
+router.use("/sku-pnl", lossOrdersPageFrozen);
 
 // Nhận file Excel vào bộ nhớ (không lưu ra đĩa), giới hạn 5MB
 const upload = multer({

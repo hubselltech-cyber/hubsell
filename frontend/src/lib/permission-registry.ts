@@ -214,7 +214,9 @@ export const HOME_PRIORITY: { key: string; path: string }[] = [
   { key: "warehouse.shipping-alerts", path: "/warehouse/shipping-alerts" },
   { key: "operations.chat", path: "/operations-assistant/chat" },
   { key: "operations.reviews", path: "/operations-assistant/reviews" },
-  { key: "operations.loss-orders", path: "/operations-assistant/loss-orders" },
+  // operations.loss-orders: trang đóng băng 27/11/2026 (chỉ còn chuyển hướng) — KHÔNG
+  // để làm trang đích, kẻo nhân viên chỉ có lá này bị đẩy vòng tròn. Mở lại thì trả dòng:
+  //   { key: "operations.loss-orders", path: "/operations-assistant/loss-orders" },
   { key: "operations.ai-rules", path: "/operations-assistant/reviews?tab=auto" },
   { key: "operations.copy-listing", path: "/operations-assistant/copy-listing" },
   { key: "finance.analytics", path: "/finance/analytics" },

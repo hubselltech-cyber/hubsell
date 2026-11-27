@@ -55,11 +55,39 @@ import {
   type ChannelName,
   type LossOrder,
 } from "@/lib/api";
-import { can } from "@/lib/permissions";
+import { can, homePathFor } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatDateTime } from "@/lib/format";
 
-export default function LossOrdersPage() {
+/**
+ * CỜ ĐÓNG BĂNG trang "Cảnh báo & P&L Sản phẩm" — anh Trung 27/11/2026: "ẩn phần
+ * này trên side bar. Đóng băng luôn không dùng tới nữa để giảm lượt gọi".
+ * Tắt = route này KHÔNG gọi API nào (/orders-analysis, /sku-pnl), chỉ chuyển
+ * hướng để chuông cũ, bookmark, link trong thư không rơi 404. Ruột trang giữ
+ * nguyên bên dưới. Mở lại: bật cờ này + bỏ `hidden` ở app-shell.tsx + bật
+ * LOSS_ORDERS_PAGE_FEATURE / LOSS_ORDERS_ALERT_FEATURE ở backend/src/lib/finance-views.ts.
+ */
+const LOSS_ORDERS_PAGE_FEATURE: boolean = false;
+
+export default function LossOrdersRoute() {
+  return LOSS_ORDERS_PAGE_FEATURE ? <LossOrdersPage /> : <FrozenRedirect />;
+}
+
+/** Ai còn quyền Lãi/Lỗ Thực Hiện thì về đó (cùng dữ liệu lãi/lỗ); không thì về trang chủ của họ. */
+function FrozenRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    const user = getStoredUser();
+    router.replace(can(user, "finance.realized-pnl") ? "/finance/realized-pnl" : homePathFor(user));
+  }, [router]);
+  return null;
+}
+
+function LossOrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<LossOrder[]>([]);
   const [analyzedCount, setAnalyzedCount] = useState(0);

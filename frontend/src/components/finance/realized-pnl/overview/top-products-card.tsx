@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ArrowRight, ImageIcon, PackageOpen } from "lucide-react";
+import { ImageIcon, PackageOpen } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
@@ -187,12 +186,8 @@ export function TopProductsCard({ top, prevHint }: { top: PnlTopProducts; prevHi
             </Table>
           </div>
         )}
-        <p className={cn(TEXT_SUB, "flex items-center gap-1 border-t px-4 py-2.5")}>
-          Mỗi chip tối đa 10 mã. Xem mọi mã với điểm hòa vốn ở
-          <Link href="/operations-assistant/loss-orders" className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline">
-            Lãi/Lỗ theo SKU <ArrowRight className="size-3" />
-          </Link>
-        </p>
+        {/* 27/11/2026: bỏ link "Lãi/Lỗ theo SKU" — trang Cảnh báo & P&L Sản phẩm đã đóng băng. */}
+        <p className={cn(TEXT_SUB, "border-t px-4 py-2.5")}>Mỗi chip tối đa 10 mã.</p>
       </CardContent>
     </Card>
   );

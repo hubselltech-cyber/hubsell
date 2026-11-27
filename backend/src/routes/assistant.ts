@@ -927,7 +927,9 @@ const INTENTS: IntentDef[] = [
           value: fmtMoney(r.profitAfterTax),
           tone: "neg" as const,
         })),
-        link: { href: "/operations-assistant/loss-orders", label: "Mở Cảnh báo & P&L Sản phẩm" },
+        // 27/11/2026: trang Cảnh báo & P&L Sản phẩm đóng băng → dẫn sang Lãi/Lỗ Thực Hiện
+        // (cùng sổ cái, có nút lọc "Lợi nhuận âm").
+        link: { href: "/finance/realized-pnl", label: "Mở Lãi/Lỗ Thực Hiện" },
       };
     },
   },

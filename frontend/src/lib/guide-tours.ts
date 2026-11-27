@@ -665,13 +665,11 @@ export const FINANCE_TOUR: GuideTour = {
       target: { x: 43.33, y: 44, w: 46.53, h: 50 },
       zoom: 1.3,
     },
-    {
-      img: `${GT}/tc-sku-pnl.png`,
-      title: "P&L theo sản phẩm: mã nào đang gánh lỗ",
-      desc: "“Trợ lý vận hành” → “Cảnh báo & P&L Sản phẩm”: mỗi SKU một dòng — đã bán, doanh thu thuần, giá vốn, phí sàn & ship phân bổ, trần chi quảng cáo, lợi nhuận. Chip “Cần xử lý ngay” gom mã lỗ; “Chưa nhập giá vốn” nhắc mã chưa có số để tính.",
-      target: { x: 58.89, y: 55, w: 77.78, h: 60 },
-      zoom: 1.25,
-    },
+    // 27/11/2026: GỠ bước cuối "P&L theo sản phẩm" (ảnh tc-sku-pnl.png, giọng step-8.mp3) —
+    // trang Cảnh báo & P&L Sản phẩm đã đóng băng. Là bước CUỐI nên số thứ tự giọng đọc
+    // các bước trước không lệch. Mở lại trang thì trả bước:
+    //   img tc-sku-pnl.png · title "P&L theo sản phẩm: mã nào đang gánh lỗ" ·
+    //   target { x: 58.89, y: 55, w: 77.78, h: 60 } · zoom 1.25
   ],
 };
 

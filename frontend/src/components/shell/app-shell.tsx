@@ -147,7 +147,7 @@ export interface NavItem {
 //   Quản lý Kho         ├ Tổng kho · Sản phẩm trên sàn · Đối soát đơn hoàn · Đối soát phí ship
 //   Quản lý Tài chính   ├ Báo cáo dòng tiền · Lãi/Lỗ Thực Hiện · Kiểm toán phí sàn · Thu chi vận hành · Cấu hình Giá vốn
 //   Trợ lý quảng cáo    ├ Shopee · Lazada · TikTok
-//   Trợ lý vận hành     ├ Phản hồi đánh giá · Cảnh báo & P&L Sản phẩm · Sao chép sản phẩm
+//   Trợ lý vận hành     ├ Phản hồi đánh giá · Sao chép sản phẩm   (Cảnh báo & P&L Sản phẩm: đóng băng 27/11)
 //   Hóa đơn & Thuế      ├ Kết nối & Xuất hóa đơn · Lịch sử & Báo cáo thuế · Thuế bổ sung
 //   Kênh bán
 //   Nhân viên
@@ -252,10 +252,16 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá", perm: "operations.reviews" },
       // Trước 10/08 mục này "SALES thấy menu nhưng API 403 vì là dữ liệu lãi/lỗ"
       // — cây phân quyền đã giải đúng nợ đó: có lá operations.loss-orders mới thấy.
+      // ĐÓNG BĂNG 27/11/2026 (anh Trung: "ẩn phần này trên side bar. Đóng băng luôn
+      // không dùng tới nữa để giảm lượt gọi"): mục ẩn, trang chỉ còn chuyển hướng
+      // (cờ LOSS_ORDERS_PAGE_FEATURE ở app/operations-assistant/loss-orders/page.tsx),
+      // backend tắt hai đường API + bộ dò "đơn lỗ" chạy nền (lib/finance-views.ts).
+      // Mở lại: bỏ cờ hidden ở đây + bật các cờ đó + trả dòng HOME_PRIORITY, bước tour.
       {
         href: "/operations-assistant/loss-orders",
         label: "Cảnh báo & P&L Sản phẩm",
         perm: "operations.loss-orders",
+        hidden: true,
       },
       // 29/10/2026 anh Trung: "Cấu hình tự động hóa" (route ai-rules) chỉ phục vụ
       // phản hồi đánh giá → gộp thành tab "Cấu hình tự động" trong Phản hồi đánh
