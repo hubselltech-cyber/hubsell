@@ -85,7 +85,8 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /** Các mức số đơn hiển thị mỗi trang. Backend chặn trần ở 100. */
-const PAGE_SIZE_OPTIONS = [20, 50, 100];
+// 200 / 300 (27/11/2026): kho lớn tích cả trang để chuẩn bị + in 300 đơn một lần; trần máy chủ = 300.
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 300];
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
   PENDING: { label: "Chờ xử lý", className: "bg-zinc-50 text-zinc-600 border-zinc-200" },

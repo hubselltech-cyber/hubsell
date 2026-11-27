@@ -2250,8 +2250,9 @@ export function fetchBulkConfirmProgress(batchId: string) {
 }
 
 const CONFIRM_POLL_MS = 1500;
-/** Trần đợi một lượt chạy nền — 200 đơn Lazada từng đơn vẫn dưới mức này. */
-const CONFIRM_MAX_MS = 15 * 60_000;
+/** Trần đợi một lượt chạy nền — Lazada vẫn gọi từng đơn (ước 1,5–3 giây / đơn, số 09/09) nên
+ *  mẻ 300 đơn Lazada có thể tới ~15 phút; 27/11/2026 nới 15 → 25 phút theo trần 300 đơn. */
+const CONFIRM_MAX_MS = 25 * 60_000;
 
 /**
  * Chuẩn bị hàng THẬT cho nhiều đơn: bắt đầu lượt chạy nền rồi hỏi tiến độ tới
@@ -2320,8 +2321,23 @@ export interface LabelSummary {
 }
 
 /**
+ * /bulk/labels trả 409 "Không có phiếu nào để in": KHÔNG đơn nào trong request có phiếu, kèm lý
+ * do từng đơn. Tách lớp riêng để đường in mẻ lớn (lib/print-labels-chunked) bỏ qua riêng phần
+ * đó mà vẫn in các phần còn lại.
+ */
+export class LabelsEmptyError extends ApiError {
+  failed: LabelSummary["failed"];
+  constructor(message: string, failed: LabelSummary["failed"]) {
+    super(409, message);
+    this.failed = failed;
+  }
+}
+
+/**
  * Tải MỘT file PDF gồm vận đơn chính chủ của sàn + phiếu nhặt hàng Hubsell (A6).
  * Tóm tắt (đơn nào thiếu vận đơn) nằm ở header X-Hubsell-Labels (base64 JSON).
+ * Máy chủ nhận tối đa 200 đơn / request; web in mẻ lớn qua fetchOrderLabelsPdfChunked
+ * (lib/print-labels-chunked) — cắt 100 đơn / request rồi ghép trên trình duyệt.
  */
 export async function fetchOrderLabelsPdf(
   orderIds: string[],
@@ -2348,12 +2364,15 @@ export async function fetchOrderLabelsPdf(
   }
   if (!res.ok) {
     let message = `Máy chủ trả về lỗi ${res.status}`;
+    let failed: LabelSummary["failed"] | null = null;
     try {
       const body = await res.json();
       if (body?.error) message = body.error;
+      if (Array.isArray(body?.failed)) failed = body.failed;
     } catch {
       // giữ thông báo mặc định
     }
+    if (res.status === 409 && failed) throw new LabelsEmptyError(message, failed);
     throw new ApiError(res.status, message);
   }
   let summary: LabelSummary | null = null;

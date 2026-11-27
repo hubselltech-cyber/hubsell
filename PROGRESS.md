@@ -5,6 +5,19 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 27/11 trưa — Chuẩn bị + in 300 đơn một lần trên web: ĐÃ CODE + chạy thử local, COMMIT + PUSH 27/11
+
+Anh 27/11: "Khách hàng nói bên Bigseller chuẩn bị được 300 đơn 1 lần. Và họ muốn như thế để họ xuất bảng kê trong kho cho nhanh"; khách (ảnh Zalo): "xử lý vậy để xuất phiếu tổng xuất kho 1 lần luôn"; anh chốt "Làm trên local", rồi "Dọn dẹp, commit và push". Chi tiết + số đo: [docs/CHUAN-BI-HANG-THEO-ME.md](docs/CHUAN-BI-HANG-THEO-ME.md) mục 7.
+
+- **Trước:** web tối đa 100 đơn / lần (cỡ trang lớn nhất), máy chủ 200. Phiếu nhặt hàng vốn đã gom theo bộ lọc nên 3 lượt 100 đơn vẫn ra một tờ — khách chỉ thiếu việc làm một vòng.
+- **Sửa:** cỡ trang bảng Đơn hàng thêm 200 / 300; `BULK_MAX` 200 → 300 (`routes/orders.ts`), riêng `/bulk/labels` giữ 200 / request và hàng chờ app mobile giữ 200; `ORDER_FLAGS_MAX` 100 → 300 (`routes/pack-videos.ts` — một hằng số, để trang 300 dòng không mất cờ video); web in mẻ > 100 đơn bằng `frontend/src/lib/print-labels-chunked.ts` (cắt ≤ 100 đơn / request, nối tiếp, ghép bằng pdf-lib trên trình duyệt → vẫn một hộp in); `frontend/package.json` thêm `pdf-lib`. Không tăng lượt gọi sàn.
+- **Đo trước khi làm:** máy chủ ghép 300 tờ mẫu 217 KB = 2,6 s, +156 MB RAM, tệp 57 MB → không dồn vào một request.
+- **Đã kiểm local (sàn giả lập, 300 đơn `ME300-*`):** chuẩn bị 300 → sàn nhận 298 + 2 từ chối; In 298 = 3 request, một khung in, tệp 298 trang, DB 298 đơn đã in; Phiếu nhặt hàng 298 đơn một tờ; in lại kèm phiếu xuất hàng 596 trang; bảng 300 dòng 0,87 s; 1440 / 1280 / nền tối; tsc + eslint sạch, test fulfillment 32/32.
+- **CHƯA kiểm:** sàn thật / prod; hộp in thật của Chrome với tệp ~57 MB; ca một phần 409 lẫn phần có phiếu; Firefox; RAM máy chủ; 300 đơn Lazada thật; app mobile không đổi.
+- **Dọn dẹp + push 27/11:** đã xóa 300 đơn thử `ME300-*` khỏi DB local (kèm dòng sổ cái mồ côi), tắt hai máy chủ local; commit lát này lên master cùng lượt. PROGRESS.md lúc commit còn vài dòng sửa chưa commit của phiên khác (đoạn giá vốn Hoàng Long) — commit này CHỈ mang đoạn phiên này, phần kia để nguyên trong thư mục làm việc.
+- **⏳ Theo dõi:** lượt 300 đơn thật đầu tiên của khách (hộp in thật của Chrome với tệp lớn); log Render `[fulfillment]` nếu khách báo chậm.
+
+---
 ## Phiên 27/11 trưa — Áp lại giá vốn đơn cũ khách "Kho Tổng Hoàng Long Diễn Châu" (lần 9): ĐÃ VÁ 621 dòng, GIỮ LẠI 151 dòng chờ anh
 
 Anh 27/11: "áp lại giá vốn cho đơn cũ của khách hàng này theo giá vốn hiện tại khách đang nhập" (khách hung.donghoang101@…, user `cmwt6k0r50e5bmq3w1y70xxgn`, đăng ký + nối 2 gian 23/11: Shopee `cmwt6limn0e70mq3wrbh4sq3w` 3.269 đơn, TikTok `cmwt6pert0edhmq3wv4sro092` 10.443 đơn). Làm theo quy trình 5 bước (Supabase SQL Editor qua Chrome), không đổi mã.

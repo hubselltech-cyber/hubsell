@@ -148,3 +148,35 @@ Lưu ý phụ thấy trong log 25/10: `download_shipping_document` gộp bị s�
 - `tsc --noEmit` + eslint 3 tệp đã sửa: sạch.
 
 **CHƯA kiểm:** chưa chạy với sàn thật / trên prod (chưa push); ca lỗi ở bước in (mất mạng, sàn cấp mã trễ quá 45 giây) và ca trình duyệt chặn pop-up mới đọc mã, chưa dựng lại; ca mẻ rất nhiều đơn bị từ chối (danh sách dài) mới thử 1 dòng; Firefox (mở tab mới thay vì khung in) chưa thử.
+
+## 7. 27/11/2026 — Chuẩn bị + in 300 đơn một lần (web) — ĐÃ PUSH 27/11, chưa thử sàn thật
+
+**Khách phản hồi (anh Trung chuyển):** "bên Bigseller chuẩn bị được 300 đơn 1 lần… để họ xuất bảng kê trong kho cho nhanh"; khách nói thêm: "xử lý vậy để xuất phiếu tổng xuất kho 1 lần luôn". Anh chốt: "Làm trên local", rồi "Dọn dẹp, commit và push".
+
+**Trước đó:** web tích đơn theo trang, cỡ trang lớn nhất 100 → mỗi lần tối đa 100 đơn; máy chủ `BULK_MAX = 200`. Phiếu nhặt hàng (nút Thống kê ở chip Chờ đóng gói) gom theo bộ lọc nên làm 3 lượt 100 đơn vẫn ra MỘT tờ — cái khách thiếu là 3 vòng bấm, không phải tờ tổng.
+
+**Sửa:**
+
+| Chỗ | Trước | Sau |
+|---|---|---|
+| Cỡ trang bảng Đơn hàng (`PAGE_SIZE_OPTIONS`, `LIST_PAGE_MAX` ở `routes/orders.ts`) | 20 / 50 / 100 | thêm 200 / 300 |
+| `BULK_MAX` (shipping-options, confirm, label-readiness, mark-printed) | 200 | 300 |
+| `/bulk/labels` một request (`LABELS_MAX`) | 200 | 200 (giữ) |
+| `/process-queue` của app mobile (`QUEUE_MAX`) | 200 | 200 (giữ — app gửi cả lượt vào một request in) |
+| Cờ "đơn có video" (`ORDER_FLAGS_MAX`, `routes/pack-videos.ts`) | 100 | 300 (bằng cỡ trang lớn nhất, không thì trang 300 dòng mất cờ) |
+| Trần đợi lượt chạy nền trên web (`CONFIRM_MAX_MS`) | 15 phút | 25 phút (Lazada vẫn từng đơn) |
+
+- **Chuẩn bị hàng:** không đổi luồng. Đã chạy nền + cắt 50 đơn / lượt gọi sàn, nên 300 đơn một lần = cùng số lượt gọi sàn với 3 lần 100 đơn.
+- **In:** `frontend/src/lib/print-labels-chunked.ts` — mẻ > 100 đơn được cắt thành các phần ≤ 100, gọi `/bulk/labels` NỐI TIẾP, rồi ghép lại trên trình duyệt bằng pdf-lib (tải động, mẻ ≤ 100 đơn đi đúng đường cũ) → vẫn MỘT hộp in. Nút / toast hiện "Đang lấy vận đơn 100/298…". Một phần mà không đơn nào có phiếu (409, lớp `LabelsEmptyError`) không làm hỏng cả mẻ; lỗi mạng / 5xx giữa chừng dừng cả mẻ, chưa in, chưa đánh dấu gì.
+- **Vì sao không cho máy chủ ghép 300 tờ trong một request (đo 27/11, vận đơn MẪU tự dựng 217 KB / tờ):** ghép 100 tờ 0,8 s +44 MB; 200 tờ 1,9 s +92 MB; 300 tờ 2,6 s +156 MB, tệp ra 57 MB; 300 tờ kèm phiếu xuất hàng 4,4 s +210 MB, 63 MB. Ghép không chậm, nhưng một request phải giữ suốt thời gian gọi sàn (ước từ lượt 30 đơn thật 15/10: ~30 giây nếu Shopee cho tải gộp, gần 2 phút nếu tải lẻ 300 tờ) rồi trả tệp ~60 MB — hồi 09/09 request 1,5–3 phút đã bị cắt.
+
+**Đã kiểm (local 27/11, `backend-http-fulfill-demo` = sàn giả lập, tài khoản seed, 300 đơn `ME300-*`: Shopee 182 gồm 2 đơn cố ý cho sàn từ chối, TikTok 90, Lazada 28):**
+
+- Cỡ trang 300: API 117 ms, bảng 300 dòng dựng xong 0,87 s (bản dev), không tràn ngang ở 1440 và 1280; nền tối đọc được.
+- Tích cả trang → "Chuẩn bị hàng (300)" → tiến độ chạy → màn kết quả "Sàn đã nhận 298 đơn" + 2 đơn từ chối kèm lý do.
+- Bấm "In 298 đơn": 3 request `/bulk/labels` (5,6 s + 5,8 s + 6,7 s), nhãn nút 0/298 → 100 → 200 → 298, MỘT khung in, tệp ghép 298 trang 5,8 MB, toast "Đã mở 298 trang để in · 298 vận đơn sàn · đánh dấu ĐÃ IN 298 đơn". DB: 298 đơn `PROCESSED` + có mã + `labelPrintedAt`, 2 đơn còn `PENDING`.
+- Chip Chờ đóng gói 298 → Thống kê → "Phiếu nhặt hàng · 298 đơn · cần lấy 1.045 sản phẩm" (một tờ).
+- Thanh hàng loạt "In phiếu (298) · 298 in lại" kèm phiếu xuất hàng: 3 request ~11 s mỗi cái, tệp ghép 596 trang 11,9 MB, một khung in.
+- `tsc --noEmit` backend + frontend sạch; eslint 5 tệp web sạch; 3 tệp test fulfillment 32/32.
+
+**CHƯA kiểm:** sàn thật / prod (đã push 27/11 nhưng chưa có lượt 300 đơn thật nào); hộp in THẬT của Chrome với tệp ghép cỡ thật ~57 MB (khi thử, hộp in được thay bằng bản giả; vận đơn giả lập chỉ ~20 KB / tờ); ca một phần 100 đơn trả 409 lẫn với phần có phiếu (mới đọc mã); Firefox; RAM máy chủ đang còn bao nhiêu; 300 đơn Lazada thật mất bao lâu; app mobile không đổi (vẫn 200).

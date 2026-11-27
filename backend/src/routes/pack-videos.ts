@@ -112,7 +112,8 @@ router.use((req: AuthRequest, res: Response, next: NextFunction) => {
 });
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const ORDER_FLAGS_MAX = 100;
+// Bằng cỡ trang lớn nhất của bảng Đơn hàng web (routes/orders.ts LIST_PAGE_MAX; 27/11/2026 nâng 100 → 300).
+const ORDER_FLAGS_MAX = 300;
 
 function capsOf(req: AuthRequest): PackVideoCaps {
   return (req as PackVideoRequest).packVideoCaps ?? NO_PACK_VIDEO_CAPS;

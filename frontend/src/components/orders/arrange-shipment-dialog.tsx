@@ -23,7 +23,6 @@ import {
   ApiError,
   bulkConfirmOrders,
   fetchLabelReadiness,
-  fetchOrderLabelsPdf,
   fetchShippingOptions,
   markOrdersPrinted,
   type ChannelName,
@@ -36,6 +35,7 @@ import {
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
 import { printPdfBlob } from "@/lib/print-labels";
+import { fetchOrderLabelsPdfChunked } from "@/lib/print-labels-chunked";
 import { cn } from "@/lib/utils";
 
 /**
@@ -124,6 +124,8 @@ export function ArrangeShipmentDialog({
   const [waitProgress, setWaitProgress] = React.useState<{ ready: number; total: number } | null>(null);
   /** Tiến độ lượt chạy nền "đã sắp xếp x/y" (14/10) — null khi chưa bắt đầu. */
   const [confirmProgress, setConfirmProgress] = React.useState<{ done: number; total: number } | null>(null);
+  /** Mẻ > 100 đơn lấy phiếu theo từng phần (27/11) — "đã lấy x/y"; null = mẻ nhỏ, một request. */
+  const [printProgress, setPrintProgress] = React.useState<{ done: number; total: number } | null>(null);
   /** Kết quả sàn trả về — khác null = hộp thoại đang ở MÀN KẾT QUẢ (In / Đóng). */
   const [result, setResult] = React.useState<BulkConfirmResult | null>(null);
   /** Lỗi của lượt bấm In gần nhất — hiện ngay trong màn kết quả để bấm In lại. */
@@ -239,7 +241,7 @@ export function ArrangeShipmentDialog({
         await waitForLabelsReady(result.confirmedIds, setWaitProgress);
       }
       setBusy("print");
-      const opened = await printLabels(result.confirmedIds, printOpts);
+      const opened = await printLabels(result.confirmedIds, printOpts, setPrintProgress);
       // Pop-up bị chặn: printLabels đã báo; giữ hộp thoại để cho phép rồi bấm lại.
       if (!opened) return;
       onOpenChange(false);
@@ -250,6 +252,7 @@ export function ArrangeShipmentDialog({
     } finally {
       setBusy(null);
       setWaitProgress(null);
+      setPrintProgress(null);
     }
   }
 
@@ -261,7 +264,9 @@ export function ArrangeShipmentDialog({
         ? `Sàn đã cấp vận đơn ${formatNumber(waitProgress.ready)}/${formatNumber(waitProgress.total)}…`
         : "Đang chờ sàn cấp vận đơn…"
       : busy === "print"
-        ? "Đang lấy vận đơn…"
+        ? printProgress
+          ? `Đang lấy vận đơn ${formatNumber(printProgress.done)}/${formatNumber(printProgress.total)}…`
+          : "Đang lấy vận đơn…"
         : null;
 
   return (
@@ -722,8 +727,13 @@ export async function waitForLabelsReady(
  * Chuẩn bị hàng và BulkBar. Trả false khi trình duyệt chặn cửa sổ in (chưa in
  * gì, chưa đánh dấu gì) để nơi gọi giữ nguyên màn cho người dùng bấm lại.
  */
-export async function printLabels(orderIds: string[], opts: PrintOptions): Promise<boolean> {
-  const { blob, summary } = await fetchOrderLabelsPdf(orderIds, opts);
+export async function printLabels(
+  orderIds: string[],
+  opts: PrintOptions,
+  /** Mẻ > 100 đơn được lấy phiếu theo từng phần (27/11/2026) — báo số đơn đã lấy xong. */
+  onProgress?: (p: { done: number; total: number }) => void
+): Promise<boolean> {
+  const { blob, summary } = await fetchOrderLabelsPdfChunked(orderIds, opts, onProgress);
   const opened = printPdfBlob(blob);
   if (!opened) {
     toast.error("Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm In lại.");

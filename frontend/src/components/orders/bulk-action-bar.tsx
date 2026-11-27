@@ -96,7 +96,10 @@ export function BulkActionBar({
       toast.loading("Đang lấy vận đơn…", { id: toastId });
       await printLabels(
         selected.map((o) => o.id),
-        opts
+        opts,
+        // Mẻ > 100 đơn lấy phiếu theo từng phần (27/11) — cho người dùng thấy đang chạy tới đâu.
+        (p) =>
+          toast.loading(`Đang lấy vận đơn ${formatNumber(p.done)}/${formatNumber(p.total)}…`, { id: toastId })
       );
       onClear();
       onDone(); // tải lại để nhãn "Đã in" hiện ngay

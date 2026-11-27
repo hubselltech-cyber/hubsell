@@ -114,14 +114,20 @@ function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
   return orderListWhere(channelScope(req), parseOrderListFilters(req.query));
 }
 
+/** Cỡ trang lớn nhất của bảng Đơn hàng web = số đơn tích được một lần (bằng BULK_MAX). */
+const LIST_PAGE_MAX = 300;
+/** Số đơn một lượt "làm theo bộ lọc" của app mobile (GET /process-queue). */
+const QUEUE_MAX = 200;
+
 // GET /api/orders?page=1&pageSize=20&shippingStatus=PENDING&channelId=...
 // Danh sách đơn hàng gom về từ TẤT CẢ các kênh, có bộ lọc + phân trang.
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
-    // Trần 100: cho phép chủ shop mở rộng 20 → 50 → 100 đơn/trang khi soát
-    // đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn truy vấn.
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+    // Trần LIST_PAGE_MAX: cho phép chủ shop mở rộng 20 → 50 → 100 → 200 → 300 đơn/trang
+    // khi soát / chuẩn bị đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn
+    // truy vấn. 27/11/2026 nâng 100 → 300 (khách kho lớn chuẩn bị 300 đơn một lần).
+    const pageSize = Math.min(LIST_PAGE_MAX, Math.max(1, Number(req.query.pageSize) || 20));
     const scope = channelScope(req);
     const filters = parseOrderListFilters(req.query);
     const where = orderListWhere(scope, filters);
@@ -542,7 +548,8 @@ router.get("/pick-summary", async (req: AuthRequest, res, next) => {
 //   ARRANGE = Chờ xử lý (bỏ đơn khách chưa thanh toán — sàn chưa cho chuẩn bị; đếm riêng)
 //   PRINT   = Đã xử lý, chưa in phiếu
 //   REPRINT = đã in phiếu, chưa quét đóng gói (in lại)
-// Trả tối đa BULK_MAX đơn (trần của các route /bulk): hỏa tốc trước, rồi đơn cũ trước.
+// Trả tối đa QUEUE_MAX đơn (app mobile; giữ 200 khi web nâng BULK_MAX lên 300 ngày 27/11/2026,
+// vì app gửi cả lượt vào MỘT request /bulk/labels): hỏa tốc trước, rồi đơn cũ trước.
 // `truncated` = còn đơn ngoài lượt này, app nói rõ "làm tiếp sau lượt này".
 // ============================================================
 router.get("/process-queue", async (req: AuthRequest, res, next) => {
@@ -581,16 +588,16 @@ router.get("/process-queue", async (req: AuthRequest, res, next) => {
         where: { AND: [where, expressShippingWhere()] },
         select,
         orderBy: { createdAt: "asc" },
-        take: BULK_MAX,
+        take: QUEUE_MAX,
       }),
     ]);
     const rest =
-      express.length < BULK_MAX
+      express.length < QUEUE_MAX
         ? await prisma.order.findMany({
             where: { AND: [where, notExpressShippingWhere()] },
             select,
             orderBy: { createdAt: "asc" },
-            take: BULK_MAX - express.length,
+            take: QUEUE_MAX - express.length,
           })
         : [];
     const rows = [...express, ...rest];
@@ -600,7 +607,7 @@ router.get("/process-queue", async (req: AuthRequest, res, next) => {
       total,
       taken: rows.length,
       truncated: total > rows.length,
-      max: BULK_MAX,
+      max: QUEUE_MAX,
       unpaid,
       groups: groupQueue(
         rows.map((o) => ({
@@ -812,7 +819,13 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 // Mọi việc gọi sàn nằm trong services/fulfillment/* theo adapter từng sàn.
 // ============================================================
 
-const BULK_MAX = 200;
+// 27/11/2026 — khách kho lớn muốn chuẩn bị 300 đơn một lần (docs/CHUAN-BI-HANG-THEO-ME.md mục 7).
+// Chuẩn bị hàng chạy nền, gọi sàn theo mẻ 50 nên 300 đơn một lần hay ba lần 100 đơn là cùng số
+// lượt gọi sàn → nâng trần lên 300. RIÊNG /bulk/labels là MỘT request đồng bộ ghép PDF trong RAM
+// (đo 27/11: 300 tờ +156 MB, tệp ra ~57 MB, phía sàn 30 giây – 2 phút) → giữ LABELS_MAX = 200
+// cho app mobile; web tự cắt ≤100 đơn / request rồi ghép trên trình duyệt (lib/print-labels-chunked).
+const BULK_MAX = 300;
+const LABELS_MAX = 200;
 
 /** Số đơn mẫu tối đa thử khi hỏi sàn phương án vận chuyển cho một gian. */
 const SAMPLE_TRIES = 3;
@@ -1225,7 +1238,7 @@ router.post("/bulk/label-readiness", async (req: AuthRequest, res, next) => {
  */
 router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
   try {
-    const orderIds = readBulkOrderIds(req, res);
+    const orderIds = readBulkOrderIds(req, res, LABELS_MAX);
     if (!orderIds) return;
     const wantLabels = req.body?.labels !== false;
     const wantPickList = req.body?.pickList !== false;
@@ -1534,8 +1547,8 @@ router.post("/bulk/mark-printed", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
       return;
     }
-    if (orderIds.length > 200) {
-      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần" });
+    if (orderIds.length > BULK_MAX) {
+      res.status(400).json({ error: `Tối đa ${BULK_MAX} đơn mỗi lần` });
       return;
     }
 
