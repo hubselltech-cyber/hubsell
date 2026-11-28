@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 28/11 — In đậm đơn giá phần vượt ở bảng giá app + landing — ĐÃ PUSH (app + landing)
+
+Anh gửi ảnh thẻ Pro ở `/settings/plan`, khoanh "vượt 133 đ/đơn": "chắc cần in đậm để khách hàng dễ thấy trên cả trang cấu hình gói và trên trang landing".
+
+- **App** `frontend/src/components/settings/plan-pricing-matrix.tsx`: `limitsOf` trả `ReactNode[]`, cụm "vượt N ₫/đơn" là `<b class="font-bold text-foreground whitespace-nowrap">` (cùng màu chữ dòng, chỉ đậm hơn: 400 → 700). Khóa `li` đổi sang chỉ số vì phần tử không còn là chuỗi.
+- **Landing** `hubsell-landing/src/components/landing/pricing.tsx`: landing **trước đó chưa có** đơn giá vượt. Thêm trường `overage` vào thang gói (Starter 330 · Growth 199 · Pro 133 · Business 69,9 · Scale 65 = sàn; Enterprise đã có 65 ₫/đơn hàng) → dòng đầu mỗi gói "3.000 đơn / tháng · **vượt 133 ₫/đơn**". Số chép tay theo `overageUnitPrice` (backend `services/plan-overage.ts`), đổi giá gói ở HQ thì sửa đây.
+- **Kèm theo (em tự làm, anh xem lại):** ô "Vượt trần đơn giữa tháng?" dưới bảng giá + câu FAQ `cap` (`faq-cta.tsx`) đang ghi luật cũ "7 ngày ân hạn, tạm khóa" — sai với luật phí vượt đang chạy prod từ 21/11. Đã đổi sang: vẫn đồng bộ + dùng đủ tính năng, phần vượt tính theo đơn giá dưới từng gói, báo đầu tháng sau, trả trước hết mùng 5, quá hạn khóa tính năng nâng cao. **Điều khoản + Quy chế CHƯA sửa** (vẫn ghi luật khóa 120 % / 7 ngày + "không thu phí theo đơn ngoài giá gói") — việc ⏳ trước 01/12 vẫn mở.
+- **Đã soi:** landing `/bang-gia` 1440 (một dòng), 1024 (cụm đậm xuống dòng riêng, không vỡ), 375 (thẻ điện thoại, không tràn ngang). App `/settings/plan` local 1440 sáng + tối (chữ đậm `rgb(241,245,249)` trên nền tối, đọc rõ). DB local chỉ có gói seed Starter / Business nên ảnh app không có thẻ Pro. Typecheck landing sạch, frontend không lỗi ở tệp này. Tài khoản thử local `plan-vuot-…@hubsell.test` (+ một gian OFFLINE) để lại DB dev.
+- ✅ Anh: "Commit và push" → commit + push repo chính và repo riêng `hubsell-landing` (chỉ các tệp của phiên này). ❌ Chưa nhìn tận mắt prod sau deploy.
+
+---
 ## Phiên 27/11 ~20:30 — Thư thông báo Quay video đóng hàng: SOẠN XONG mẫu thư — ĐÃ COMMIT 27/11, chưa push, CHƯA gửi thư nào
 
 Anh 27/11: "Viết cho anh cái bài đăng ra mắt tính năng quay video gói hàng. Mà mình gửi mail chưa em nhỉ?" rồi "Soạn thư".

@@ -22,7 +22,7 @@
 // app có giao diện tối (thang slate bị lật trong .dark — xem memory UI).
 // ============================================================
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, Clock, Info, QrCode, ShoppingCart, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -213,7 +213,7 @@ function PlanHead({
   name: string;
   description: string | null;
   badges: Badge[];
-  limits: string[];
+  limits: ReactNode[];
 }) {
   return (
     <>
@@ -230,8 +230,8 @@ function PlanHead({
       </div>
       {description && <p className="mt-1 text-[13px] leading-snug text-muted-foreground">{description}</p>}
       <ul className="mt-2.5 space-y-1.5 text-[13px]">
-        {limits.map((row) => (
-          <li key={row} className="flex items-start gap-2">
+        {limits.map((row, i) => (
+          <li key={i} className="flex items-start gap-2">
             <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
             <span>{row}</span>
           </li>
@@ -259,16 +259,26 @@ const BADGE_CONSULT: Badge = {
 };
 
 /** Hạn mức 3 trục nói RÕ dưới từng gói — chưa đặt số = Không giới hạn (gói VẪN SẼ giới hạn cả 3 trục). */
-function limitsOf(p: MyPlanInfo, overageFrom?: string | null): string[] {
+function limitsOf(p: MyPlanInfo, overageFrom?: string | null): ReactNode[] {
   return [
-    p.maxOrdersPerMonth != null
-      ? // Kèm đơn giá vượt — câu trả lời "lỡ vượt thì sao" nằm ngay dưới gói (11/11/2026).
-        `${nf.format(p.maxOrdersPerMonth)} đơn / tháng${
-          p.overageUnitPrice != null
-            ? ` · vượt ${nf.format(p.overageUnitPrice)} ₫/đơn${overageFrom ? ` (từ ${overageMonthLabel(overageFrom)})` : ""}`
-            : ""
-        }`
-      : "Không giới hạn đơn hàng",
+    p.maxOrdersPerMonth != null ? (
+      // Kèm đơn giá vượt — câu trả lời "lỡ vượt thì sao" nằm ngay dưới gói (11/11/2026);
+      // IN ĐẬM cho khách thấy trước khi mua (anh Trung 28/11), khớp landing pricing.tsx.
+      <>
+        {nf.format(p.maxOrdersPerMonth)} đơn / tháng
+        {p.overageUnitPrice != null && (
+          <>
+            {" · "}
+            <b className="whitespace-nowrap font-bold text-foreground">
+              vượt {nf.format(p.overageUnitPrice)} ₫/đơn
+            </b>
+            {overageFrom ? ` (từ ${overageMonthLabel(overageFrom)})` : ""}
+          </>
+        )}
+      </>
+    ) : (
+      "Không giới hạn đơn hàng"
+    ),
     p.maxChannels != null ? `${nf.format(p.maxChannels)} gian hàng trên sàn` : "Không giới hạn gian hàng",
     p.maxStaff != null ? `${nf.format(p.maxStaff)} tài khoản nhân viên` : "Không giới hạn nhân viên",
   ];
@@ -585,8 +595,8 @@ export function PlanPricingMatrix({
   const epFoot = (
     <>
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-[13px]">
-        {epLimits.map((row) => (
-          <li key={row} className="flex items-center gap-1.5">
+        {epLimits.map((row, i) => (
+          <li key={i} className="flex items-center gap-1.5">
             <Check className="size-4 shrink-0 text-emerald-600" />
             {row}
           </li>
