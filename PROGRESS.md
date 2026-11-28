@@ -5,6 +5,63 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 28/11 (3) — Trang chủ landing rút còn 4 khúc + sơ đồ 2.5D + chân trang gọn + màn Tài chính HTML — ĐÃ PUSH landing `2f71e20` (anh: "Commit và push")
+
+Anh: abitstore.vn kể "quy trình bán hàng đa kênh" bằng một bức tranh, dễ hiểu; muốn landing Hubsell cũng vậy, 2.5D kiểu băng truyền, nhưng chuyên nghiệp, tinh tế hơn.
+- **Đã xem abitstore:** cái hay = MỘT hình cả luồng, mỗi việc là một đảo tròn có vật thể + nhãn, nối bằng mũi tên đứt. Cái dở = hình clipart lẫn phong cách, có người tí hon, tĩnh, chữ in hoa xám, ~20 đảo.
+- **Bản 4 (khác hẳn bản 1–3 xám kỹ thuật):** 3 gian hàng (mái màu sàn + biển logo trên nóc) góc dưới trái → băng chuyền chở hộp (đơn) / xu (chi phí quảng cáo) / phong bì (phí sàn) chạy vào 3 cửa mặt trước khối Hubsell → 6 đường sáng toả quạt → 6 đảo xếp một cột như sidebar app (Đơn hàng, Quản lý Kho, Quản lý Tài chính, Trợ lý quảng cáo [nhấn xanh], Trợ lý vận hành, Hóa đơn & Thuế), mỗi đảo một vật thể riêng + nhãn 1 dòng, bấm sang trang tính năng. Tiêu đề góc trên trái (anh đổi cùng phiên): **"Trung tâm xử lý đa sàn và quản lý bán hàng"** (bản đầu: "Ba sàn đổ về một nơi, việc nào ra việc nấy").
+- **Kỹ thuật:** `hubsell-landing/src/components/landing/flow-map.tsx` — server component, SVG sinh bằng phép chiếu isometric, chuyển động SMIL + CSS (không JS trình duyệt), hover nhấc đảo + sáng đường dẫn (`:has`), giảm chuyển động thì tắt hết. Trang thử `/xem-thu-so-do` (noindex) = hero + sơ đồ + khối nỗi đau.
+- **Đã soi:** 1920 (Chrome), 1280 (đo JS: không nhãn nào tràn mép), 375 (nhãn trong hình ẩn, thay bằng 6 thẻ link bên dưới; đã sửa tràn mép phải). Console 0 lỗi.
+- **Cùng phiên, anh đổi H1 trang chủ** (khoanh ảnh hero): "Trợ lý quảng cáo đa sàn cho Shopee, Lazada, TikTok Shop" → **"Quản lý bán hàng & Trợ lý quảng cáo đa sàn"** (`hero.tsx`; vế sau xuống dòng riêng, màu xanh; xl hạ 3,4 → 3,25rem để vế xanh nằm một dòng ở cột 620px). Giữ nguyên dòng nhỏ "Ba sàn, một trợ lý quảng cáo" và thẻ title/metadata. Local, CHƯA commit.
+- **Dải dùng thử dưới sơ đồ** (anh khoanh khoảng trống): "Dùng thử miễn phí 14 ngày" + nút cam "Đăng ký dùng thử" (→ APP_LOGIN_URL) | "Có app trên điện thoại" + 2 huy hiệu Google Play / App Store. Huy hiệu tách ra `src/components/store-badges.tsx` (có cỡ `compact`), chân trang dùng chung.
+- **Chân trang gọn lại** (anh: "2 tầng hơi rối"), áp MỌI trang: cột Sản phẩm chia 2 cột con; 2 huy hiệu app chuyển sang dưới cột Truy cập (mục "Ứng dụng"); tầng pháp nhân 4 cột nhãn/giá trị + dải đáy bản quyền gộp thành MỘT dải chữ nhỏ 3 dòng (vẫn đủ: tên, MST, GCN số/ngày/nơi cấp, trụ sở, đại diện, điện thoại, email) + huy hiệu BCT và "Kết nối qua cổng chính thức" bên phải. Mô tả thương hiệu đổi theo định vị mới. Cao 843 → 570px (1920); điện thoại các cột link xếp 2 cột (1.760 → 1.594px).
+- **Chân trang lần 2 — LƯỢC BỚT** (anh: "vẫn rối, có nên lược bớt, tham khảo các bên"). Khảo sát Sapo, KiotViet, Haravan, Nhanh.vn, abitstore, Linear, Shopify: chân trang gọn = 3–4 cột ngắn (≤ 6–8 link, tên 1–3 chữ), link pháp lý dồn thành hàng chữ nhỏ dưới đáy (Haravan / Shopify / Linear); Nhanh.vn là mẫu rối (nhãn dài, dồn mọi thứ). Bản mới: Thương hiệu (mô tả + 2 huy hiệu app + mạng xã hội) · Sản phẩm 6 (5 tính năng + "Tất cả tính năng →") · Tài nguyên 5 · Liên hệ (điện thoại, email, Zalo) → hàng "Pháp lý" 6 link + hàng "Quy chế nền tảng" 6 link (đủ 12 như hồ sơ BCT) → dải pháp nhân 3 dòng + huy hiệu BCT. Bỏ khỏi chân trang: 3 trang tính năng (hàng hoàn, phí vận chuyển, hóa đơn — vẫn ở menu Tính năng), "Đăng ký dùng thử" (đã có ở đầu trang + dải dưới sơ đồ). ⛔ KHÔNG bớt mục pháp nhân nào: hồ sơ Sở Công Thương đã duyệt ghi "công bố tại chân mọi trang: tên, MST, trụ sở, người đại diện, điện thoại, email" (+ GCN). Cao 560px (1920), điện thoại 1.442px. → Anh chốt **"Bớt 6 link neo"**: bỏ hàng "Quy chế nền tảng" (6 link `/quy-che#dieu-N`, nội dung vẫn ở /quy-che), còn MỘT hàng "Pháp lý" 6 link, 1 dòng ở cả 1920 lẫn 1280; cao 532px, điện thoại 1.287px. ⚠️ Lệch so với ảnh trang chủ trong hồ sơ BCT (12 link) — nếu Sở hỏi thì thêm lại. → Dải pháp nhân 3 dòng → **2 dòng** (anh: "lược bớt hoặc sắp xếp gọn hơn"): gộp MST với số GCN (cùng số 0111626360) thành "Mã số doanh nghiệp 0111626360 do Sở Tài chính TP. Hà Nội cấp ngày 09/09/2026"; dòng 2 = trụ sở + "Đại diện pháp luật: Nguyễn Trung Hiếu"; © chuyển sang cột phải dưới huy hiệu BCT. Không bớt mục nào (nơi cấp viết gọn, bản đầy đủ "Phòng ĐKKD và TCDN – Sở Tài chính…" vẫn ở /quy-che, /an-toan). `site.ts` thêm `COMPANY.representativeName`, `COMPANY_REGISTRATION.issuerShort`. → Anh: bỏ dòng "Kết nối qua cổng chính thức" + icon 3 sàn (trùng dải dưới hero; hết luôn icon Lazada trắng ở chân trang điện thoại) và xếp pháp nhân **3 tầng** cho cân cột phải: tên công ty / mã số + nơi, ngày cấp + đại diện / trụ sở; cột phải = huy hiệu BCT + ©. Hai bên cùng cao 68px, thẳng tâm. Chân trang 516px (1920), điện thoại 1.254px.
+- **Khối nỗi đau "ROAS đẹp không có nghĩa là bạn đang lãi"** (anh hỏi có làm lại không): em khuyên GIỮ (waterfall là phần mạnh nhất, số khớp 128,4 − … = 42,3), chỉ làm gọn 3 thẻ → anh "Làm gọn 3 thẻ": bỏ con số to ("ROAS 4.0", "2 giờ sáng", "3 màn") + dòng chú thích li ti, thẻ xếp ngang icon · tiêu đề · một câu; tiêu đề thẻ 3 "Ba sàn, ba cách tính, bật tắt tay mỏi" → "Ba sàn, ba màn hình, bật tắt bằng tay". Thẻ cao 222 → 158px (1920). `pain.tsx`.
+- **Bản đầy đủ để anh duyệt một lượt:** `/xem-thu-so-do` giờ = trang chủ y hệt `page.tsx` + sơ đồ 2.5D chen dưới dải số liệu + khối Tham quan sản phẩm ẩn sơ đồ 5 chốt cũ (`TourSection hideMap`, prop mới, mặc định false → trang chủ thật không đổi). Trang dài ~12.000px (1920). Soi thấy 3 chỗ có SẴN: (1) câu "Bấm vào từng khối để xem màn hình thật" ở đầu Tham quan sản phẩm nói về sơ đồ cũ → khi ẩn sơ đồ phải sửa câu; (2) ảnh chụp app trong tour hiện thanh địa chỉ "localhost:3000"; (3) lưới vệ tinh còn ô "Mạng lưới KOC & Affiliate" trong khi tính năng đã ẩn.
+- **Trang chủ rút còn 4 khúc** (anh xem bản đầy đủ: "Anh cần đúng 4 khúc này thôi, còn những cái khác đã có thể xem chi tiết trong từng tính năng"): `src/app/page.tsx` = Hero (+ dải 3 sàn) · dải 4 số liệu · sơ đồ 2.5D + dải Dùng thử/tải app · Trợ lý AI · Ứng dụng di động → chân trang. BỎ khỏi trang chủ: khối nỗi đau + thác nước, Tham quan sản phẩm (vẫn đủ ở /tinh-nang), Bắt đầu 3 bước, FAQ + CTA cuối (vẫn ở /tinh-nang, /bang-gia, /an-toan, /ho-tro). Link đầu trang /#ai, /#mobile vẫn đúng; không link nào trỏ vào khối đã bỏ. Trang dài 4.297px (1920; trước ~12.000). Đã xóa trang thử `/xem-thu-so-do`, gỡ prop `hideMap`. `pain.tsx` (3 thẻ đã gọn) + `HowItWorksSection` giờ không trang nào dùng — giữ tệp. `scripts/capture-tour.mjs` đang sửa dở từ phiên KHÁC, không đụng.
+- **Khung điện thoại khối App di động → màn Tài chính vẽ HTML** (anh: "để màn tài chính cho đẹp", gửi ảnh màn Tài chính thật trên iPhone, "làm cái khác sắc nét và số liệu to 1 tí cho oách"; rồi "ô dài → biểu đồ bẹt", "phông không tinh tế"). Bỏ ảnh `mobile-kho.webp`, thay `FinanceScreen` trong `mobile.tsx`: tab Tổng quan · Tài chính · Quảng cáo, lọc Tất cả / Hôm nay, 4 ô (icon cùng hàng tên, số 22px, chip ▲/▼), "Bóc tách dòng tiền" cột cao 158px, dòng Lợi nhuận ròng, thanh 5 nút. Số MẪU đúng toán: 186,4 − 74,6 − 46,2 − 2,7 − 14,5 = 48,4 tr; doanh thu 152,8 (82,0 %); chi phí 104,4 (68,3 % DT); lãi 31,7 % DT; 48.412.600 = 26,0 % giá trị SP. Phông Inter (next/font, chỉ trong khung máy). Máy luôn rộng 320px, màn ≤400px thu bằng `zoom:0.88`. Chip nổi đổi: "▲ Lãi ròng +26,5% so hôm qua", "🔔 Đã trừ đủ phí sàn, thuế, Ads". Thanh điều hướng chia 5 cột đều (grid), nút QR xanh đúng tâm màn (đo lệch 0px), chữ nút một dòng (anh: "QR phải chính giữa"). Đã thử đường chụp app thật (backend-http + mobile-web-http) nhưng bỏ giữa chừng theo ý anh, đã tắt 2 máy chủ.
+- **Rà cân đối trang chủ** (anh: "Tổng thể… có điều chỉnh gì cho cân đối nữa không" → "Làm 1–3"): (1) khối App di động đổi 2 nút đen cũ sang huy hiệu `StoreBadges` như dải Dùng thử + chân trang; (2) bỏ dòng xám ngày phát hành 13/10, 16/10 → còn "Dùng chung tài khoản với bản web, không thu thêm phí."; (3) khối sơ đồ py-16/24 → py-20/28, cả 3 khối giờ cùng 112px trên/dưới (1920). ⏳ Chưa làm, chờ anh duyệt chữ: (4) dòng nhỏ + mô tả + nút chính ở hero vẫn chỉ nói quảng cáo; (5) title/metadata vẫn "Trợ lý quảng cáo đa sàn…".
+- ⚠️ Lỗi có SẴN, chưa sửa: trên điện thoại icon Lazada (gradient id `laz-g` dùng chung) bị trắng vì bản đầu tiên của gradient nằm trong khối bị ẩn → mọi icon Lazada sau mất màu (thấy ở dải đáy chân trang).
+- ⏳ Anh xem `http://localhost:3001/xem-thu-so-do`. Duyệt thì: thay `SpearheadMap` hay đặt ngay dưới hero (em đề xuất dưới hero, thay sơ đồ cũ để trang không dài thêm), xóa trang thử, commit landing.
+
+---
+## Phiên 28/11 (2) — Khách Hoàng Long hỏi "chạy lại giá vốn mà ROI hòa vốn quảng cáo chưa đổi" — ĐÃ ĐO PROD: hòa vốn ĐÃ tính lại, số ĐÚNG, không có gì phải sửa
+
+**Kết luận sau khi đo prod 28/11 chiều (Supabase SQL chỉ đọc, qua Chrome anh) — thay cho phần "chưa làm được" bên dưới:**
+- **Đơn đã mang đúng giá vốn hiện tại:** 30 ngày của gian Shopee có 1.881 dòng hàng có giá bán, 0 dòng lệch giá vốn hiện tại của lá. Ba mã trong ảnh: Bún Riêu Cua 228 dòng đều 193.877; Mì Trộn khay 49 dòng đều 149.000; Mì Chay Rau Nấm 33 dòng đều 77.826. Khách không đổi giá sau lượt vá.
+- **Tái hiện đúng số trên màn từ sổ cái:** Bún Riêu Cua 16,72 (186 đơn, 0 đơn thiếu giá vốn); Mì Trộn khay 11,74 (màn 11,78, lệch do cửa sổ trượt); Mì Tươi Bò Xốt Vang 6,28.
+- **Vì sao hòa vốn cao — bóc một thùng (đơn một mã, 30 ngày, không hủy):**
+  - Bún Riêu Cua (183 đơn, ~203 thùng): giá niêm yết 276,1 nghìn − voucher shop 17,2 = thực thu 258,8; phí cố định + thanh toán 41,6 (16,1 %); phí dịch vụ 2,7; thuế sàn khấu trừ 3,9; hoàn 1,3; giá vốn 193,9 (74,9 %) → lãi trước quảng cáo ~15,5 nghìn / thùng = 6,0 % → hòa vốn 16,7.
+  - Mì Trộn khay (41 đơn, 45 thùng): thực thu 216,5; phí 33,2 + 2,6 + thuế 3,1; hoàn 10,2; vốn 149,0 (68,8 %) → lãi 18,4 = 8,5 % → 11,74.
+  - Mì Chay Rau Nấm (21 đơn, 23 thùng): thực thu 110,8; phí 17,4 + 2,6 + thuế 1,6; hoàn 5,0; vốn 77,8 (70,3 %) → lãi 6,4 = 5,8 % (đơn một mã ra 17,3; màn 15,79 vì gồm cả đơn nhiều mã).
+- **Điều đáng báo khách:** Bún Riêu Cua ROAS thực 10,41 < hòa vốn 16,72 và Mì Trộn 8,88 < 11,78 → đang chạy lỗ sau quảng cáo; Mì Chay Rau Nấm đặt mục tiêu 7,4 trong khi hòa vốn 15,79.
+- **Anh hỏi thêm "sản phẩm này hình như còn bán gói lẻ" — đã kiểm, KHÔNG lẫn:** tin Bún Riêu Cua `50016397632` trong Hubsell chỉ có MỘT phân loại "Thùng"; cả 509 dòng đơn từ 30/08 tới nay đều là thùng, giá 274.000–315.000 đ (30 ngày: 228 dòng, giá 274.000 / 294.000 / 295.952). Gói lẻ nằm ở TIN KHÁC `45067631976` "Set 5 Gói Bánh Đa Cua / Bánh Đa Tôm / Bún Riêu" (phân loại Bún riêu cua, giá vốn 32.313 = 193.877 ÷ 6), 30 ngày 0 dòng, là chiến dịch riêng. Hòa vốn 16,72 là của riêng thùng.
+- **14:45 khách nhắn "bún riêu cua cập nhật rồi, chỉ có mì chay rau nấm cùng giá vốn, cùng giá bán với mì chay lẩu thái nhưng ROAS hòa vốn chưa cập nhật" — đã đo prod, KHÔNG phải chưa cập nhật:** hai tin `54218350522` (Rau Nấm) và `48216964218` (Lẩu Thái) cùng giá kho 77.826, mọi dòng 30 ngày đều mang 77.826. Ở giá hiện tại 128.000 không voucher, lãi hai mã BẰNG NHAU 24,8 nghìn / thùng (hòa vốn ≈ 5,2). Lệch vì hòa vốn tính trên đơn thật 30 ngày chứ không theo giá đang niêm yết:
+  - Rau Nấm: 20 đơn / 22 thùng, thực thu 2.442.051, lãi 142.590 → **17,13** (màn lúc anh chụp 15,79 — em chưa tái hiện tới số lẻ đó). 16 / 20 đơn rơi vào 29/10 – 04/11: giá 105,8–114,1 nghìn, 11 đơn có voucher shop 15–21,7 nghìn (tổng voucher 201.030 = 9,1 nghìn / thùng), 1 đơn hoàn cả đơn 114.119 (lỗ nguyên giá vốn 77,8 nghìn). Chỉ 4 đơn giá 128 nghìn (07/11, 10/11, 25/11, 27/11).
+  - Lẩu Thái: 19 đơn / 19 thùng, thực thu 2.392.334, lãi 435.444 → **5,49**. Giá 128–129,9 nghìn suốt, voucher shop tổng 41.041, không hoàn.
+  - Cửa sổ trượt: bỏ 3 ngày đầu (tức từ ~01/12) Rau Nấm còn 9 đơn → 5,43; bỏ 6 ngày còn 5 đơn → 4,30; bỏ 9 ngày còn 3 đơn (< 5) → mượn biên lãi gian nếu không có đơn mới. Số tự về, không phải sửa gì.
+  - Hai chiến dịch hiện `paused`, mục tiêu 7,4x. Với Rau Nấm màn đang báo mục tiêu < hòa vốn trong khi ở giá hiện tại 7,4 > 5,2 là có lãi → **điểm yếu thiết kế (nhận định của em): hòa vốn 30 ngày trễ khi khách đổi giá / hết đợt voucher.** Chưa trả lời khách.
+- **Anh: "Có, đo đi" — ĐÃ ĐO PROD bao nhiêu chiến dịch dính độ trễ này (chỉ đọc, ~6,5 giây; câu lưu ở `backend/scripts/sql/ads-breakeven-window-lag.sql`):**
+  - Phạm vi: chiến dịch Shopee `ongoing`. 476 có đơn 30 ngày; **282 dùng biên lãi riêng** (≥ 5 đơn có giá vốn, độ phủ ≥ 90 %), 65 gian.
+  - So hòa vốn 30 ngày với **7 ngày gần nhất** — 141 chiến dịch đủ ≥ 5 đơn trong 7 ngày: 67 lệch dưới 10 %; 22 thấp hơn 10–20 %; 20 thấp hơn từ 20 % (4 trong đó thấp hơn một phần ba); 14 cao hơn 10–25 %; 12 cao hơn từ 25 %; 5 lỗ sẵn ở cả hai mốc; 1 đổi dấu (30 ngày lỗ sẵn, 7 ngày có lãi).
+  - So với **14 ngày** — 202 chiến dịch đủ đơn: 129 lệch dưới 10 %; 16 thấp hơn từ 20 %; 14 cao hơn từ 25 %.
+  - **Lật kết luận lãi / lỗ theo mục tiêu ROAS** (mục tiêu nằm giữa hai mốc hòa vốn): 3 / 133 ở mốc 7 ngày, 3 / 190 ở mốc 14 ngày.
+  - Trong 32 chiến dịch lệch nhiều ở mốc 7 ngày, chỉ **10 có giá bán thực mỗi đơn vị đổi từ 5 %**; 22 lệch dù giá không đổi (đơn mới chưa kịp hoàn, phí Shopee còn là số ước tính, mẫu nhỏ) → rút ngắn cửa sổ sẽ thêm nhiễu nhiều hơn là sửa.
+  - 141 / 282 KHÔNG so được (dưới 5 đơn trong 7 ngày; 42 chiến dịch không có đơn nào) — ca Rau Nấm thuộc loại này, phép đo không cho biết bao nhiêu trong đó đang lệch.
+  - Giới hạn: giản lược so với mã (không loại đơn quà bất thường, không tự kiểm direct_gmv); chưa đo TikTok (60 ngày, chỉ đơn đã đối soát) và chiến dịch tạm dừng; mốc 20 % / 5 % là em tự chọn để phân nhóm.
+  - Nhận định của em: trễ là thật nhưng hẹp, KHÔNG nên đổi công thức; nếu làm thì là một dòng báo cạnh số hòa vốn khi giá bán gần đây khác giá bình quân 30 ngày. Anh chưa quyết. Không đổi mã.
+  - Bẫy: câu đầu nối thẳng `AdsCampaign` × `order_line_ledger` chạy quá 60 giây rồi tự dừng (kiểm `pg_stat_activity`: không còn chạy); viết lại gom dòng hàng trước.
+- Không đổi mã, không UPDATE gì. Chưa báo khách.
+
+(Ghi chú đầu phiên, trước khi vào được prod:)
+
+Anh gửi ảnh Trợ lý quảng cáo Shopee của khách hung.donghoang101@… (Kho Tổng Hoàng Long Diễn Châu, Shopee `cmwt6limn0e70mq3wrbh4sq3w`), khoanh cột Hòa vốn 16,72x (Thùng 30 gói Bún Riêu Cua), 11,78x (Thùng 18 khay Mì Trộn), 15,79x (Thùng 30 gói Mì Chay Rau Nấm).
+
+- **Đã đọc mã:** hòa vốn Shopee = 1 ÷ (lãi ÷ doanh thu thực nhận) của đơn không hủy 30 ngày, đọc từ sổ cái (`lib/ads-margin.ts`, `shopee/ads-margin-source.ts`); bộ đệm RAM 30 phút → không phải do đệm (lượt vá 27/11 sáng, sổ cái đã tính lại, dirty 0).
+- **Giả thuyết chính (theo số đo 27/11, CHƯA kiểm lại hôm nay):** lượt vá 27/11 ở các mã trong ảnh chỉ đổi vài trăm đồng mỗi thùng (Bún Riêu Cua 194.000 → 193.877, 472 dòng; Mì khay 149.000 → 148.725) → biên lãi đổi chưa tới 0,1 điểm, hòa vốn gần như đứng yên. Phần đổi lớn (thùng cháo 28.362 → 283.615, set 5 gói) nằm ở mã KHÁC và làm giá vốn TĂNG.
+- **Chưa làm được:** đo prod từng chiến dịch khoanh đỏ (doanh thu thực nhận, giá vốn, phí sàn, số đơn thiếu giá vốn) và kiểm khách có tự đổi giá kho sau lượt vá không — Claude in Chrome chưa nối, trình duyệt trong app chưa đăng nhập Supabase. ⏳ Chờ anh nối Chrome / đăng nhập.
+
+---
 ## Phiên 28/11 — In đậm đơn giá phần vượt ở bảng giá app + landing — ĐÃ PUSH (app + landing)
 
 Anh gửi ảnh thẻ Pro ở `/settings/plan`, khoanh "vượt 133 đ/đơn": "chắc cần in đậm để khách hàng dễ thấy trên cả trang cấu hình gói và trên trang landing".
@@ -16,7 +73,51 @@ Anh gửi ảnh thẻ Pro ở `/settings/plan`, khoanh "vượt 133 đ/đơn": "
 - ✅ Anh: "Commit và push" → commit + push repo chính và repo riêng `hubsell-landing` (chỉ các tệp của phiên này). ❌ Chưa nhìn tận mắt prod sau deploy.
 
 ---
-## Phiên 27/11 ~20:30 — Thư thông báo Quay video đóng hàng: SOẠN XONG mẫu thư — ĐÃ COMMIT 27/11, chưa push, CHƯA gửi thư nào
+## 28/11 09:22 (lịch tự động) — Dựng lại chỉ mục mã vận đơn chiều hoàn: lịch chạy lệch giờ, CHƯA LÀM
+
+Lịch 03:30 ngày 28/11 không chạy đúng giờ (máy / app không mở), chạy bù lúc 09:22 giờ Việt Nam, ngoài khung 03:00–05:30. Theo rào giờ, em không mở Supabase và không chạy `REINDEX INDEX CONCURRENTLY "Order_returnTrackingCode_idx"`. Lời duyệt của anh ("Đặt lại đêm nay", 27/11) chỉ cho đêm 27 rạng 28/11, nên cần anh duyệt một đêm khác. Chỉ mục vẫn KHÔNG HỢP LỆ từ 25/11 (chưa kiểm lại prod lượt này). Lưu ý: lịch đã trượt 2 đêm liền vì máy không mở lúc 03:30, nên lần sau cần máy bật sẵn qua đêm hoặc chạy tay lúc vắng.
+
+---
+## Phiên 27/11 tối — Bản mẫu băng truyền 2.5D cho landing (ba sàn → Hubsell → 5 chốt) — CHỈ BẢN MẪU, chưa gắn landing, chưa commit
+
+Anh 27/11 hỏi landing có hình 3D đơn giản kiểu "đơn hàng chạy ra từ các sàn qua băng truyền vào Hubsell, đầu ra là các tính năng" không. Landing chưa có. Gần nhất là sơ đồ `SpearheadMap` (`hubsell-landing/src/components/landing/tour.tsx:308`), phẳng và chỉ có nửa đầu ra. Anh: "Dựng bản mẫu".
+
+- **Tệp:** [docs/marketing/mau-bang-truyen-25d.html](docs/marketing/mau-bang-truyen-25d.html), một tệp, mở thẳng bằng trình duyệt.
+- **Cách làm:** 2.5D bằng CSS 3D (`rotateX(58deg) rotateZ(-30deg)` + `preserve-3d`), không dùng WebGL / three.js, vì landing là trang tĩnh, không chạy JS phía trình duyệt. JS trong bản mẫu chỉ dựng hình hộp. Gắn thật thì cùng phép tính chạy trong server component, chuyển động 100% CSS keyframes. ⛔ Không dùng opacity / filter / mask trên lớp preserve-3d (làm phẳng hình hộp, và dính bẫy Chrome Windows 27/08). Bẫy gặp khi dựng: biến CSS gán qua `Object.assign(style)` không ăn, phải dùng `setProperty`.
+- **Nội dung:** đầu vào gồm đơn (hộp giấy), chi phí quảng cáo (thẻ ₫) và phí sàn (thẻ %) từ 3 trạm Shopee / Lazada / TikTok Shop, để giữ định vị "Trợ lý quảng cáo đa sàn" chứ không thành phần mềm quản lý đơn. Khối máy HUBSELL ở giữa. Đầu ra là 5 băng tỏa tới 5 thẻ, trùng 5 chốt của sơ đồ trang chủ, số minh họa ghi rõ. Màn < 768: cảnh thu nhỏ + 5 thẻ thành danh sách phẳng. `prefers-reduced-motion`: hình đứng yên.
+- **Đã soi:** chụp Playwright (Chrome) ở 1280 / 1440 / 1700 / 390, không tràn ngang. Đã sửa tiêu đề rớt chữ và căn cảnh vào giữa. ❌ Chưa đo hiệu năng trên điện thoại thật. ❌ Chưa gắn vào landing (đợi anh duyệt hình).
+- **Lượt 2 (anh khoanh vùng 5 thẻ đầu ra):** "dùng các mục trên sidebar của mình có khi hay hơn… trang chủ thật đơn giản và ngắn, nhưng cũng phải dễ nhìn. Các phần nhỏ có thay bằng biểu tượng gì đẹp hơn không".
+  - Đầu ra đổi thành **khung sidebar như app**: 6 nhóm đúng thứ tự, tên và icon Material Symbols của `NAV_ITEMS` (`frontend/src/components/shell/app-shell.tsx`), tức Đơn hàng / Quản lý Kho / Quản lý Tài chính / Trợ lý quảng cáo / Trợ lý vận hành / Hóa đơn & Thuế. Trợ lý quảng cáo là mục đang chọn. Bỏ hết số minh họa.
+  - Icon tô màu theo nhóm để nối băng với mục (app thật icon đen). Mỗi nhóm một băng riêng, viền băng cùng màu.
+  - Món nhỏ trên băng đổi thành chip biểu tượng tròn dựng đứng: chi phí quảng cáo = `campaign` cam, phí sàn = `percent` xanh, đầu ra = icon nhóm phát sáng. Hộp đơn giữ dạng 3D.
+  - Khung sidebar là HTML thường đè lên cảnh, không nằm trong lớp 3D, nên chữ nét. Điện thoại: cảnh thu nhỏ căn trái, sidebar thành khối phẳng bên dưới.
+  - Tiêu đề đổi thành "Ba sàn đổ về một nơi — mọi việc gọn trong một menu". Soi lại 4 cỡ, không tràn.
+  - Gắn landing cần thêm font Material Symbols (gói `material-symbols`, frontend đã dùng) hoặc nhúng SVG 8 glyph. Link từng mục trỏ trang tính năng (bản mẫu để `#`).
+- **Lượt 3 (anh: "cho cảm giác không được tinh tế… thử kiếm trên github có skill nào phù hợp"):** em đã rà skill trên GitHub và trong catalog plugin.
+  - Hợp nhất là **`wheresryan22/anatomy`** (MIT): vẽ máy móc isometric bằng SVG, luật hình chặt — một màu nhấn, tô bóng theo mặt, không nhãn lơ lửng, chi tiết có chủ đích, góc chiếu chuẩn.
+  - Chuyển động của anatomy chạy bằng JS. Băng chuyền giữ CSS keyframes, mình tự viết.
+  - Bổ trợ: `0xDarkMatter/claude-mods` isometric-ops (toán chiếu + luật tô bóng, bóng đổ).
+  - **CHƯA cài:** đợi anh đồng ý tải về.
+- **Lượt 4 — anh: "Cài và dựng bản 3".**
+  - Đã clone skill anatomy vào `~/.claude/skills/anatomy` (commit `1482e84`, 18/10/2026, 40 MB, MIT). Đã rà script: chỉ nói chuyện với Chrome chạy trên máy (127.0.0.1), không gửi gì ra ngoài.
+  - Bản 3: [docs/marketing/bang-truyen-v3/build.mjs](docs/marketing/bang-truyen-v3/build.mjs) → `index.html` (chạy `node docs/marketing/bang-truyen-v3/build.mjs`).
+  - **Vật thể:** 3 bến nạp khắc logo sàn (một màu) → 3 băng con lăn chở hộp (đơn) / đồng xu (chi phí QC) / phong bì (phí sàn) → tủ khắc HUBSELL, trên nóc có đồng hồ đối chiếu → 6 ngăn kéo = 6 nhóm sidebar. Món nào vào tủ thì ngăn của nó trượt ra (màu nhấn xanh duy nhất) và mục trên thanh menu cạnh hình sáng theo. Rê chuột hoặc dùng phím lên/xuống trên menu để mở ngăn.
+  - Nền trắng, 4 tông xám, chữ góc thẻ dùng IBM Plex Mono (có dấu tiếng Việt).
+  - **Kiểm:**
+    - `scripts/lines.mjs` của skill: 0 / 365 đầu nét hở.
+    - Không lỗi console.
+    - Chụp 1280 / 1440 / 1700 / 390, không tràn ngang.
+    - Ghép 6 khoảnh khắc chuyển động; phóng 4 lần vùng tủ và bến nạp.
+  - **Chưa làm / cần biết:**
+    - Trang 392 KB vì nội tuyến cả kit + SVG nhiều chi tiết. Gắn landing phải dựng SVG tĩnh trong server component + một đoạn JS nhỏ cho chuyển động; khi đó em đo lại.
+    - Chưa chạy `--audit` của skill (hình không có ống / cáp nên luật bắt buộc audit không áp).
+    - Chưa thử máy thật.
+- **⏸ TẠM DỪNG (27/11 tối) — anh: "Thôi nghiên cứu sau em ạ. Anh thấy vẫn chưa được thỏa mãn".**
+  - Cả 3 bản chưa đạt ý anh. Giữ nguyên tệp bản mẫu và skill anatomy đã cài; landing không đổi gì.
+  - Khi làm lại: hỏi anh chỗ chưa ưng trước, rồi mới dựng tiếp.
+
+---
+## Phiên 27/11 ~20:30 — Thư thông báo Quay video đóng hàng: ĐÃ PUSH `e04b3eba` + ĐANG GỬI nhỏ giọt 25 thư / ngày — 25 thư đầu đi 21:04 27/11, lỗi 0
 
 Anh 27/11: "Viết cho anh cái bài đăng ra mắt tính năng quay video gói hàng. Mà mình gửi mail chưa em nhỉ?" rồi "Soạn thư".
 
@@ -25,7 +126,15 @@ Anh 27/11: "Viết cho anh cái bài đăng ra mắt tính năng quay video gói
 - **Ảnh:** `frontend/public/guide-assets/pack-video-khung-hinh.png` (864 × 650, 63 KB) = hình VẼ khung video chụp từ landing đang chạy, mã vận đơn bịa. ⛔ Không dùng khung video thật. Ảnh phải lên Vercel trước khi gửi thư (thư chỉ chứa link).
 - **Ảnh 2 (anh: "Thiếu đoạn màn hình cài đặt chọn cam toàn cảnh và cận cảnh ấy em. mở chrome chụp lấy cái ảnh"):** `frontend/public/guide-assets/pack-video-chon-camera.png` (619 × 314, 12 KB) = ô chọn camera trên màn quay của app THẬT (`app.hubsell.vn/orders/videos/record`, Chrome của anh), cả hai camera đang bật; chỉ có tên webcam + khổ hình, không có hình từ camera, không có dữ liệu shop. Phần trống dưới ô đã cắt bỏ (ghép lại mép dưới). Thư thêm một đoạn "Có hai webcam thì chọn thêm camera cận cảnh… Không bắt buộc". Chụp xong em đã tắt camera, không bấm Bắt đầu quay; ô chọn camera toàn cảnh trên máy anh có thể còn nhớ "USB Video".
 - **Kiểm:** tsc backend sạch; `customer-mails.test.ts` + `feature-announce-drip.test.ts` 30 / 30 (thêm 6 ca). Đã chụp bản xem trước ở 640 và 380 px: hai ảnh nạp, không tràn ngang. ❌ Chưa gửi thư mẫu thật, chưa xem trong Gmail / chế độ tối của hộp thư.
-- **CHƯA làm, chờ anh:** (1) duyệt chữ; (2) push (anh 27/11: "Commit the working tree changes" — mới commit); (3) cách gửi — worker nhỏ giọt `feature-announce-drip.ts` VẪN trỏ `mobile-1-4-2` (hạn 30/11), em không đổi vì đổi là 9h hôm sau máy tự gửi 25 thư / ngày; (4) ai nhận — cơ chế hiện có gửi MỌI chủ shop có email kể cả hết hạn gói, trong khi tính năng chỉ mở cho tài khoản còn hạn.
+- **★ 27/11 ~20:45–21:00 — ANH DUYỆT GỬI ("Gửi thư đi thôi chứ k cần push" → em báo không push thì không gửi được: mẫu thư chỉ có trên máy, máy không có SMTP / database khách, hai ảnh 404 trên web → anh: "Push và gửi"):**
+  - Push 1 `6e103420..bfe61ffe` (mẫu thư + ảnh `c61fc0c1`, tài liệu ticket Shopee `bfe61ffe`). Chờ tới khi hai ảnh trả 200 trên `app.hubsell.vn/guide-assets/` (90 giây) rồi mới push 2 — để không thư nào đi với ảnh vỡ.
+  - Push 2 `e04b3eba` lúc 20:57: `DRIP.feature = "pack-video"`, 25 thư / ngày, hạn 20/12 (số em tự chọn). Đợt `mobile-1-4-2` dừng sớm 3 ngày. Vì đã qua 9h VN nên 25 thư đầu đi ở lượt chạy đầu của worker (≈ 3 phút sau khi worker khởi động lại); các ngày sau 25 thư từ 9h.
+  - Người nhận: mọi chủ shop có email, kể cả hết hạn gói (cơ chế sẵn có; anh không chọn khác). KHÔNG có bước thư mẫu vào hộp thư anh trước — anh chọn gửi ngay.
+  - **Kết quả lượt gửi đầu (đọc nhật ký worker `hubsell-worker-sg` trên Render, lọc `Feature`):** 20:59:33 `[Feature-drip] BẬT — "pack-video" 25 thư/ngày từ 9h VN, tới hết 2026-12-20`; **21:04:49 `[Feature-drip] "pack-video": gửi 25, lỗi 0`**. Web prod `/health` = `e04b3eba` lúc 20:59:58. Hai ảnh trả 200 (63 KB + 12 KB).
+  - ❌ Chưa kiểm: thư trông thế nào trong Gmail thật / chế độ tối; tổng số người sẽ nhận (ước hơn 250, chưa đếm trên prod); có ai trả lời "thôi" không (hộp support@).
+  - Ghi nhận thêm: hôm 27/11 đợt `mobile-1-4-2` đã gửi 10 thư lẻ cho khách mới đăng ký (9:14 ba thư, rồi 7 lượt một thư) — từ 21:00 khách mới sẽ nhận thư Quay video đóng hàng thay cho thư app.
+  - ⏳ Sáng 28/11 sau 9h: xem dòng `[Feature-drip] "pack-video": gửi 25` kế tiếp. Nếu thấy `lỗi 1 — DỪNG tới mai` = Zoho chặn → anh gỡ ở UnblockMe, KHÔNG hạ số nữa. Xong đợt (≈ 08–10/12): gỡ worker + hai mẫu thư tính năng + script, GIỮ ảnh.
+- **Mục dưới đây ghi lúc chưa gửi (giữ làm dấu vết):** (1) duyệt chữ; (2) push (anh 27/11: "Commit the working tree changes" — mới commit); (3) cách gửi — worker nhỏ giọt `feature-announce-drip.ts` VẪN trỏ `mobile-1-4-2` (hạn 30/11), em không đổi vì đổi là 9h hôm sau máy tự gửi 25 thư / ngày; (4) ai nhận — cơ chế hiện có gửi MỌI chủ shop có email kể cả hết hạn gói, trong khi tính năng chỉ mở cho tài khoản còn hạn.
 - Bài đăng fanpage: nháp trong chat, không lưu tệp (lệ bài đăng một lần).
 
 ---

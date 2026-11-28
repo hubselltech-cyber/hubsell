@@ -156,4 +156,6 @@ Một câu ở /payment mục 3 đã sửa cho khớp cơ chế thật: trước
 | 16 | thời điểm hợp đồng chấm dứt khi khách chấm dứt; quy trình/thời hạn phản hồi | /quy-che Điều 16 1–4 |
 | Chung | chính sách chỉ ở landing, chưa có ở nơi đăng ký/thanh toán; link footer đặt tên chung | 12 link footer đặt tên theo Điều (#dieu-N); trang đăng nhập app có link Điều khoản / Bảo mật / Quy chế |
 
+> 28/11/2026 anh Trung chốt bớt 6 link neo `/quy-che#dieu-6…16` khỏi chân trang cho gọn (chân trang còn 6 link "Pháp lý"; nội dung các Điều vẫn đủ ở /quy-che). Nếu Sở Công Thương hỏi lại về tên link theo Điều → thêm lại hàng "Quy chế nền tảng" ở `hubsell-landing/src/components/site-footer.tsx` (dữ liệu vẫn ở `LEGAL_LINKS`, nhóm `quy-che`).
+
 **Nộp lại:** chạy lại `node scripts/export-legal-pdfs.mjs https://hubsell.vn` (nay 10 PDF, thêm trang đăng nhập app) → online.gov.vn → Tạo hồ sơ mới → điền như lần 1 (giá trị ở mục 3–5), 8 slot tài liệu: 1=02 privacy, 2=01 quy-che, 3=06 bảng giá, 4=04 payment, 5=01 quy-che, 6=01 quy-che, 7=05 ho-tro, 8=03 terms (+ 10 trang đăng nhập app nếu cho nhiều tệp) → Lưu & Gửi duyệt. Nếu từ chối lần 2: gọi 024.22155502 hỏi đích danh mục thiếu trước khi sửa tiếp.
