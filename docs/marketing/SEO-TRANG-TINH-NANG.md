@@ -6,8 +6,8 @@ thêm: **"Anh thích sự trừu tượng hơn là việc show hết những gì
 thật trên các trang này; hình là minh họa trừu tượng vẽ bằng HTML / SVG.
 
 Trang đầu (cách làm chung, từ khóa, chuẩn AI search): [SEO-TRANG-QUAY-VIDEO-DONG-HANG.md](SEO-TRANG-QUAY-VIDEO-DONG-HANG.md).
-Mã (repo `hubsell-landing`): `src/lib/features.ts` (danh mục trang, cờ `live`, ngày sửa) · `src/components/landing/feature-kit.tsx`
-(khuôn) · `src/components/landing/feature-illus/` (hình minh họa từng trang + `primitives.tsx`) · trang mẫu
+Mã (repo `hubsell-landing`): `src/lib/features.ts` (danh mục trang, cờ `live`, ngày sửa) · `src/components/feature/feature-kit.tsx`
+(khuôn) · `src/components/feature/illus/` (hình minh họa từng trang + `primitives.tsx`) · trang mẫu
 `src/app/quan-ly-quang-cao-shopee/page.tsx`.
 
 Mức chắc: **[C]** đã mở trang / đã chạy · **[S]** suy ra.
@@ -122,9 +122,9 @@ mỏng), "quản lý bán hàng đa kênh" (10 gợi ý nhưng lẫn phần mề
 - 22/11 tối: 7 trang LIVE trên hubsell.vn (landing `7660504`): `/quan-ly-quang-cao-shopee`, `/tinh-loi-nhuan-shopee`, `/quan-ly-hang-hoan`,
   `/doi-soat-phi-van-chuyen`, `/xuat-hoa-don-dien-tu-shopee`, `/dong-bo-ton-kho`, `/quan-ly-don-hang`. Một khuôn `feature-page.tsx`;
   danh mục `lib/features.ts` (menu 8 mục, chân trang, sitemap, thẻ liên quan đọc từ đây). Hình kết hợp: `FAKE` trong
-  `feature-illus/primitives.tsx` là nguồn dữ liệu giả duy nhất.
+  `feature/illus/primitives.tsx` là nguồn dữ liệu giả duy nhất.
 - Đã gửi: IndexNow 9 URL (200) + Search Console "Yêu cầu lập chỉ mục" đủ 7 trang (dev@hubsell.vn). Xem lại báo cáo sau 1–2 tuần.
-- Thêm trang mới: thêm vào `FEATURE_PAGES`, tạo `src/app/<đường-dẫn>/page.tsx` khai `FeaturePageConfig`, hình vào `feature-illus/`; sửa
+- Thêm trang mới: thêm vào `FEATURE_PAGES`, tạo `src/app/<đường-dẫn>/page.tsx` khai `FeaturePageConfig`, hình vào `components/feature/illus/`; sửa
   chữ thật thì đổi `updatedAt` của trang rồi chạy `node scripts/indexnow.mjs /<đường-dẫn>`.
 - 22/11 khuya: trang video làm lại theo khuôn (anh: "Làm lại cho đồng bộ", landing `645c4b1`) — khuôn có `hero.primaryNode`, `hero.note`,
   `extras[]`, `cta` cho trang cần nút / câu riêng. Cả 8 trang tính năng giờ chung một khuôn.

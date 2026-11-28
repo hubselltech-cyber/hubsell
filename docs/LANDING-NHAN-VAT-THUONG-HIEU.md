@@ -7,7 +7,7 @@
 > Sinh cảnh mới: dán persona-A-portrait.jpg vào Gemini + "Same woman as the reference photo..."
 
 Ngày 13/09/2026. Anh Trung nhận xét ảnh `hubsell-landing/public/seller-workspace.jpg`
-(khối 01 "Kiểm soát lợi nhuận âm", `src/components/landing/tour.tsx` → `ProfitVisual`)
+(khối 01 "Kiểm soát lợi nhuận âm", `src/components/sections/tour.tsx` → `ProfitVisual`)
 trông ảo: kho trống trơn như phim trường, người tí hon, thùng lơ lửng.
 
 Landing hiện chỉ có **1 ảnh người** này; các ảnh còn lại (hero, mobile) là ảnh chụp app thật.

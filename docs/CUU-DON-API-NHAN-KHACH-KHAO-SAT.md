@@ -130,7 +130,7 @@ Làm cùng phiên, một commit:
   thiệu app mobile bỏ dòng "Trả lời tin nhắn khách…".
 - Mở lại (mốc: TikTok đủ 1.000 gian → làm TikTok + Lazada một thể): đổi 4 cờ
   (2 BE + 2 FE), bỏ `hidden` Trợ lý Chat, trả bước tour, nối API chat.
-- CHƯA đụng: landing hubsell-landing (`components/landing/tour.tsx` còn slide
+- CHƯA đụng: landing hubsell-landing (`components/sections/tour.tsx` còn slide
   "Cứu đơn giao thất bại" + "CSKH đa kênh một khung chat") — anh dặn 14/09 dừng
   chỉnh landing, chờ anh chốt; cây phân quyền vẫn hiện lá "Trợ lý Chat" (cùng
   cách KOC).
