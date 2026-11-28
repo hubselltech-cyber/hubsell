@@ -60,8 +60,9 @@ import { UnlinkConfirmDialog } from "./unlink-confirm-dialog";
  * SẢN PHẨM TRÊN SÀN — thiết kế lại 05/11/2026 (docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md).
  *
  * Nguyên tắc: kho là mỏ neo, sàn là HÀNG ĐỢI. Trang này là danh sách việc theo SẢN PHẨM sàn:
- *   · Dải 4 số = 4 nhóm (Cần nối · Đã nối · Sàn đã gỡ · Bỏ qua) — bấm số là lọc. Mặc định Cần nối:
- *     listing sàn đã gỡ và món khách bỏ qua KHÔNG nằm trong hàng đợi.
+ *   · Dải số = 5 nhóm (Cần nối · Đã nối · Chưa bật đồng bộ · Sàn đã gỡ · Bỏ qua) — bấm số là lọc. Mặc định
+ *     Cần nối: listing sàn đã gỡ và món khách bỏ qua KHÔNG nằm trong hàng đợi. "Chưa bật đồng bộ" (28/11) =
+ *     sản phẩm có phân loại ĐÃ NỐI mà công tắc đồng bộ tồn đang tắt — việc phải làm sau mỗi lần nối.
  *   · Mỗi sản phẩm MỘT dòng thu gọn, chip trạng thái (Chưa nối / Nối k/n / Đã nối) và MỘT nút chính:
  *     "Nối kho" mở ngăn kéo nối; nối dở → "Nối nốt". Bấm ▸ xem phân loại (chỉ đọc).
  *   · TRANG NÀY CHỈ NỐI, KHÔNG TẠO SẢN PHẨM KHO (anh Trung 05/11: "việc kiểm soát sản phẩm kho hoàn
@@ -83,6 +84,9 @@ import { UnlinkConfirmDialog } from "./unlink-confirm-dialog";
 const BUCKETS: { key: ChannelProductBucket; label: string; hint: string }[] = [
   { key: "queue", label: "Cần nối", hint: "Đang bán trên sàn, còn phân loại chưa nối về Tổng kho" },
   { key: "linked", label: "Đã nối", hint: "Mọi phân loại đã nối SKU kho" },
+  // Hàng đợi việc THỨ HAI (anh Trung 28/11: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên
+  // kết"): đứng ngay sau Đã nối — nối trước, đồng bộ sau. Bật xong là sản phẩm rời nhóm này.
+  { key: "syncOff", label: "Chưa bật đồng bộ", hint: "Đã nối về Tổng kho nhưng còn phân loại đang tắt đồng bộ tồn — bật công tắc để tồn trên sàn đi theo kho" },
   { key: "delisted", label: "Sàn đã gỡ", hint: "Listing không còn trên sàn — không cần nối" },
   { key: "ignored", label: "Bỏ qua", hint: "Bạn chọn không quản tồn (quà tặng, combo…) — vẫn nhận đơn" },
 ];
@@ -287,7 +291,7 @@ export function ChannelProductsPage({
                 <span
                   className={cn(
                     "rounded-full px-1.5 text-xs tabular-nums",
-                    b.key === "queue" && (n ?? 0) > 0 ? "bg-amber-100 text-amber-800" : "bg-muted-foreground/10"
+                    (b.key === "queue" || b.key === "syncOff") && (n ?? 0) > 0 ? "bg-amber-100 text-amber-800" : "bg-muted-foreground/10"
                   )}
                 >
                   {n == null ? "…" : formatNumber(n)}
@@ -430,7 +434,9 @@ export function ChannelProductsPage({
                   ? "Không còn sản phẩm nào cần nối. 🎉"
                   : bucket === "linked"
                     ? "Chưa có sản phẩm nào nối đủ."
-                    : bucket === "delisted"
+                    : bucket === "syncOff"
+                      ? "Mọi phân loại đã nối đều đang đồng bộ tồn. 🎉"
+                      : bucket === "delisted"
                       ? "Không có listing nào bị sàn gỡ."
                       : "Chưa bỏ qua sản phẩm nào."}
             </p>

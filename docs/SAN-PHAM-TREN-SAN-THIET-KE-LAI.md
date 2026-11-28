@@ -328,3 +328,20 @@ chưa đo.
 - **Prod 05/11 09:42 (shop công ty, màn 1920, sáng + tối):** 20/20 dòng có nút sao chép, mã cùng dòng với gian ở mọi dòng, không tên
   gian nào bị cắt, không tràn ngang, ô tên rộng 1.071 px; dòng phân loại hiện mã phân loại + nút sao chép (TUI002 (Đen) · 7235166956).
   Chỉ commit frontend nên Render giữ SHA cũ — bình thường. Chưa bấm sao chép thật trên prod (đã bấm thật trên local).
+
+## 15. Nhóm lọc "Chưa bật đồng bộ" (28/11, anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết") — ĐÃ commit local 28/11, CHƯA push
+
+- **Vì sao:** nối xong thì sản phẩm sang tab Đã nối, công tắc đồng bộ tồn vẫn tắt (gian chưa bật nút tổng). Không có danh sách nào
+  gom các món "nối rồi, chưa bật" nên việc thứ hai sau khi nối dễ bị bỏ sót. Viên "817/832" trên nút gian chỉ cho biết CÒN thiếu,
+  không cho biết thiếu món nào.
+- **Cách bày:** nhóm thứ 5 trên dải số, đứng sau Đã nối: Cần nối · Đã nối · **Chưa bật đồng bộ** · Sàn đã gỡ · Bỏ qua. Là hàng đợi
+  việc thứ hai (viên số hổ phách khi > 0); bật công tắc xong sản phẩm tự rời nhóm. Chọn làm nhóm trên dải số thay vì ô chọn ở hàng
+  lọc: một bấm là ra, luôn thấy con số còn lại, và hàng lọc ở 1280 cũng không còn chỗ cho một ô 180px.
+- **Định nghĩa (backend `groupSql`, bucket `syncOff`):** dòng `ACTIVE`, `ignoredAt IS NULL`; nhóm có
+  `COUNT(*) FILTER (WHERE productId IS NOT NULL AND NOT COALESCE(cp.stockSyncEnabled, c.stockSyncEnabled)) > 0`. Chồng lên Cần nối
+  (sản phẩm nối dở) và Đã nối. Sàn đã gỡ và món Bỏ qua không tính (không có gì để đẩy / khách đã chọn không quản tồn).
+- **Hai con số khác đơn vị:** tab đếm SẢN PHẨM; viên trên nút "Đồng bộ tồn theo gian" đếm PHÂN LOẠI và gồm cả món Bỏ qua
+  (`/stock-sync/summary` không lọc `ignoredAt`) — không bằng nhau là đúng.
+- **Bề ngang:** dải số 464 → 654px. Thanh bên mở, màn < ~1470px thì cụm 3 nút bên phải rớt xuống dòng hai (+44px); bảng không
+  cuộn ngang ở 1280 / 1440 / 1536 / 1700.
+- **Kiểm local:** xem PROGRESS phiên 28/11 (5). Chưa nhìn ảnh giao diện tối, chưa lên prod.

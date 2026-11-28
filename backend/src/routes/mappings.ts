@@ -361,7 +361,7 @@ async function pageOfChannelProductGroups(
   return { keys, total: count[0]?.n ?? 0 };
 }
 
-type GroupBucket = "queue" | "linked" | "delisted" | "ignored";
+type GroupBucket = "queue" | "linked" | "syncOff" | "delisted" | "ignored";
 interface GroupFilter {
   channelName?: ChannelName;
   channelId: string;
@@ -373,7 +373,7 @@ interface GroupFilter {
 }
 
 function parseBucket(v: unknown): GroupBucket | null {
-  return v === "queue" || v === "linked" || v === "delisted" || v === "ignored" ? v : null;
+  return v === "queue" || v === "linked" || v === "syncOff" || v === "delisted" || v === "ignored" ? v : null;
 }
 
 /** Khóa nhóm = gian × id sản phẩm sàn (dòng không có externalId đứng một mình theo id). */
@@ -383,6 +383,10 @@ const GROUP_KEY_SQL = Prisma.sql`cp."channelId" || ':' || COALESCE(NULLIF(split_
  * WHERE + HAVING cho phân trang / đếm theo nhóm. Bucket (05/11/2026):
  *   queue    = đang bán, không bỏ qua, CÒN phân loại chưa nối   (HAVING MIN(linked) = 0)
  *   linked   = đang bán, không bỏ qua, nối đủ                   (HAVING MIN(linked) = 1)
+ *   syncOff  = đang bán, không bỏ qua, CÓ phân loại đã nối mà đồng bộ tồn đang TẮT (28/11/2026, anh Trung:
+ *              "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết"). Công tắc hiệu lực =
+ *              ghi đè riêng của phân loại, không có thì theo gian — cùng luật với stockSyncOn / summary.
+ *              Chồng lên queue (nối dở) và linked (nối đủ): đây là hàng đợi việc thứ hai, không phải nhóm loại trừ.
  *   delisted = có dòng sàn đã gỡ (bất kể nối)                   (lọc status DELISTED)
  *   ignored  = khách bỏ qua
  */
@@ -411,6 +415,10 @@ function groupSql(ownerId: string, allowedChannelIds: string[] | null, f: GroupF
       conds.push(Prisma.sql`cp.status = 'ACTIVE'::"ChannelProductStatus" AND cp."ignoredAt" IS NULL`);
       havingSql = Prisma.sql`HAVING MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) = 1`;
       break;
+    case "syncOff":
+      conds.push(Prisma.sql`cp.status = 'ACTIVE'::"ChannelProductStatus" AND cp."ignoredAt" IS NULL`);
+      havingSql = Prisma.sql`HAVING COUNT(*) FILTER (WHERE cp."productId" IS NOT NULL AND NOT COALESCE(cp."stockSyncEnabled", c."stockSyncEnabled")) > 0`;
+      break;
     case "delisted":
       conds.push(Prisma.sql`cp.status = 'DELISTED'::"ChannelProductStatus"`);
       break;
@@ -438,8 +446,14 @@ async function countChannelProductGroupBuckets(
     );
     return r[0]?.n ?? 0;
   };
-  const [queue, linked, delisted, ignored] = await Promise.all([one("queue"), one("linked"), one("delisted"), one("ignored")]);
-  return { queue, linked, delisted, ignored };
+  const [queue, linked, syncOff, delisted, ignored] = await Promise.all([
+    one("queue"),
+    one("linked"),
+    one("syncOff"),
+    one("delisted"),
+    one("ignored"),
+  ]);
+  return { queue, linked, syncOff, delisted, ignored };
 }
 
 /** Xếp dòng theo thứ tự nhóm của trang; trong nhóm theo tên phân loại (số tự nhiên) rồi mã. */

@@ -4003,7 +4003,7 @@ export function fetchStockSyncSummary() {
 }
 
 /** Nhóm hàng đợi theo SẢN PHẨM sàn (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 5). */
-export type ChannelProductBucket = "queue" | "linked" | "delisted" | "ignored";
+export type ChannelProductBucket = "queue" | "linked" | "syncOff" | "delisted" | "ignored";
 
 export interface ChannelProductListResponse {
   items: ChannelProduct[];

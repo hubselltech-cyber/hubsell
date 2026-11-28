@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 28/11 (5) — Sản phẩm trên sàn: thêm nhóm lọc "Chưa bật đồng bộ" — ĐÃ commit local, CHƯA push (anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết")
+
+Nối xong, sản phẩm rời tab Cần nối nhưng công tắc đồng bộ tồn vẫn tắt; không có chỗ nào gom lại nên dễ quên bật.
+- **Nhóm thứ 5 trên dải số:** Cần nối · Đã nối · **Chưa bật đồng bộ** · Sàn đã gỡ · Bỏ qua. Đứng ngay sau Đã nối (nối trước, đồng bộ sau — cùng trình tự hai cột Trạng thái / Đồng bộ tồn anh chốt 06/11). Viên số màu hổ phách khi > 0 như Cần nối.
+- **Định nghĩa:** sản phẩm sàn đang bán, không bị Bỏ qua, có ÍT NHẤT MỘT phân loại đã nối mà công tắc hiệu lực đang tắt (ghi đè riêng của phân loại, không có thì theo gian — cùng luật `stockSyncOn`). Chồng lên Cần nối (nối dở) và Đã nối; bật xong là sản phẩm rời nhóm. Đếm theo SẢN PHẨM, còn viên "k/n" trên nút "Đồng bộ tồn theo gian" đếm theo PHÂN LOẠI (và gồm cả món Bỏ qua) nên hai số không bằng nhau.
+- **Mã:** `backend/src/routes/mappings.ts` (`GroupBucket` thêm `syncOff`: `HAVING COUNT(*) FILTER (đã nối AND NOT COALESCE(cp.stockSyncEnabled, c.stockSyncEnabled)) > 0`; thêm một câu đếm chạy song song với 4 câu cũ) · `frontend/src/lib/api.ts` · `channel-products-page.tsx` (mục trong `BUCKETS`, màu viên số, câu trống "Mọi phân loại đã nối đều đang đồng bộ tồn"). Không migration, không đụng mobile.
+- **Kiểm:** `tsc --noEmit` backend + frontend sạch. Local tài khoản admin (DB localhost): tab hiện 122 sản phẩm = 121 Đã nối + 1 nối dở, 20 dòng / trang đều công tắc tắt; bật thử một sản phẩm gian Demo Shopee → hộp xác nhận số cũ → mới → số tab 122 → 121, sản phẩm rời danh sách, viên nút gian 0 → 2/569 (đã trả 2 phân loại về như cũ). Bảng không cuộn ngang ở 1280 / 1440 / 1536 / 1700. Giao diện tối: chỉ đo màu viên số bằng JS (nền hổ phách sẫm, chữ sáng), CHƯA nhìn ảnh vì khung trình duyệt trả ảnh cũ.
+- ⚠️ **Dải số dài thêm 190px:** khi mở thanh bên, màn rộng dưới ~1470px thì 3 nút "Tự khớp mã trùng / Lịch sử / Lấy sản phẩm mới từ sàn" rớt xuống dòng thứ hai (+44px chiều cao). Trước đây 1280 vừa khít một dòng (dư 3px). Không cuộn ngang.
+- ❌ Chưa push, chưa lên prod, chưa có test tự động cho nhóm đếm (route này trước giờ không có).
+
+---
 ## Phiên 28/11 (4) — RÀ DỌN LANDING: xóa bản cũ / mã chết / nháp + xếp lại cây thư mục — ĐÃ PUSH landing `2f0f7b0` + repo chính 28/11 (anh: "Push cả hai") (anh: "Bản cũ, code thừa, code rác, nháp dọn dẹp sạch đi… check test cẩn thận và đặc biệt sắp xếp khoa học chuẩn mô hình tree")
 
 Sau khi anh chốt trang chủ 4 khúc (phiên 3), repo `hubsell-landing` còn nguyên mã của các khối đã bỏ. Phiên này chỉ dọn + xếp lại, KHÔNG đổi giao diện.
