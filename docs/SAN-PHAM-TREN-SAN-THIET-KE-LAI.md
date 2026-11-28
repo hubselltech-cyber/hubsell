@@ -329,7 +329,7 @@ chưa đo.
   gian nào bị cắt, không tràn ngang, ô tên rộng 1.071 px; dòng phân loại hiện mã phân loại + nút sao chép (TUI002 (Đen) · 7235166956).
   Chỉ commit frontend nên Render giữ SHA cũ — bình thường. Chưa bấm sao chép thật trên prod (đã bấm thật trên local).
 
-## 15. Nhóm lọc "Chưa bật đồng bộ" (28/11, anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết") — ĐÃ commit local 28/11, CHƯA push
+## 15. Nhóm lọc "Chưa bật đồng bộ" (28/11, anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết") — ĐÃ PUSH `88eebb06` 28/11
 
 - **Vì sao:** nối xong thì sản phẩm sang tab Đã nối, công tắc đồng bộ tồn vẫn tắt (gian chưa bật nút tổng). Không có danh sách nào
   gom các món "nối rồi, chưa bật" nên việc thứ hai sau khi nối dễ bị bỏ sót. Viên "817/832" trên nút gian chỉ cho biết CÒN thiếu,
@@ -344,4 +344,4 @@ chưa đo.
   (`/stock-sync/summary` không lọc `ignoredAt`) — không bằng nhau là đúng.
 - **Bề ngang:** dải số 464 → 654px. Thanh bên mở, màn < ~1470px thì cụm 3 nút bên phải rớt xuống dòng hai (+44px); bảng không
   cuộn ngang ở 1280 / 1440 / 1536 / 1700.
-- **Kiểm local:** xem PROGRESS phiên 28/11 (5). Chưa nhìn ảnh giao diện tối, chưa lên prod.
+- **Kiểm:** xem PROGRESS phiên 28/11 (5). Prod lên `88eebb06`, tài khoản không gian thấy đủ 5 nhóm; chưa kiểm trên shop có dữ liệu thật, chưa nhìn ảnh giao diện tối.

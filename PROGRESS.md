@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 28/11 (5) — Sản phẩm trên sàn: thêm nhóm lọc "Chưa bật đồng bộ" — ĐÃ commit local, CHƯA push (anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết")
+## Phiên 28/11 (5) — Sản phẩm trên sàn: thêm nhóm lọc "Chưa bật đồng bộ" — ĐÃ PUSH `88eebb06` 28/11 (anh: "Em push đi nhé") (anh: "thêm bộ lọc Chưa bật đồng bộ để còn biết thực hiện sau mỗi lần liên kết")
 
 Nối xong, sản phẩm rời tab Cần nối nhưng công tắc đồng bộ tồn vẫn tắt; không có chỗ nào gom lại nên dễ quên bật.
 - **Nhóm thứ 5 trên dải số:** Cần nối · Đã nối · **Chưa bật đồng bộ** · Sàn đã gỡ · Bỏ qua. Đứng ngay sau Đã nối (nối trước, đồng bộ sau — cùng trình tự hai cột Trạng thái / Đồng bộ tồn anh chốt 06/11). Viên số màu hổ phách khi > 0 như Cần nối.
@@ -13,7 +13,7 @@ Nối xong, sản phẩm rời tab Cần nối nhưng công tắc đồng bộ t
 - **Mã:** `backend/src/routes/mappings.ts` (`GroupBucket` thêm `syncOff`: `HAVING COUNT(*) FILTER (đã nối AND NOT COALESCE(cp.stockSyncEnabled, c.stockSyncEnabled)) > 0`; thêm một câu đếm chạy song song với 4 câu cũ) · `frontend/src/lib/api.ts` · `channel-products-page.tsx` (mục trong `BUCKETS`, màu viên số, câu trống "Mọi phân loại đã nối đều đang đồng bộ tồn"). Không migration, không đụng mobile.
 - **Kiểm:** `tsc --noEmit` backend + frontend sạch. Local tài khoản admin (DB localhost): tab hiện 122 sản phẩm = 121 Đã nối + 1 nối dở, 20 dòng / trang đều công tắc tắt; bật thử một sản phẩm gian Demo Shopee → hộp xác nhận số cũ → mới → số tab 122 → 121, sản phẩm rời danh sách, viên nút gian 0 → 2/569 (đã trả 2 phân loại về như cũ). Bảng không cuộn ngang ở 1280 / 1440 / 1536 / 1700. Giao diện tối: chỉ đo màu viên số bằng JS (nền hổ phách sẫm, chữ sáng), CHƯA nhìn ảnh vì khung trình duyệt trả ảnh cũ.
 - ⚠️ **Dải số dài thêm 190px:** khi mở thanh bên, màn rộng dưới ~1470px thì 3 nút "Tự khớp mã trùng / Lịch sử / Lấy sản phẩm mới từ sàn" rớt xuống dòng thứ hai (+44px chiều cao). Trước đây 1280 vừa khít một dòng (dư 3px). Không cuộn ngang.
-- ❌ Chưa push, chưa lên prod, chưa có test tự động cho nhóm đếm (route này trước giờ không có).
+- **Prod 28/11 sau push:** Render `/health` = `88eebb06` sau ~2 phút, Vercel lên; tài khoản công ty (không có gian) thấy đủ 5 nhóm, bấm "Chưa bật đồng bộ" ra câu trống đúng. ❌ Chưa kiểm trên shop có dữ liệu thật (Chrome không đăng nhập shop ANO), chưa nhìn ảnh giao diện tối, chưa có test tự động cho nhóm đếm (route này trước giờ không có).
 
 ---
 ## Phiên 28/11 (4) — RÀ DỌN LANDING: xóa bản cũ / mã chết / nháp + xếp lại cây thư mục — ĐÃ PUSH landing `2f0f7b0` + repo chính 28/11 (anh: "Push cả hai") (anh: "Bản cũ, code thừa, code rác, nháp dọn dẹp sạch đi… check test cẩn thận và đặc biệt sắp xếp khoa học chuẩn mô hình tree")
