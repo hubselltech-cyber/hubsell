@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 28/11 (4) — RÀ DỌN LANDING: xóa bản cũ / mã chết / nháp + xếp lại cây thư mục — ĐÃ COMMIT landing `2f0f7b0` + repo chính, CHƯA PUSH (anh: "Bản cũ, code thừa, code rác, nháp dọn dẹp sạch đi… check test cẩn thận và đặc biệt sắp xếp khoa học chuẩn mô hình tree")
+## Phiên 28/11 (4) — RÀ DỌN LANDING: xóa bản cũ / mã chết / nháp + xếp lại cây thư mục — ĐÃ PUSH landing `2f0f7b0` + repo chính 28/11 (anh: "Push cả hai") (anh: "Bản cũ, code thừa, code rác, nháp dọn dẹp sạch đi… check test cẩn thận và đặc biệt sắp xếp khoa học chuẩn mô hình tree")
 
 Sau khi anh chốt trang chủ 4 khúc (phiên 3), repo `hubsell-landing` còn nguyên mã của các khối đã bỏ. Phiên này chỉ dọn + xếp lại, KHÔNG đổi giao diện.
 
@@ -17,7 +17,7 @@ Sau khi anh chốt trang chủ 4 khúc (phiên 3), repo `hubsell-landing` còn n
 - **Kiểm:** `tsc --noEmit` sạch · `next build` 27/27 route · **so HTML dựng ra của 24 trang với bản trước khi dọn:** 22 trang giống từng ký tự; trang chủ chỉ khác 4 id gradient Lazada; `/tinh-nang` chỉ khác 3 chỗ chủ ý (bỏ `class=""` rỗng, bỏ `id="sync"` + `id="koc"` — đã grep cả repo, không link nào trỏ tới 2 neo này) · 772 link / ảnh nội bộ trên 19 trang: 0 gãy, 0 neo thiếu · soi trình duyệt 1440 + 375: trang chủ, /tinh-nang (sơ đồ 5 chốt, menu xổ 8 mục), /bang-gia, /an-toan, /ho-tro — console 0 lỗi, không tràn ngang. Repo landing không có bộ test tự động; cách kiểm này ghi vào README mục "Kiểm trước khi đẩy".
 - **Docs sửa đường dẫn theo cây mới:** `docs/marketing/SEO-TRANG-TINH-NANG.md`, `SEO-TRANG-QUAY-VIDEO-DONG-HANG.md`, `HUY-HIEU-TIN-CAY-LANDING.md`, `THONG-BAO-BO-CONG-THUONG.md`, `LANDING-NHAN-VAT-THUONG-HIEU.md`, `CUU-DON-API-NHAN-KHACH-KHAO-SAT.md`.
 - ⚠️ Em KHÔNG tự bỏ, để anh quyết: ô **"Mạng lưới KOC & Affiliate"** vẫn nằm trong lưới vệ tinh của /tinh-nang trong khi tính năng đang ẩn trong app (ô Cứu đơn cùng cảnh đã gỡ 14/10).
-- ⏳ Đã commit cả hai repo (landing `2f0f7b0`), CHƯA push — anh chưa bảo đẩy. Skill `anatomy` cài cho bản mẫu 3 vẫn nằm ở `~/.claude/skills/anatomy` (ngoài repo, em không đụng).
+- ✅ Đã commit + push cả hai repo 28/11 tối (landing `2f0f7b0`, anh: "Push cả hai"). Skill `anatomy` cài cho bản mẫu 3 vẫn nằm ở `~/.claude/skills/anatomy` (ngoài repo, em không đụng).
 
 ---
 ## Phiên 28/11 (3) — Trang chủ landing rút còn 4 khúc + sơ đồ 2.5D + chân trang gọn + màn Tài chính HTML — ĐÃ PUSH landing `2f71e20` (anh: "Commit và push")
